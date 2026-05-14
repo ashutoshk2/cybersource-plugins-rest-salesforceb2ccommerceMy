@@ -422,4 +422,407 @@ server.get('GetCartTotal', function (req, res, next) {
     return next();
 });
 
+/**
+ * CheckoutServices-PlaceOrderDirect
+ * 
+ * Handles order placement for UC v1.x completeMandate flow where authorization
+ * has already been performed by the SDK. This endpoint:
+ * 1. Validates the completeMandate JWT response
+ * 2. Creates the order from basket
+ * 3. Maps transaction details to payment instrument (skips authorization since SDK already did it)
+ * 4. Runs fraud detection based on SDK response status
+ * 5. Places the order and redirects to confirmation
+ * 
+ * @param {Object} req - Request object containing completeMandateJwt parameter
+ * @returns {Object} JSON response with orderID, orderToken, continueUrl or error
+ */
+server.post('PlaceOrderDirect', server.middleware.https, function (req, res, next) {
+    var BasketMgr = require('dw/order/BasketMgr');
+    var OrderMgr = require('dw/order/OrderMgr');
+    var PaymentMgr = require('dw/order/PaymentMgr');
+    var Resource = require('dw/web/Resource');
+    var Transaction = require('dw/system/Transaction');
+    var URLUtils = require('dw/web/URLUtils');
+    var Logger = require('dw/system/Logger');
+    var basketCalculationHelpers = require('*/cartridge/scripts/helpers/basketCalculationHelpers');
+    var hooksHelper = require('*/cartridge/scripts/helpers/hooks');
+    var COHelpers = require('*/cartridge/scripts/checkout/checkoutHelpers');
+    var validationHelpers = require('*/cartridge/scripts/helpers/basketValidationHelpers');
+    var addressHelpers = require('*/cartridge/scripts/helpers/addressHelpers');
+    var payments = require('*/cartridge/scripts/http/payments');
+    var ucPaymentHelper = require('~/cartridge/scripts/helpers/ucPaymentHelper');
+
+    var logger = Logger.getLogger('Cybersource', 'PlaceOrderDirect');
+
+    // Get the completeMandate JWT from request
+    var completeMandateJwt = request.httpParameterMap.completeMandateJwt.stringValue;
+    var transientToken = request.httpParameterMap.transientToken.stringValue;
+
+    if (!completeMandateJwt) {
+        logger.error('PlaceOrderDirect: Missing completeMandateJwt parameter');
+        secureResponseHelper.secureJsonResponse(res, {
+            error: true,
+            errorMessage: Resource.msg('error.technical', 'checkout', null)
+        });
+        return next();
+    }
+
+    // Decode and validate the JWT
+    var jwtPayload = payments.decodeCompleteMandateJwt(completeMandateJwt);
+
+    if (!jwtPayload) {
+        logger.error('PlaceOrderDirect: JWT validation failed');
+        secureResponseHelper.secureJsonResponse(res, {
+            error: true,
+            errorMessage: Resource.msg('error.technical', 'checkout', null)
+        });
+        return next();
+    }
+
+    // Check authorization status
+    var authStatus = jwtPayload.status;
+    if (!ucPaymentHelper.isValidAuthorizationStatus(authStatus)) {
+        logger.error('PlaceOrderDirect: Authorization not successful. Status: {0}', authStatus);
+        
+        // Check if SCA (Strong Customer Authentication) is required
+        // Expanded SCA detection for new CyberSource response patterns
+        var isSCARequired = false;
+        var processorInfo = jwtPayload.details && jwtPayload.details.processorInformation;
+        var reasonCode = processorInfo && processorInfo.responseCode;
+        var reason = jwtPayload.reason;
+        var message = jwtPayload.message;
+        var outcome = jwtPayload.outcome;
+        // SCA required indicators: response 478, authentication_required status, or new CyberSource patterns
+        if (
+            reasonCode === '478' ||
+            authStatus === 'AUTHENTICATION_REQUIRED' ||
+            authStatus === 'PENDING_AUTHENTICATION' ||
+            (reason && reason === 'CUSTOMER_AUTHENTICATION_REQUIRED') ||
+            (message && typeof message === 'string' && message.toLowerCase().indexOf('strong customer authentication required') !== -1)
+        ) {
+            isSCARequired = true;
+            ucPaymentHelper.setSCARequiredFlag();
+            logger.info('PlaceOrderDirect: SCA required detected (reasonCode: {0}, status: {1}, reason: {2}, outcome: {3}). Flag set for retry.', reasonCode, authStatus, reason, outcome);
+        }
+        
+        // Return appropriate error message
+        var errorMessage;
+        if (isSCARequired) {
+            errorMessage = ucPaymentHelper.getSCAErrorMessage();
+        } else {
+            errorMessage = ucPaymentHelper.getAuthorizationErrorMessage(authStatus) || Resource.msg('error.technical', 'checkout', null);
+        }
+        
+        secureResponseHelper.secureJsonResponse(res, {
+            error: true,
+            errorMessage: errorMessage,
+            scaRequired: isSCARequired
+        });
+        return next();
+    }
+
+    // Get current basket
+    var currentBasket = BasketMgr.getCurrentBasket();
+    if (!currentBasket) {
+        secureResponseHelper.secureJsonResponse(res, {
+            error: true,
+            cartError: true,
+            fieldErrors: [],
+            serverErrors: [],
+            redirectUrl: URLUtils.url('Cart-Show').toString()
+        });
+        return next();
+    }
+
+    // Validate products in basket
+    var validatedProducts = validationHelpers.validateProducts(currentBasket);
+    if (validatedProducts.error) {
+        secureResponseHelper.secureJsonResponse(res, {
+            error: true,
+            cartError: true,
+            fieldErrors: [],
+            serverErrors: [],
+            redirectUrl: URLUtils.url('Cart-Show').toString()
+        });
+        return next();
+    }
+
+    // Check fraud detection status from session
+    if (req.session.privacyCache.get('fraudDetectionStatus')) {
+        secureResponseHelper.secureJsonResponse(res, {
+            error: true,
+            cartError: true,
+            redirectUrl: URLUtils.url('Error-ErrorCode', 'err', '01').toString(),
+            errorMessage: Resource.msg('error.technical', 'checkout', null)
+        });
+        return next();
+    }
+
+
+
+    // For minicart/cart flows: Populate addresses from transient token via getPaymentDetails API
+    // UC widget captures billing/shipping via captureMandate when requestShipping=true, billingType='FULL'
+    // The addresses are NOT in the completeMandate JWT - they come from the transient token API
+    if (transientToken && (!currentBasket.billingAddress || !currentBasket.defaultShipment.shippingAddress)) {
+        try {
+            var paymentDetails = payments.getPaymentDetails(transientToken);
+            if (paymentDetails && paymentDetails.orderInformation) {
+                // Populate addresses from API response
+                ucPaymentHelper.populateBasketAddressesFromPaymentDetails(currentBasket, paymentDetails, Transaction);
+                logger.info('PlaceOrderDirect: Addresses populated from getPaymentDetails API (minicart/cart flow)');
+                
+                // Set default shipping method if not present
+                ucPaymentHelper.setDefaultShippingMethod(currentBasket, Transaction);
+                
+                // Recalculate basket totals with new addresses (for tax calculation)
+                Transaction.wrap(function () {
+                    basketCalculationHelpers.calculateTotals(currentBasket);
+                });
+            }
+        } catch (e) {
+            logger.error('PlaceOrderDirect: Error getting payment details from transient token: {0}', e.message || e);
+        }
+    }
+        // Validate order
+    var validationOrderStatus = hooksHelper('app.validate.order', 'validateOrder', currentBasket, require('*/cartridge/scripts/hooks/validateOrder').validateOrder);
+    if (validationOrderStatus.error) {
+        secureResponseHelper.secureJsonResponse(res, {
+            error: true,
+            errorMessage: validationOrderStatus.message
+        });
+        return next();
+    }
+
+    // Check shipping address exists
+    if (currentBasket.defaultShipment.shippingAddress === null) {
+        secureResponseHelper.secureJsonResponse(res, {
+            error: true,
+            errorStage: { stage: 'shipping', step: 'address' },
+            errorMessage: Resource.msg('error.no.shipping.address', 'checkout', null)
+        });
+        return next();
+    }
+
+    // Check billing address exists
+    if (!currentBasket.billingAddress) {
+        secureResponseHelper.secureJsonResponse(res, {
+            error: true,
+            errorStage: { stage: 'payment', step: 'billingAddress' },
+            errorMessage: Resource.msg('error.no.billing.address', 'checkout', null)
+        });
+        return next();
+    }
+
+    // Detect payment type from completeMandate JWT
+    var detectedPaymentMethod = ucPaymentHelper.detectPaymentMethod(jwtPayload);
+
+    // Create or update payment instrument with correct payment method
+    Transaction.wrap(function () {
+        var existingInstruments = currentBasket.getPaymentInstruments();
+        var hasCorrectInstrument = false;
+
+        for (var i = 0; i < existingInstruments.length; i++) {
+            var existing = existingInstruments[i];
+            if (existing.paymentMethod === detectedPaymentMethod) {
+                hasCorrectInstrument = true;
+            } else {
+                currentBasket.removePaymentInstrument(existing);
+            }
+        }
+
+        if (!hasCorrectInstrument) {
+            var paymentInstrument = currentBasket.createPaymentInstrument(
+                detectedPaymentMethod,
+                currentBasket.totalGrossPrice
+            );
+
+            if (currentBasket.billingAddress && currentBasket.billingAddress.fullName) {
+                paymentInstrument.setCreditCardHolder(currentBasket.billingAddress.fullName);
+            }
+
+            if (transientToken) {
+                paymentInstrument.custom.UCToken = transientToken;
+            }
+
+            logger.info('PlaceOrderDirect: Created payment instrument with method: {0}', detectedPaymentMethod);
+        }
+    });
+
+    // Calculate basket totals
+    Transaction.wrap(function () {
+        basketCalculationHelpers.calculateTotals(currentBasket);
+    });
+
+    // Validate payment instruments
+    var validPayment = COHelpers.validatePayment(req, currentBasket);
+    if (validPayment.error) {
+        secureResponseHelper.secureJsonResponse(res, {
+            error: true,
+            errorStage: { stage: 'payment', step: 'paymentInstrument' },
+            errorMessage: Resource.msg('error.payment.not.valid', 'checkout', null)
+        });
+        return next();
+    }
+
+    // Calculate payment transaction
+    var calculatedPaymentTransactionTotal = COHelpers.calculatePaymentTransaction(currentBasket);
+    if (calculatedPaymentTransactionTotal.error) {
+        secureResponseHelper.secureJsonResponse(res, {
+            error: true,
+            errorMessage: Resource.msg('error.technical', 'checkout', null)
+        });
+        return next();
+    }
+
+    // Create order from basket
+    var order = COHelpers.createOrder(currentBasket);
+    if (!order) {
+        secureResponseHelper.secureJsonResponse(res, {
+            error: true,
+            errorMessage: Resource.msg('error.technical', 'checkout', null)
+        });
+        return next();
+    }
+
+    // Extract transaction details from JWT payload
+    var transactionId = jwtPayload.id;
+    var processorInfo = jwtPayload.details && jwtPayload.details.processorInformation;
+    var isDigitalWallet = detectedPaymentMethod === 'DW_GOOGLE_PAY' || detectedPaymentMethod === 'DW_APPLE_PAY';
+
+    // Set order status in session for fraud detection hook
+    session.privacy.orderStatus = authStatus;
+
+    // Update payment instrument with transaction details from SDK authorization
+    try {
+        Transaction.wrap(function () {
+            var paymentInstruments = order.getPaymentInstruments();
+            if (paymentInstruments.length > 0) {
+                var paymentInstrument = paymentInstruments[0];
+                var paymentProcessor = PaymentMgr.getPaymentMethod(paymentInstrument.paymentMethod).paymentProcessor;
+
+                // Set transaction ID and processor
+                paymentInstrument.paymentTransaction.setTransactionID(transactionId);
+                if (paymentProcessor) {
+                    paymentInstrument.paymentTransaction.setPaymentProcessor(paymentProcessor);
+                }
+
+                // Extract and set card details (pass order billing address for cardholder name)
+                var cardDetails = ucPaymentHelper.extractCardDetails(jwtPayload, transientToken, order.billingAddress);
+                ucPaymentHelper.updatePaymentInstrumentCardDetails(paymentInstrument, cardDetails, isDigitalWallet);
+
+                // Set payment details string
+                var paymentDetailsStr = ucPaymentHelper.buildPaymentDetailsString(cardDetails);
+                paymentInstrument.paymentTransaction.custom.paymentDetails = paymentDetailsStr;
+
+                // Store transient token for potential refunds/captures
+                if (transientToken) {
+                    paymentInstrument.custom.UCToken = transientToken;
+                }
+
+                // Store optional processor info (if custom attributes exist)
+                if (processorInfo) {
+                    ucPaymentHelper.setTransactionCustomAttribute(
+                        paymentInstrument.paymentTransaction, 'approvalCode', processorInfo.approvalCode
+                    );
+                    ucPaymentHelper.setTransactionCustomAttribute(
+                        paymentInstrument.paymentTransaction, 'networkTransactionId', processorInfo.networkTransactionId
+                    );
+                }
+                if (jwtPayload.details && jwtPayload.details.reconciliationId) {
+                    ucPaymentHelper.setTransactionCustomAttribute(
+                        paymentInstrument.paymentTransaction, 'reconciliationId', jwtPayload.details.reconciliationId
+                    );
+                }
+
+                logger.info('PlaceOrderDirect: Payment instrument updated - TransactionID: {0}, PaymentDetails: {1}, PaymentMethod: {2}',
+                    transactionId, paymentDetailsStr, paymentInstrument.paymentMethod);
+            }
+        });
+    } catch (e) {
+        logger.error('PlaceOrderDirect: Error updating payment instrument: {0}', e.message || e);
+        Transaction.wrap(function () { OrderMgr.failOrder(order, true); });
+        secureResponseHelper.secureJsonResponse(res, {
+            error: true,
+            errorMessage: Resource.msg('error.technical', 'checkout', null)
+        });
+        return next();
+    }
+
+    // Run fraud detection hook
+    var fraudDetectionStatus = hooksHelper('app.fraud.detection', 'fraudDetection', currentBasket, require('*/cartridge/scripts/hooks/fraudDetection').fraudDetection);
+    if (fraudDetectionStatus.status === 'fail') {
+        Transaction.wrap(function () { OrderMgr.failOrder(order, true); });
+        req.session.privacyCache.set('fraudDetectionStatus', true);
+        secureResponseHelper.secureJsonResponse(res, {
+            error: true,
+            cartError: true,
+            redirectUrl: URLUtils.url('Error-ErrorCode', 'err', fraudDetectionStatus.errorCode).toString(),
+            errorMessage: Resource.msg('error.technical', 'checkout', null)
+        });
+        return next();
+    }
+
+    // Place the order
+    var placeOrderResult = COHelpers.placeOrder(order, fraudDetectionStatus);
+    if (placeOrderResult.error) {
+        secureResponseHelper.secureJsonResponse(res, {
+            error: true,
+            errorMessage: Resource.msg('error.technical', 'checkout', null)
+        });
+        return next();
+    }
+
+    // Save TMS token to customer wallet if user opted to save card
+    // Extract card details first (needed for wallet entry) - pass billing address for cardholder name
+    var cardDetailsForWallet = ucPaymentHelper.extractCardDetails(jwtPayload, transientToken, order.billingAddress);
+    var tokenSaved = ucPaymentHelper.saveTokenToWallet(jwtPayload, cardDetailsForWallet, session.getCustomer());
+    if (tokenSaved) {
+        logger.info('PlaceOrderDirect: TMS token saved to customer wallet');
+    }
+
+    // Network Token Subscription: Subscribe to network token lifecycle updates when enabled
+    // This allows the integration to receive webhook notifications when network tokens are updated
+    var configObject = require('~/cartridge/configuration/index');
+    if (configObject.networkTokenizationEnabled && processorInfo && processorInfo.paymentAccountReferenceNumber) {
+        try {
+            var networkTokenSubscription = require('~/cartridge/scripts/http/networkTokenSubscription');
+            networkTokenSubscription.createNetworkTokenSubscription();
+            logger.info('PlaceOrderDirect: Network token subscription created/verified for PAR');
+        } catch (ntError) {
+            // Log but don't fail the order - network token subscription is non-critical
+            logger.warn('PlaceOrderDirect: Failed to create network token subscription: {0}', ntError.message || ntError);
+        }
+    }
+
+    // Save addresses to address book for logged in customers
+    if (req.currentCustomer.addressBook) {
+        var allAddresses = addressHelpers.gatherShippingAddresses(order);
+        allAddresses.forEach(function (address) {
+            if (!addressHelpers.checkIfAddressStored(address, req.currentCustomer.addressBook.addresses)) {
+                addressHelpers.saveAddress(address, req.currentCustomer, addressHelpers.generateAddressName(address));
+            }
+        });
+    }
+
+    // Send confirmation email
+    if (order.getCustomerEmail()) {
+        COHelpers.sendConfirmationEmail(order, req.locale.id);
+    }
+
+    // Reset multi-shipping flag
+    req.session.privacyCache.set('usingMultiShipping', false);
+
+    logger.info('PlaceOrderDirect: Order placed successfully. OrderNo: {0}, TransactionID: {1}', order.orderNo, transactionId);
+
+    // Return success
+    secureResponseHelper.secureJsonResponse(res, {
+        error: false,
+        orderID: order.orderNo,
+        orderToken: order.orderToken,
+        continueUrl: URLUtils.url('Order-Confirm').toString()
+    });
+
+    return next();
+});
+
 module.exports = server.exports();

@@ -207,19 +207,25 @@ _exports.prototype.callApi = function (path, httpMethod, pathParams, queryParams
             bodyParam = JSON.parse(bodyParam);
         }
  
-        // adding solution id to all post calls
-        if (!bodyParam.clientReferenceInformation) {
-            bodyParam.clientReferenceInformation = {};
-        }
-        if(path === '/up/v1/capture-contexts'){
-            bodyParam.clientReferenceInformation.code = '102';
-        }else{
-        bodyParam.clientReferenceInformation.applicationName = Constants.APPLICATION_NAME;
-        bodyParam.clientReferenceInformation.applicationVersion = Constants.APPLICATION_VERSION;
-        bodyParam.clientReferenceInformation.partner = {
-            solutionId: this.merchantConfig.getSolutionId(),
-            developerId: this.merchantConfig.getDeveloperId()
-        }
+        // UC V1 Sessions API (/uc/v1/sessions) does not support clientReferenceInformation
+        // Skip adding partner/solution info for this endpoint per UC V1 API Contract
+        var isUcV1SessionsApi = path === '/uc/v1/sessions';
+        
+        // adding solution id to all post calls (except UC V1 Sessions which doesn't support it)
+        if (!isUcV1SessionsApi) {
+            if (!bodyParam.clientReferenceInformation) {
+                bodyParam.clientReferenceInformation = {};
+            }
+            if(path === '/up/v1/capture-contexts'){
+                bodyParam.clientReferenceInformation.code = '102';
+            }else{
+                bodyParam.clientReferenceInformation.applicationName = Constants.APPLICATION_NAME;
+                bodyParam.clientReferenceInformation.applicationVersion = Constants.APPLICATION_VERSION;
+                bodyParam.clientReferenceInformation.partner = {
+                    solutionId: this.merchantConfig.getSolutionId(),
+                    developerId: this.merchantConfig.getDeveloperId()
+                }
+            }
         }
         payload = JSON.stringify(bodyParam);
  
@@ -258,7 +264,8 @@ _exports.prototype.callApi = function (path, httpMethod, pathParams, queryParams
  
     if (response.ok) {
         var responseObj = response.object;
-        if (path === '/microform/v2/sessions' || path === '/up/v1/capture-contexts') {
+        // These endpoints return JWT strings, not JSON - skip JSON.parse
+        if (path === '/microform/v2/sessions' || path === '/up/v1/capture-contexts' || path === '/uc/v1/sessions') {
             callback(responseObj, false, response);
         } else {
             callback(JSON.parse(responseObj), false, response);

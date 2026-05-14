@@ -117,6 +117,7 @@ function httpAuthorizeWithToken(cardData, customerEmail, referenceInformationCod
         request.deviceInformation = deviceSessionId;
     }
 
+
     var OrderMgr = require('dw/order/OrderMgr');
     var order = OrderMgr.getOrder(referenceInformationCode);
 
@@ -563,109 +564,224 @@ function httpAuthorizeWithTransientToken(transientToken, customerEmail, referenc
 }
 
 
-function generateUcCaptureContext(isMiniCart) {
+/**
+ * Generate Unified Checkout capture context
+ * @param {boolean} isMiniCart - Whether this is for minicart flow
+ * @param {string} selectedPaymentInstrumentId - Optional: specific TMS payment instrument ID to pre-populate UC widget
+ *                                               If provided, UC shows only this card's "Pay now" button
+ *                                               If null/undefined, UC loads without saved card (fresh entry)
+ * @returns {string|Object} JWT capture context string or error object
+ */
+function generateUcCaptureContext(isMiniCart, selectedPaymentInstrumentId) {
+    var Logger = require('dw/system/Logger');
+    var ucPaymentHelper = require('~/cartridge/scripts/helpers/ucPaymentHelper');
+
     try {
         var basket = require('dw/order/BasketMgr').getCurrentBasket();
+        if (!basket) {
+            Logger.error('[payments.js] generateUcCaptureContext - ERROR: basket is null/undefined');
+            return { error: true, errorMessage: 'Basket not found' };
+        }
+
         var configObject = require('../../configuration/index');
         var cybersourceRestApi = require('../../apiClient/index');
+
+        if (!cybersourceRestApi || !cybersourceRestApi.GenerateUnifiedCheckoutCaptureContextRequest) {
+            Logger.error('[payments.js] generateUcCaptureContext - ERROR: cybersourceRestApi module not available');
+            return { error: true, errorMessage: 'API client module not available' };
+        }
+
         var requestObj = new cybersourceRestApi.GenerateUnifiedCheckoutCaptureContextRequest();
 
-        requestObj.clientVersion = Constants.UC_CLIENT_VERSION;
+        // Target Origins
+        requestObj.targetOrigins = ['https://' + request.httpHost];
 
-        var targetOrigins = new Array();
-        targetOrigins.push('https://' + request.httpHost);
-        requestObj.targetOrigins = targetOrigins;
-
-
-        var allowedCardNetworks = new Array();
-
-        var allowedCNetworks = configObject.allowedCardNetworks;
-        if (empty(allowedCNetworks)) {
-            allowedCardNetworks.push('VISA');
-        } else {
-            for (let i = 0; allowedCNetworks[i] != null; i++) {
-                allowedCardNetworks.push(allowedCNetworks[i].value);
-            }
-        }
-
+        // Allowed Card Networks - Include all supported networks
+        // UC/EBC will filter based on MID configuration
+        var allowedCardNetworks = [
+            'VISA',
+            'MASTERCARD',
+            'AMEX',
+            'DISCOVER',
+            'DINERSCLUB',
+            'JCB',
+            'MAESTRO',
+            'CARTESBANCAIRES',
+            'CUP',
+            'ELO',
+            'CARNET',
+            'MADA'
+        ];
         requestObj.allowedCardNetworks = allowedCardNetworks;
 
+        // Allowed Payment Types - Pass ALL supported payment types
+        // UC/EBC will filter to only show those enabled for the MID
+        var allowedPaymentTypes = [];
 
-        var allowedPaymentTypes = new Array();
-
-        var allowedPaymentTypesConfig = configObject.digitalPaymentMethods;
-        if (!empty(allowedPaymentTypesConfig)) {
-            for (let i = 0; allowedPaymentTypesConfig[i] != null; i++) {
-                allowedPaymentTypes.push(allowedPaymentTypesConfig[i].value);
-            }
-        }
-
+        // Card entry (always include unless minicart)
         if (!isMiniCart) {
             allowedPaymentTypes.push('PANENTRY');
         }
 
+        // eCheck if enabled
         if (!isMiniCart && configObject.eCheckEnabledForUnifiedCheckout) {
             allowedPaymentTypes.push('CHECK');
         }
 
+        // Digital Wallets (work globally)
+        allowedPaymentTypes.push('GOOGLEPAY');
+        //allowedPaymentTypes.push('APPLEPAY');
+        //allowedPaymentTypes.push('CLICKTOPAY');
+        //allowedPaymentTypes.push('PAZE');
+
+        // Alternative Payment Methods (APMs) - locale/currency specific
+        // US/USD: PayPal, Venmo handled by EBC (not in allowedPaymentTypes enum)
+        // EUR: iDEAL (NL), Bancontact (BE), Multibanco (PT)
+        // GBP: Tink (GB)
+        // CAD: Afterpay
+        var currency = basket && basket.currencyCode ? basket.currencyCode : 'USD';
+
+        // Add APMs based on currency/locale
+        if (currency === 'EUR') {
+            allowedPaymentTypes.push('IDEAL');
+            allowedPaymentTypes.push('BANCONTACT');
+            allowedPaymentTypes.push('MULTIBANCO');
+        }
+        if (currency === 'GBP') {
+            allowedPaymentTypes.push('TINKPAYBYBANK');
+        }
+        if (currency === 'CAD' || currency === 'AUD') {
+            allowedPaymentTypes.push('AFTERPAY');
+        }
+
         requestObj.allowedPaymentTypes = allowedPaymentTypes;
 
+        // Locale
         var Locale = require('dw/util/Locale');
         var currentLocale = Locale.getLocale(request.locale);
-
         requestObj.country = currentLocale.country;
         requestObj.locale = currentLocale.ID;
+
+        Logger.info('[payments.js] generateUcCaptureContext: allowedPaymentTypes = {0}, country = {1}, currency = {2}',
+            JSON.stringify(allowedPaymentTypes), currentLocale.country, currency);
+
+        // Capture Mandate
+        // UC v1: Only basic capture mandate fields - tokenization (requestSaveCredentials)
+        // and showAcceptedNetworkIcons are now handled by EBC configuration
         var captureMandate = new cybersourceRestApi.Upv1capturecontextsCaptureMandate();
         captureMandate.billingType = isMiniCart ? 'FULL' : 'NONE';
-        captureMandate.requestEmail = isMiniCart ? true : false;
-        captureMandate.requestPhone = isMiniCart ? true : false;
-        captureMandate.requestShipping = isMiniCart ? true : false;
-
-        var customer = session.getCustomer();
-        var customerProfile = customer ? customer.getProfile() : null;
-        var isRegisteredCustomer = false;
-        if (customer && customer.isRegistered() && customer.isAuthenticated() && customerProfile) {
-            // Additional validation - ensure customer has a valid profile
-            isRegisteredCustomer = !empty(customerProfile.getEmail()) &&
-                !empty(customerProfile.getCustomerNo());
-
-        }
-        // Check if tokenization is enabled in Business Manager configuration
-        var isTokenizationEnabled = configObject.tokenizationEnabled;
-        // Set requestSaveCard based on comprehensive customer validation and tokenization configuration
-        captureMandate.requestSaveCard = isMiniCart ? false : (isRegisteredCustomer && isTokenizationEnabled);
-
-        captureMandate.showAcceptedNetworkIcons = isMiniCart ? false : true;
+        captureMandate.requestEmail = isMiniCart;
+        captureMandate.requestPhone = isMiniCart;
+        captureMandate.requestShipping = isMiniCart;
         requestObj.captureMandate = captureMandate;
 
-        var orderInformation = new cybersourceRestApi.Upv1capturecontextsOrderInformation();
-        var orderInformationAmountDetails = new cybersourceRestApi.Upv1capturecontextsOrderInformationAmountDetails();
-        orderInformationAmountDetails.totalAmount = basket.totalGrossPrice.value.toString();
-        orderInformationAmountDetails.currency = basket.currencyCode;
-        orderInformation.amountDetails = orderInformationAmountDetails;
+        // Check customer registration status for TMS token display
+        var customer = session.getCustomer();
+        var customerProfile = customer ? customer.getProfile() : null;
+        var isRegisteredCustomer = customer && customer.isRegistered() && customer.isAuthenticated() &&
+            customerProfile && !empty(customerProfile.getEmail()) && !empty(customerProfile.getCustomerNo());
+        var isTokenizationEnabled = configObject.tokenizationEnabled;
 
-        // Create billTo object
-        var billTo = new cybersourceRestApi.Ptsv2paymentsOrderInformationBillTo();
-        // Get billing address from basket
-        var billingAddress = basket.billingAddress;
-        if (billingAddress && !isMiniCart && !empty(billingAddress.firstName) && !empty(billingAddress.lastName)) {
-            // Populate billing address fields
-            billTo.firstName = billingAddress.firstName;
-            billTo.lastName = billingAddress.lastName;
-            billTo.email = basket.customerEmail;
-            // Add to orderInformation
-            orderInformation.billTo = billTo;
-        }
-        requestObj.orderInformation = orderInformation;
-
-        var transientTokenResponseOptions = {
-            includeCardPrefix: false
+        // Payment Configurations - Initialize with digital wallet configs
+        // This is required for Google Pay, Click to Pay, etc. to appear
+        requestObj.paymentConfigurations = {
+            GOOGLEPAY: {
+                allowedAuthMethods: ['PAN_ONLY', 'CRYPTOGRAM_3DS']
+            },
+            CLICKTOPAY: {
+                autoCheckEnrollment: true
+            }
         };
-        requestObj.transientTokenResponseOptions = transientTokenResponseOptions;
+        // Complete Mandate - UC v1: Transaction type and TMS token configuration
+        // type: AUTH (authorization only), CAPTURE (auth+capture), PREFER_AUTH (prefer auth if supported)
+        // tokenTypes: specifies which token types to create when cardholder opts to save card
+        var completeMandate = {};
 
-        var instance = new cybersourceRestApi.UnifiedCheckoutCaptureContextApi(configObject); //, apiClient);
+        // Add TMS_TOKEN config for saved cards (registered customers only)
+        // If selectedPaymentInstrumentId is provided, use ONLY that card (no other payment methods)
+        // If null/undefined, show all payment methods (for entering new card)
+        if (!isMiniCart && isRegisteredCustomer && isTokenizationEnabled && customerProfile && selectedPaymentInstrumentId) {
+            // Add TMS token types for saving cards
+            completeMandate.tms = {
+                tokenTypes: ['customer', 'paymentInstrument', 'instrumentIdentifier']
+            };
+
+            // Use only the selected payment instrument
+            var tmsConfig = {
+                paymentInstruments: [{ id: selectedPaymentInstrumentId }]
+            };
+
+            // Add TMS_TOKEN to paymentConfigurations
+            requestObj.paymentConfigurations.TMS_TOKEN = tmsConfig;
+
+            // IMPORTANT: For saved card flow, show ONLY the TMS_TOKEN payment method
+            // This displays only "Pay now VISA •••• 1111" button - no other payment options
+            requestObj.allowedPaymentTypes = ['TMS_TOKEN'];
+
+            Logger.info('[payments.js] generateUcCaptureContext: Using ONLY selected payment instrument: {0}',
+                selectedPaymentInstrumentId);
+        } else if (!isMiniCart && isRegisteredCustomer && isTokenizationEnabled && customerProfile) {
+            // No card selected - enable TMS for saving NEW cards only (no pre-populated card)
+            // Keep all payment types (PANENTRY, GOOGLEPAY, etc.) for new card entry
+            completeMandate.tms = {
+                tokenTypes: ['customer', 'paymentInstrument', 'instrumentIdentifier']
+            };
+            Logger.info('[payments.js] generateUcCaptureContext: Fresh card entry mode - all payment methods available');
+        }
+
+
+
+        // Set transaction type based on BM configuration (Cybersource_CardTransactionType)
+        var configuredTransactionType = (configObject.cardTransactionType || 'auth').toString().toLowerCase();
+        if (configuredTransactionType === 'sale') {
+            completeMandate.type = 'CAPTURE';
+        } else {
+            completeMandate.type = 'AUTH';
+        }
+
+        requestObj.completeMandate = completeMandate;
+
+        // Transient Token Response Options
+        requestObj.transientTokenResponseOptions = { includeCardPrefix: false };
+
+        // Order Information (with addresses and line items)
+        requestObj.data = {
+            orderInformation: ucPaymentHelper.buildOrderInformation(basket, isMiniCart)
+        };
+
+        // Client Reference Information - placeholder for order tracking
+        // TODO: Add code (orderId) and partner info when order creation flow is finalized
+        requestObj.data.clientReferenceInformation = {};
+
+        // Device Information: Capture context API only supports ipAddress in deviceInformation
+        // Full device data (for 3DS) is handled during payment authorization, not capture context
+        requestObj.data.deviceInformation = ucPaymentHelper.buildCaptureContextDeviceInformation();
+
+        // Payment Information: Card type selection indicator
+        // typeSelectionIndicator '1' = Cardholder selects card type
+        requestObj.data.paymentInformation = {
+            card: {
+                typeSelectionIndicator: '1'
+            }
+        };
+
+        // Consumer Authentication Information: Add challengeCode for 3DS handling
+        // When SCA was required (478 response) on a previous attempt, set challengeCode = '04' to mandate challenge
+        var consumerAuthInfo = ucPaymentHelper.buildConsumerAuthenticationInformation(configObject);
+        if (consumerAuthInfo) {
+            requestObj.data.consumerAuthenticationInformation = consumerAuthInfo;
+        }
+
+        // Log full capture context request for debugging
+        Logger.info('[payments.js] generateUcCaptureContext FULL REQUEST: allowedPaymentTypes={0}, allowedCardNetworks={1}, paymentConfigurations={2}',
+            JSON.stringify(requestObj.allowedPaymentTypes),
+            JSON.stringify(requestObj.allowedCardNetworks),
+            JSON.stringify(requestObj.paymentConfigurations));
+
+        // Generate Capture Context
+        var instance = new cybersourceRestApi.UnifiedCheckoutCaptureContextApi(configObject);
         var response = {};
-        instance.generateUnifiedCheckoutCaptureContext(requestObj, function (data, error, result) {
+        instance.generateUnifiedCheckoutCaptureContext(requestObj, function (data, error) {
             if (!error) {
                 response = data;
             } else {
@@ -673,9 +789,150 @@ function generateUcCaptureContext(isMiniCart) {
             }
         });
         return response;
+    } catch (error) {
+        Logger.error('[payments.js] generateUcCaptureContext ERROR - Type: {0}, Message: {1}',
+            error.name || 'Unknown',
+            error.message || String(error));
+        if (error.stack) {
+            Logger.error('[payments.js] generateUcCaptureContext Stack: {0}', error.stack);
+        }
+
+        return {
+            error: true,
+            errorMessage: error.message || String(error),
+            errorType: error.name || 'UnknownError',
+            errorDetails: error.stack || null
+        };
     }
-    catch (error) {
-        // console.log('\nException on calling the API : ' + error);
+}
+
+/**
+ * Generate UC Capture Context for Save Card flow (My Account - Add Payment)
+ * Uses zero-dollar AUTH to tokenize card without charging
+ * UC widget collects billing address (billingType: 'FULL')
+ * 
+ * @returns {Object} Capture context JWT or error object
+ */
+function generateUcCaptureContextSaveCard() {
+    var Logger = require('dw/system/Logger');
+    var ucPaymentHelper = require('~/cartridge/scripts/helpers/ucPaymentHelper');
+
+    try {
+        var configObject = require('../../configuration/index');
+        var cybersourceRestApi = require('../../apiClient/index');
+
+        if (!cybersourceRestApi || !cybersourceRestApi.GenerateUnifiedCheckoutCaptureContextRequest) {
+            Logger.error('[payments.js] generateUcCaptureContextSaveCard - ERROR: cybersourceRestApi module not available');
+            return { error: true, errorMessage: 'API client module not available' };
+        }
+
+        var requestObj = new cybersourceRestApi.GenerateUnifiedCheckoutCaptureContextRequest();
+
+        // Target Origins
+        requestObj.targetOrigins = ['https://' + request.httpHost];
+
+        // Allowed Card Networks
+        var allowedCardNetworks = [];
+        var allowedCNetworks = configObject.allowedCardNetworks;
+        if (empty(allowedCNetworks)) {
+            allowedCardNetworks.push('VISA');
+        } else {
+            for (var i = 0; allowedCNetworks[i] != null; i++) {
+                allowedCardNetworks.push(allowedCNetworks[i].value);
+            }
+        }
+        requestObj.allowedCardNetworks = allowedCardNetworks;
+
+        // Allowed Payment Types - PANENTRY for card entry in Save Card flow
+        requestObj.allowedPaymentTypes = ['PANENTRY'];
+
+        // Locale
+        var Locale = require('dw/util/Locale');
+        var currentLocale = Locale.getLocale(request.locale);
+        requestObj.country = currentLocale.country;
+        requestObj.locale = currentLocale.ID;
+
+        // Button Type - SAVE_CARD for the "Add Payment" flow
+        requestObj.buttonType = 'SAVE_CARD';
+
+        // Capture Mandate - billingType FULL so UC widget collects billing address
+        var captureMandate = new cybersourceRestApi.Upv1capturecontextsCaptureMandate();
+        captureMandate.billingType = 'FULL';
+        captureMandate.requestEmail = true;
+        captureMandate.requestPhone = true;
+        captureMandate.requestShipping = false;
+        requestObj.captureMandate = captureMandate;
+
+        // Complete Mandate - PREFER_AUTH for zero-dollar authorization (tokenization)
+        var completeMandate = {
+            type: 'PREFER_AUTH',
+            tms: {
+                tokenTypes: ['customer', 'paymentInstrument', 'instrumentIdentifier']
+            }
+        };
+        requestObj.completeMandate = completeMandate;
+
+        // Transient Token Response Options
+        requestObj.transientTokenResponseOptions = { includeCardPrefix: false };
+
+        // Get site default currency for zero-dollar auth
+        var Site = require('dw/system/Site');
+        var defaultCurrency = Site.getCurrent().getDefaultCurrency() || 'USD';
+
+        // Order Information with zero amount (billing will be captured by UC widget)
+        requestObj.data = {
+            orderInformation: {
+                amountDetails: {
+                    totalAmount: ucPaymentHelper.formatAmount(0, defaultCurrency),
+                    currency: defaultCurrency
+                }
+            },
+            clientReferenceInformation: {
+                code: session.sessionID ? session.sessionID.substring(0, 6).toUpperCase() : 'SAVECD',
+                partner: {
+                    developerId: '',
+                    solutionId: configObject.solutionId || ''
+                }
+            }
+        };
+
+        // Device Information
+        requestObj.data.deviceInformation = ucPaymentHelper.buildCaptureContextDeviceInformation();
+
+        // Payment Information
+        requestObj.data.paymentInformation = {
+            card: {
+                typeSelectionIndicator: '1'
+            }
+        };
+
+        // Generate Capture Context
+        var instance = new cybersourceRestApi.UnifiedCheckoutCaptureContextApi(configObject);
+        var response = {};
+        instance.generateUnifiedCheckoutCaptureContext(requestObj, function (data, error) {
+            if (!error) {
+                response = data;
+            } else {
+                throw new Error(data);
+            }
+        });
+
+        Logger.info('[payments.js] generateUcCaptureContextSaveCard: Capture context generated successfully for Save Card flow');
+        return response;
+    } catch (error) {
+        Logger.error('[payments.js] generateUcCaptureContextSaveCard ERROR - Type: {0}, Message: {1}',
+            error.name || 'Unknown',
+            error.message || String(error));
+        if (error.stack) {
+            Logger.error('[payments.js] generateUcCaptureContextSaveCard Stack: {0}', error.stack);
+        }
+
+        return {
+            error: true,
+            errorMessage: error.message || String(error),
+            errorType: error.name || 'UnknownError',
+            errorDetails: error.stack || null
+        };
     }
 }
 
@@ -868,6 +1125,125 @@ function formatPhoneNumber(phoneNumber) {
     return cleaned;
 }
 
+/**
+ * Decode and validate completeMandate JWT response from UC v1.x SDK
+ * This JWT is returned after checkout.complete(token) when authorization was performed by the SDK
+ * Uses the same signature validation approach as jwtDecode for v0.x
+ * 
+ * @param {string} jwt - The JWT string returned from checkout.complete()
+ * @returns {Object|null} - Decoded payload with authorization details, or null if validation fails
+ * 
+ * Expected JWT payload structure:
+ * {
+ *   "id": "transaction_id",
+ *   "status": "AUTHORIZED",
+ *   "outcome": "AUTHORIZED",
+ *   "message": "Request processed successfully.",
+ *   "details": {
+ *     "clientReferenceInformation": { "code": "basket_id" },
+ *     "orderInformation": { "amountDetails": { "authorizedAmount": "20.99", "currency": "USD" } },
+ *     "processorInformation": { "approvalCode": "888888", "responseCode": "100", "transactionId": "..." },
+ *     "paymentInformation": { "card": { "type": "001" }, "tokenizedCard": {...} },
+ *     "processingInformation": { "paymentSolution": "012" },
+ *     "reconciliationId": "...",
+ *     "submitTimeUtc": "2026-04-13T06:15:21Z"
+ *   },
+ *   "metadata": { "ccJti": "...", "ttJti": "..." }
+ * }
+ */
+function decodeCompleteMandateJwt(jwt) {
+    var Logger = require('dw/system/Logger');
+    var logger = Logger.getLogger('Cybersource', 'CompleteMandateJWT');
+
+    if (!jwt || typeof jwt !== 'string') {
+        logger.error('decodeCompleteMandateJwt: Invalid JWT input - null or not a string');
+        return null;
+    }
+
+    var Encoding = require('dw/crypto/Encoding');
+    var Signature = require('dw/crypto/Signature');
+    var Bytes = require('dw/util/Bytes');
+
+    var apiSig = new Signature();
+
+    // Split JWT into parts
+    var jwtParts = jwt.split('.');
+    if (jwtParts.length !== 3) {
+        logger.error('decodeCompleteMandateJwt: Invalid JWT format - expected 3 parts, got {0}', jwtParts.length);
+        return null;
+    }
+
+    var encodedHeader = jwtParts[0];
+    var encodedPayload = jwtParts[1];
+    var jwtSignature = jwtParts[2];
+
+    try {
+        // Decode header to get kid and algorithm
+        var decodedHeader = JSON.parse(Encoding.fromBase64(encodedHeader).toString());
+        var kid = decodedHeader.kid;
+        var alg = decodedHeader.alg;
+
+        if (!kid || !alg) {
+            logger.error('decodeCompleteMandateJwt: Missing kid or alg in JWT header');
+            return null;
+        }
+
+        // Decode payload
+        var decodedPayload = Encoding.fromBase64(encodedPayload).toString();
+        var parsedPayload = JSON.parse(decodedPayload);
+
+        // Get public key using the kid from JWT header
+        var pKid = getPublicKey(kid);
+
+        if (!pKid || empty(pKid.n) || empty(pKid.e)) {
+            logger.error('decodeCompleteMandateJwt: Failed to retrieve public key for kid: {0}', kid);
+            return null;
+        }
+
+        // Create RSA public key using modulus and exponent
+        var pkey = require('../http/publicKey');
+        var RSApublickey = pkey.getRSAPublicKey(pKid.n, pKid.e);
+
+        // Map JWT algorithms to SFCC crypto algorithms
+        var JWTAlgoToSFCCMapping = {
+            RS256: 'SHA256withRSA',
+            RS512: 'SHA512withRSA',
+            RS384: 'SHA384withRSA'
+        };
+
+        if (!JWTAlgoToSFCCMapping[alg]) {
+            logger.error('decodeCompleteMandateJwt: Unsupported algorithm: {0}', alg);
+            return null;
+        }
+
+        // Verify signature
+        var jwtSignatureInBytes = Encoding.fromBase64(jwtSignature);
+        var contentToVerify = encodedHeader + '.' + encodedPayload;
+        contentToVerify = new Bytes(contentToVerify);
+
+        var isValid = apiSig.verifyBytesSignature(
+            jwtSignatureInBytes,
+            contentToVerify,
+            new Bytes(RSApublickey),
+            JWTAlgoToSFCCMapping[alg]
+        );
+
+        if (isValid) {
+            logger.info('decodeCompleteMandateJwt: JWT signature validated successfully. Status: {0}, TransactionID: {1}',
+                parsedPayload.status || 'N/A',
+                parsedPayload.id || 'N/A'
+            );
+            return parsedPayload;
+        } else {
+            logger.error('decodeCompleteMandateJwt: JWT signature validation failed');
+            return null;
+        }
+    } catch (e) {
+        logger.error('decodeCompleteMandateJwt: Error decoding/validating JWT: {0}', e.message || e);
+        return null;
+    }
+}
+
 module.exports = {
     httpAuthorizeWithToken: httpAuthorizeWithToken,
     httpAuthorizeWithTransientToken: httpAuthorizeWithTransientToken,
@@ -876,6 +1252,8 @@ module.exports = {
     httpZeroDollarAuthWithTransientToken: httpZeroDollarAuthWithTransientToken,
     updateCustomerPaymentInstrument: updateCustomerPaymentInstrument,
     jwtDecode: jwtDecode,
+    decodeCompleteMandateJwt: decodeCompleteMandateJwt,
     generateUcCaptureContext: generateUcCaptureContext,
+    generateUcCaptureContextSaveCard: generateUcCaptureContextSaveCard,
     getPaymentDetails: getPaymentDetails
 };

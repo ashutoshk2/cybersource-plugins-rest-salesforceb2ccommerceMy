@@ -41,7 +41,8 @@ module.exports = {
   CLIENT_VERSION : "v2",
 
   /* Unified Checkout constants */
-  UC_CLIENT_VERSION: "0.32",
+  // v1.x: Auto-versioning recommended - omit clientVersion or set to "1.0"
+  UC_CLIENT_VERSION: "1.0",
 
  
 

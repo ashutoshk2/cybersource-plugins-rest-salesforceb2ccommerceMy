@@ -218,6 +218,200 @@ if (configObject.tokenizationEnabled && configObject.cartridgeEnabled) {
         }
         return next();
     });
+
+    /**
+     * PaymentInstruments-SavePaymentDirect
+     * 
+     * Handles card save for UC v1.x completeMandate flow (My Account - Add Payment)
+     * This endpoint is called when UC widget returns the completeMandate JWT after SAVE_CARD
+     * 
+     * Flow:
+     * 1. Validates the completeMandate JWT
+     * 2. Extracts token information (customer, paymentInstrument, instrumentIdentifier)
+     * 3. Saves the TMS token to customer wallet
+     * 4. Returns success with redirect URL to payment list
+     */
+    server.post('SavePaymentDirect', server.middleware.https, csrfProtection.validateAjaxRequest, userLoggedIn.validateLoggedInAjax, function (req, res, next) {
+        var CustomerMgr = require('dw/customer/CustomerMgr');
+        var Transaction = require('dw/system/Transaction');
+        var Resource = require('dw/web/Resource');
+        var Logger = require('dw/system/Logger');
+        var dwOrderPaymentInstrument = require('dw/order/PaymentInstrument');
+        var payments = require('~/cartridge/scripts/http/payments');
+        var ucPaymentHelper = require('~/cartridge/scripts/helpers/ucPaymentHelper');
+        var accountHelpers = require('*/cartridge/scripts/helpers/accountHelpers');
+
+        var logger = Logger.getLogger('Cybersource', 'SavePaymentDirect');
+
+        // Get the completeMandate JWT from request
+        var completeMandateJwt = request.httpParameterMap.completeMandateJwt.stringValue;
+        var transientToken = request.httpParameterMap.transientToken.stringValue;
+
+        if (!completeMandateJwt) {
+            logger.error('SavePaymentDirect: Missing completeMandateJwt parameter');
+            secureResponseHelper.secureJsonResponse(res, {
+                error: true,
+                errorMessage: Resource.msg('error.technical', 'checkout', null)
+            });
+            return next();
+        }
+
+        // Decode and validate the JWT
+        var jwtPayload = payments.decodeCompleteMandateJwt(completeMandateJwt);
+
+        if (!jwtPayload) {
+            logger.error('SavePaymentDirect: JWT validation failed');
+            secureResponseHelper.secureJsonResponse(res, {
+                error: true,
+                errorMessage: Resource.msg('error.technical', 'checkout', null)
+            });
+            return next();
+        }
+
+        // Check status - for SAVE_CARD, status should indicate success
+        var status = jwtPayload.status;
+        if (status !== 'AUTHORIZED' && status !== 'PENDING' && status !== 'COMPLETED') {
+            logger.error('SavePaymentDirect: Save card not successful. Status: {0}', status);
+            secureResponseHelper.secureJsonResponse(res, {
+                error: true,
+                errorMessage: Resource.msg('error.card.save.failed', 'payment', 'Unable to save card. Please try again.')
+            });
+            return next();
+        }
+
+        // Get current customer
+        var customerNo = req.currentCustomer.profile.customerNo;
+        var customerObj = CustomerMgr.getCustomerByCustomerNumber(customerNo);
+
+        if (!customerObj || !customerObj.profile) {
+            logger.error('SavePaymentDirect: Customer not found');
+            secureResponseHelper.secureJsonResponse(res, {
+                error: true,
+                errorMessage: Resource.msg('error.technical', 'checkout', null)
+            });
+            return next();
+        }
+
+        // Token rate limiter check
+        var tokenRateLimiterHelper = require('~/cartridge/scripts/helpers/tokenRateLimiterHelper');
+        var isAllowed = tokenRateLimiterHelper.IsCustumerAllowedSinglePaymentInstrumentInsertion(customerObj);
+        if (!isAllowed.result) {
+            logger.warn('SavePaymentDirect: Rate limiter rejected');
+            secureResponseHelper.secureJsonResponse(res, {
+                error: true,
+                errorMessage: Resource.msg('error.rate.limit.exceeded', 'payment', 'Too many card save attempts. Please try again later.')
+            });
+            return next();
+        }
+
+        // Extract card details from JWT and transient token
+        var cardDetails = ucPaymentHelper.extractCardDetails(jwtPayload, transientToken, null);
+
+        // Extract billing info from JWT for cardholder name
+        if (jwtPayload.details && jwtPayload.details.orderInformation && jwtPayload.details.orderInformation.billTo) {
+            var billTo = jwtPayload.details.orderInformation.billTo;
+            var firstName = billTo.firstName || '';
+            var lastName = billTo.lastName || '';
+            if (firstName || lastName) {
+                cardDetails.cardHolderName = (firstName + ' ' + lastName).trim();
+            }
+        }
+
+        // Save token to wallet
+        var saveResult = ucPaymentHelper.saveTokenToWallet(jwtPayload, cardDetails, customerObj);
+
+        if (!saveResult) {
+            // If saveTokenToWallet returns false, token may not be in JWT
+            // Try creating payment instrument with card details only
+            try {
+                var wallet = customerObj.profile.wallet;
+                var tokenInfo = ucPaymentHelper.extractTokenInformation(jwtPayload);
+
+                if (tokenInfo && tokenInfo.paymentInstrument && tokenInfo.instrumentIdentifier) {
+                    var serializedToken;
+                    if (tokenInfo.customer && tokenInfo.customer.id) {
+                        serializedToken = [
+                            tokenInfo.instrumentIdentifier.id,
+                            tokenInfo.paymentInstrument.id,
+                            'flex',
+                            tokenInfo.customer.id
+                        ].join('-');
+
+                        Transaction.wrap(function () {
+                            if (!customerObj.profile.custom.customerID) {
+                                customerObj.profile.custom.customerID = tokenInfo.customer.id;
+                            }
+                        });
+                    } else {
+                        serializedToken = [
+                            tokenInfo.instrumentIdentifier.id,
+                            tokenInfo.paymentInstrument.id,
+                            'flex'
+                        ].join('-');
+                    }
+
+                    Transaction.wrap(function () {
+                        var newPI = wallet.createPaymentInstrument(dwOrderPaymentInstrument.METHOD_CREDIT_CARD);
+
+                        if (cardDetails.cardHolderName) {
+                            newPI.setCreditCardHolder(cardDetails.cardHolderName);
+                        }
+                        if (cardDetails.cardTypeName) {
+                            newPI.setCreditCardType(cardDetails.cardTypeName);
+                        }
+                        if (cardDetails.maskedNumber) {
+                            newPI.setCreditCardNumber(cardDetails.maskedNumber);
+                        }
+                        if (cardDetails.expirationMonth) {
+                            newPI.setCreditCardExpirationMonth(parseInt(cardDetails.expirationMonth, 10));
+                        }
+                        if (cardDetails.expirationYear) {
+                            newPI.setCreditCardExpirationYear(parseInt(cardDetails.expirationYear, 10));
+                        }
+
+                        newPI.setCreditCardToken(serializedToken);
+                    });
+
+                    logger.info('SavePaymentDirect: Card saved successfully via fallback. InstrumentIdentifier: {0}',
+                        tokenInfo.instrumentIdentifier.id);
+                } else {
+                    logger.error('SavePaymentDirect: No token information in JWT response');
+                    secureResponseHelper.secureJsonResponse(res, {
+                        error: true,
+                        errorMessage: Resource.msg('error.card.save.failed', 'payment', 'Unable to save card. Please try again.')
+                    });
+                    return next();
+                }
+            } catch (e) {
+                logger.error('SavePaymentDirect: Error saving card - {0}', e.message || e);
+                secureResponseHelper.secureJsonResponse(res, {
+                    error: true,
+                    errorMessage: Resource.msg('error.technical', 'checkout', null)
+                });
+                return next();
+            }
+        }
+
+        // Update rate limiter
+        if (isAllowed.resetTimer) {
+            tokenRateLimiterHelper.resetTimer(customerObj);
+        }
+        if (isAllowed.increaseCounter) {
+            tokenRateLimiterHelper.increaseCounter(customerObj);
+        }
+
+        // Send account edited email
+        accountHelpers.sendAccountEditedEmail(customerObj.profile);
+
+        logger.info('SavePaymentDirect: Card saved successfully for customer {0}', customerNo);
+
+        secureResponseHelper.secureJsonResponse(res, {
+            success: true,
+            redirectUrl: URLUtils.url('PaymentInstruments-List').toString()
+        });
+
+        return next();
+    });
 }
 
 module.exports = server.exports();

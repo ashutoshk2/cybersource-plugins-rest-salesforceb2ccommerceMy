@@ -89,7 +89,7 @@
       var returnType = 'String';
 
       return this.apiClient.callApi(
-        '/up/v1/capture-contexts', 'POST',
+        '/uc/v1/sessions', 'POST',
         pathParams, queryParams, headerParams, formParams, postBody,
         authNames, contentTypes, accepts, returnType, callback
       );

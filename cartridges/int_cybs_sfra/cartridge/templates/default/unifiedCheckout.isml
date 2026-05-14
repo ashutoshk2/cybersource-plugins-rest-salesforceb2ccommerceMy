@@ -2,6 +2,9 @@
 <isset name="UnifiedCheckoutPaymentAcceptanceLocation" value="${require('*/cartridge/configuration/index').UnifiedCheckoutPaymentAcceptanceLocation}" scope="page" />
 <input type="hidden" id="unified-token-url" value="${URLUtils.https('SecureAcceptance-CreateUCToken')}" />
 <input type="hidden" id="minicart-token-url" value="${URLUtils.https('SecureAcceptance-CreateUCTokenMiniCart')}" />
+<input type="hidden" id="place-order-direct-url" value="${URLUtils.https('CheckoutServices-PlaceOrderDirect')}" />
+<input type="hidden" id="get-saved-cards-url" value="${URLUtils.https('SecureAcceptance-GetSavedCards')}" />
+<input type="hidden" id="create-uc-token-with-card-url" value="${URLUtils.https('SecureAcceptance-CreateUCTokenWithCard')}" />
  
 <div class="unified-checkout-container">
     <div class="row">
@@ -41,6 +44,8 @@
                     value="" name="dwfrm_billing_creditCardFields_ucresponse" />
                 <input type="hidden" class="form-control uc-payment-token" id="uc-payment-token"
                     value="" name="dwfrm_billing_creditCardFields_ucpaymenttoken" />
+                <input type="hidden" class="form-control uc-transaction-id" id="uc-transaction-id"
+                    value="" name="dwfrm_billing_creditCardFields_transactionId" />
                 <input type="hidden" class="form-control uc-payment-method" id="uc-payment-method"
                     value="" name="dwfrm_billing_creditCardFields_ucpaymentmethod" />
 
