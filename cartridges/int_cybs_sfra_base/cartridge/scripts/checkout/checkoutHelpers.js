@@ -298,6 +298,29 @@ function handlePayments(order, orderNumber) {
 
     return result;
 }
+/**
+ * Attempts to create an order from the current basket
+ * @param {dw.order.Basket} currentBasket - The current basket
+ * @returns {dw.order.Order} The order object created from the current basket
+ */
+function createOrder(currentBasket) {
+    var order;
+    var reservedOrderNo = session.privacy.ucOrderNo;
+    try {
+        order = Transaction.wrap(function () {
+            if (reservedOrderNo) {
+                return OrderMgr.createOrder(currentBasket, reservedOrderNo);
+            }
+            return OrderMgr.createOrder(currentBasket);
+        });
+        if (order && reservedOrderNo) {
+            session.privacy.ucOrderNo = null;
+        }
+    } catch (error) {
+        return null;
+    }
+    return order;
+}
 
 var overrides = {};
 if (configObject.cartridgeEnabled) {
@@ -305,7 +328,8 @@ if (configObject.cartridgeEnabled) {
         validateShippingForm: validateShippingForm,
         savePaymentInstrumentToWallet: savePaymentInstrumentToWallet,
         placeOrder: placeOrder,
-        handlePayments: handlePayments
+        handlePayments: handlePayments,
+        createOrder: createOrder
     };
 }
 

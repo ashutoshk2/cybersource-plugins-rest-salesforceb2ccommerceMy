@@ -145,7 +145,20 @@ function encryptAndTag(key, iv, plaintext, aad) {
 
   return { ciphertext, customTag };
 }
-
+function decryptAndVerify(key, iv, ciphertext, tag) {
+    var Encoding = require('dw/crypto/Encoding');
+    var Bytes = require('dw/util/Bytes');
+    
+    var keyBytes = (typeof key === 'string') ? Encoding.fromBase64(key) : key;
+    var ivBytes = (typeof iv === 'string') ? Encoding.fromBase64(iv) : iv;
+    var ciphertextBytes = (typeof ciphertext === 'string') ? Encoding.fromBase64(ciphertext) : ciphertext;
+    var tagBytes = (typeof tag === 'string') ? Encoding.fromBase64(tag) : tag;
+    
+    var combined = ciphertextBytes.concat(tagBytes);
+    var decrypted = cipher.decrypt(Encoding.toBase64(combined), keyBytes, 'AES/GCM/NOPADDING', ivBytes, 0);
+    return Encoding.fromBase64(decrypted).toString('UTF-8');
+}
 module.exports = {
-  encryptAndTag
+  encryptAndTag,
+  decryptAndVerify
 };

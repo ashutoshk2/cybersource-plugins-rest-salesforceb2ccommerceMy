@@ -723,6 +723,16 @@ SecureIntegrationConfiguration:{
             flags: {
                 mandatory: false
             }
+        },
+        EgressMLECertificateAlias: {
+            id: 'Cybersource_EgressCertificateAlias',
+            display_name: 'Alias of the Certificate (Egress/Webhooks)',
+            description: 'Alias of the Merchant P12 key imported in "Private Keys and Certificates" for response/webhook decryption.',
+            type: Types.string,
+            default: 'Cybersource_MLE_Egress_Private_Key',
+            flags: {
+                mandatory: false
+            }
         }
     }
 },   
