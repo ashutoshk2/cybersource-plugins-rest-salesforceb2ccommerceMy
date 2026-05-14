@@ -615,26 +615,29 @@ server.post('PlaceOrderDirect', server.middleware.https, function (req, res, nex
 
     // Detect payment type from completeMandate JWT
     var detectedPaymentMethod = ucPaymentHelper.detectPaymentMethod(jwtPayload);
+    var isDigitalWallet = detectedPaymentMethod === 'DW_GOOGLE_PAY' || detectedPaymentMethod === 'DW_APPLE_PAY';
 
     // Create or update payment instrument with correct payment method
     Transaction.wrap(function () {
         var existingInstruments = currentBasket.getPaymentInstruments();
-        var hasCorrectInstrument = false;
+        var paymentInstrument;
 
         for (var i = 0; i < existingInstruments.length; i++) {
             var existing = existingInstruments[i];
             if (existing.paymentMethod === detectedPaymentMethod) {
-                hasCorrectInstrument = true;
+                paymentInstrument = existing;
             } else {
                 currentBasket.removePaymentInstrument(existing);
             }
         }
 
-        if (!hasCorrectInstrument) {
-            var paymentInstrument = currentBasket.createPaymentInstrument(
+        if (!paymentInstrument) {
+            paymentInstrument = currentBasket.createPaymentInstrument(
                 detectedPaymentMethod,
                 currentBasket.totalGrossPrice
             );
+            logger.info('PlaceOrderDirect: Created payment instrument with method: {0}', detectedPaymentMethod);
+        }
 
             if (currentBasket.billingAddress && currentBasket.billingAddress.fullName) {
                 paymentInstrument.setCreditCardHolder(currentBasket.billingAddress.fullName);
@@ -644,8 +647,9 @@ server.post('PlaceOrderDirect', server.middleware.https, function (req, res, nex
                 paymentInstrument.custom.UCToken = transientToken;
             }
 
-            logger.info('PlaceOrderDirect: Created payment instrument with method: {0}', detectedPaymentMethod);
-        }
+        // Extract and set card details before validation (required for SFRA validatePayment cardType check)
+        var cardDetails = ucPaymentHelper.extractCardDetails(jwtPayload, transientToken, currentBasket.billingAddress);
+        ucPaymentHelper.updatePaymentInstrumentCardDetails(paymentInstrument, cardDetails, isDigitalWallet);
     });
 
     // Calculate basket totals
