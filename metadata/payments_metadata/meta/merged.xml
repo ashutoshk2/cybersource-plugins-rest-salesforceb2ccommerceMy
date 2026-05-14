@@ -521,6 +521,14 @@
                 <regex>^.{0,60}$</regex>
                 <default-value>Secure Payments powered by Visa Acceptance Solutions</default-value>
             </attribute-definition>
+            <attribute-definition attribute-id="VisaAcceptance_UnifiedCheckout_CheckoutVersion">
+                <display-name xml:lang="x-default">Unified Checkout Version</display-name>
+                <description xml:lang="x-default">Optional. If blank, latest v1 is used. If provided, must be in 1.x range (e.g., 1.0, 1.2.3).</description>
+                <type>string</type>
+                <mandatory-flag>false</mandatory-flag>
+                <externally-managed-flag>false</externally-managed-flag>
+                <regex>^(1(\.\d+){0,2})?$</regex>
+            </attribute-definition>
         </custom-attribute-definitions>
         <group-definitions>
             <attribute-group group-id="Cybersource_Core">
@@ -606,6 +614,7 @@
                 <attribute attribute-id="VisaAcceptance_UnifiedCheckout_EnableECheck"/>
                 <attribute attribute-id="Cybersource_CardTransactionType"/>
                 <attribute attribute-id="VisaAcceptance_UnifiedCheckout_Cart_Minicart"/>
+                <attribute attribute-id="VisaAcceptance_UnifiedCheckout_CheckoutVersion"/>
             </attribute-group>
         </group-definitions>
     </type-extension>
