@@ -48,6 +48,9 @@ function setPaymentProcessorDetails(result, paymentInstrument) {
  * @returns {*} *
  */
 function paSetup(billingDetails, referenceInformationCode, cardData, order, paymentInstrument) {
+    var webhookActivationHelper = require('~/cartridge/scripts/helpers/webhookActivationHelper');
+    webhookActivationHelper.activateWebhooks();
+
     var instance = new cybersourceRestApi.PayerAuthenticationApi(configObject);
 
     var clientReferenceInformation = new cybersourceRestApi.Ptsv2paymentsClientReferenceInformation();
@@ -174,6 +177,9 @@ function paSetup(billingDetails, referenceInformationCode, cardData, order, paym
  */
 function paEnroll(billingDetails, shippingAddress, referenceInformationCode, total, currency, referenceId, cardData, lineItems, order, isScaFlow, payerauthArgs, paymentInstrument) {
     var tokenHelper = require('~/cartridge/scripts/helpers/tokenHelper.js');
+
+    var webhookActivationHelper = require('~/cartridge/scripts/helpers/webhookActivationHelper');
+    webhookActivationHelper.activateWebhooks();
 
     var instance = new cybersourceRestApi.PaymentsApi(configObject);
 
@@ -422,6 +428,9 @@ function paEnroll(billingDetails, shippingAddress, referenceInformationCode, tot
  */
 function paConsumerAuthenticate(billingDetails, referenceInformationCode, total, currency, transactionId, cardData, lineItems, order, paymentInstrument) {
     var tokenHelper = require('~/cartridge/scripts/helpers/tokenHelper.js');
+
+    var webhookActivationHelper = require('~/cartridge/scripts/helpers/webhookActivationHelper');
+    webhookActivationHelper.activateWebhooks();
 
     var instance = new cybersourceRestApi.PaymentsApi(configObject);
 

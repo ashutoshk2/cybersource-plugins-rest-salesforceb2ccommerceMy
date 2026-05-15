@@ -30,7 +30,7 @@ var WEBHOOK_CONFIGS = {
             }
         ]
     },
-    alternativePaymentMethods: {
+    unifiedCheckout: {
         name: 'UC Webhook Events',
         description: 'UC Events Simulation',
         notificationEndpoint: 'WebhookNotification-paymentNotification',
@@ -45,7 +45,14 @@ var WEBHOOK_CONFIGS = {
 
 function retrieveWebhooks(productId, callback) {
     var queryParams = { organizationId: merchantId, productId: productId };
-    apiClient.instance.callApi('/notification-subscriptions/v1/webhooks', 'GET', {}, queryParams, {}, {}, null, [], ['application/json;charset=utf-8'], ['application/json;charset=utf-8'], {}, callback);
+    apiClient.instance.callApi('/notification-subscriptions/v2/webhooks', 'GET', {}, queryParams, {}, {}, null, [], ['application/json;charset=utf-8'], ['application/json;charset=utf-8'], {}, function(data, error, response) {
+        if (error && response && response.statusCode === 404) {
+            // A 404 here simply means "no subscriptions found", which is not an application error.
+            if (callback) callback([], null, response);
+        } else {
+            if (callback) callback(data, error, response);
+        }
+    });
 }
 
 function createSecurityKey(callback) {
@@ -56,8 +63,26 @@ function createSecurityKey(callback) {
     apiClient.instance.callApi('/kms/egress/v2/keys-sym', 'POST', {}, {}, {}, {}, postBody, [], ['application/json;charset=utf-8'], ['application/hal+json;charset=utf-8'], {}, callback);
 }
 
+function uploadAsymmetricKey(pubKey, callback) {
+    if (!pubKey) {
+        if (callback) callback({ status: 'SKIPPED' }, null);
+        return;
+    }
+    var cleanPubKey = pubKey.replace(/\r\n/g, '\n').trim();
+    var postBody = {
+        clientRequestAction: 'CREATE',
+        keyInformation: { 
+            provider: 'nrtd', 
+            tenant: merchantId, 
+            keyType: 'RSA', 
+            organizationId: merchantId,
+            pub: cleanPubKey
+        }
+    };
+    apiClient.instance.callApi('/kms/egress/v2/keys-asym', 'POST', {}, {}, {}, {}, postBody, [], ['application/json;charset=utf-8'], ['application/hal+json;charset=utf-8'], {}, callback);
+}
+
 function createSubscription(config, webhookUrl, callback) {
-    var product = config.products[0];
     var postBody = {
         name: config.name,
         description: config.description || ('CyberSource Webhook for ' + config.name),
@@ -65,27 +90,31 @@ function createSubscription(config, webhookUrl, callback) {
         webhookUrl: webhookUrl,
         healthCheckUrl: webhookUrl,
         notificationScope: 'SELF',
-        productId: product.productId,
-        eventTypes: product.eventTypes,
+        products: config.products,
         retryPolicy: {
             algorithm: 'ARITHMETIC',
             firstRetry: 1,
             interval: 1,
             numberOfRetries: 3,
-            deactivateFlag: 'false',
+            deactivateFlag: 'true',
             repeatSequenceCount: 0,
             repeatSequenceWaitTime: 0
         },
         securityPolicy: {
-            securityType: 'KEY',
+            securityType: 'key',
             proxyType: 'external'
         }
     };
-    apiClient.instance.callApi('/notification-subscriptions/v1/webhooks', 'POST', {}, {}, {}, {}, postBody, [], ['application/json;charset=utf-8'], ['application/json;charset=utf-8'], {}, callback);
+    apiClient.instance.callApi('/notification-subscriptions/v2/webhooks', 'POST', {}, {}, {}, {}, postBody, [], ['application/json;charset=utf-8'], ['application/json;charset=utf-8'], {}, callback);
+}
+
+function activateSubscription(webhookId, callback) {
+    var postBody = { status: 'ACTIVE' };
+    apiClient.instance.callApi('/notification-subscriptions/v2/webhooks/' + webhookId + '/status', 'PUT', {}, {}, {}, {}, postBody, [], ['application/json;charset=utf-8'], ['application/json;charset=utf-8'], {}, callback);
 }
 
 function deleteSubscription(webhookId, callback) {
-    apiClient.instance.callApi('/notification-subscriptions/v1/webhooks/{webhookId}', 'DELETE', { webhookId: webhookId }, {}, {}, {}, null, [], ['application/json;charset=utf-8'], ['application/json;charset=utf-8'], {}, callback);
+    apiClient.instance.callApi('/notification-subscriptions/v2/webhooks/{webhookId}', 'DELETE', { webhookId: webhookId }, {}, {}, {}, null, [], ['application/json;charset=utf-8'], ['application/json;charset=utf-8'], {}, callback);
 }
 
 function subscribeProduct(configId) {
@@ -95,7 +124,10 @@ function subscribeProduct(configId) {
     var webhookUrl = customBaseUrl ? (customBaseUrl.replace(/\/$/, '') + '/' + config.notificationEndpoint) : URLUtils.https(new URLAction(config.notificationEndpoint, site.ID)).toString();
 
     var existingObj = CustomObjectMgr.getCustomObject(CUSTOM_OBJECT_TYPE, configId);
-    if (existingObj && existingObj.custom.WebhookId && existingObj.custom.WebhookUrl === webhookUrl) return { success: true, alreadyExists: true };
+    if (existingObj && existingObj.custom.WebhookId && existingObj.custom.WebhookUrl === webhookUrl) {
+        activateSubscription(existingObj.custom.WebhookId, function() {});
+        return { success: true, alreadyExists: true };
+    }
     if (existingObj && existingObj.custom.WebhookId) deleteSubscription(existingObj.custom.WebhookId, function () {});
 
     var securityKey = '';
@@ -103,8 +135,59 @@ function subscribeProduct(configId) {
     if (!securityKey) return { success: false, error: 'KEY_ERROR' };
 
     var webhookId = '';
-    createSubscription(config, webhookUrl, function (data, error) { if (!error && data.webhookId) webhookId = data.webhookId; });
+    var specificError = null;
+    
+    apiClient.instance.callApi('/notification-subscriptions/v2/products/' + merchantId, 'GET', {}, {}, {}, {}, null, [], ['application/json;charset=utf-8'], ['application/json;charset=utf-8'], {}, function(prodData, prodError) {
+        var productList = Array.isArray(prodData) ? prodData : (prodData && prodData.products ? prodData.products : null);
+        if (!prodError && productList) {
+            var found = false;
+            
+            if (configId === 'fraudManagement') {
+                for (var i = 0; i < productList.length; i++) {
+                    var availableProd = productList[i].productId;
+                    if (availableProd === 'decisionManager' || availableProd === 'fraudManagementEssentials') {
+                        // find matching config
+                        for (var j = 0; j < config.products.length; j++) {
+                            if (config.products[j].productId === availableProd) {
+                                // temporarily swap products array to create specific subscription
+                                var originalProducts = config.products;
+                                config.products = [config.products[j]];
+                                createSubscription(config, webhookUrl, function (data, error) { if (!error && data.webhookId) webhookId = data.webhookId; });
+                                config.products = originalProducts;
+                                found = true;
+                                break;
+                            }
+                        }
+                    }
+                    if (found) break;
+                }
+                if (!found) specificError = 'NO_FRAUD_PRODUCT';
+            } else {
+                // For UC and Token Management, verify they exist in the enabled products list
+                for (var k = 0; k < productList.length; k++) {
+                    if (productList[k].productId === config.products[0].productId) {
+                        found = true;
+                        createSubscription(config, webhookUrl, function (data, error) { if (!error && data.webhookId) webhookId = data.webhookId; });
+                        break;
+                    }
+                }
+                if (!found) {
+                    Logger.error('Attempted to subscribe to ' + config.products[0].productId + ' but it is not enabled for this merchant in CyberSource EBC.');
+                    specificError = 'PRODUCT_NOT_ENABLED';
+                }
+            }
+        } else {
+            Logger.error('Failed to retrieve available products list from CyberSource.');
+            specificError = 'API_ERROR';
+        }
+    });
+
+    if (specificError) return { success: false, error: specificError };
     if (!webhookId) return { success: false, error: 'API_ERROR' };
+
+    var activationSuccess = false;
+    activateSubscription(webhookId, function(data, error) { if (!error) activationSuccess = true; });
+    if (!activationSuccess) return { success: false, error: 'ACTIVATION_ERROR' };
 
     Transaction.wrap(function () {
         var obj = CustomObjectMgr.getCustomObject(CUSTOM_OBJECT_TYPE, configId) || CustomObjectMgr.createCustomObject(CUSTOM_OBJECT_TYPE, configId);
@@ -127,7 +210,105 @@ function unsubscribeProduct(configId) {
 exports.retrieveWebhooks = retrieveWebhooks;
 exports.subscribeFraudManagement = function() { return subscribeProduct('fraudManagement'); };
 exports.unsubscribeFraudManagement = function() { return unsubscribeProduct('fraudManagement'); };
-exports.subscribeAPM = function() { return subscribeProduct('alternativePaymentMethods'); };
-exports.unsubscribeAPM = function() { return unsubscribeProduct('alternativePaymentMethods'); };
+exports.subscribeUC = function() { return subscribeProduct('unifiedCheckout'); };
+exports.unsubscribeUC = function() { return unsubscribeProduct('unifiedCheckout'); };
 exports.subscribeNetworkTokens = function() { return subscribeProduct('tokenManagement'); };
 exports.unsubscribeNetworkTokens = function() { return unsubscribeProduct('tokenManagement'); };
+
+/**
+ * Consolidates all data needed for the Webhook Manager view
+ */
+function getViewData() {
+    var site = Site.getCurrent();
+    
+    var method = site.getCustomPreferenceValue('VisaAcceptance_Secure_Integration_Method');
+    var methodValue = (method && method.value) ? method.value : (method || '');
+    var dmEnabled = site.getCustomPreferenceValue('Cybersource_DecisionManager') || false;
+    var ntEnabled = site.getCustomPreferenceValue('Cybersource_NetworkToken') || false;
+    var webhookBaseUrl = site.getCustomPreferenceValue('Cybersource_Webhook_Base_URL') || '';
+    var egressMleAlias = site.getCustomPreferenceValue('Cybersource_EgressCertificateAlias') || 'Cybersource_MLE_Egress_Private_Key';
+    
+    // Calculate what the URL looks like by default for this site
+    var testAction = new URLAction('WebhookNotification-dmNotification', site.ID);
+    var fullUrl = URLUtils.https(testAction).toString();
+    var standardBaseUrl = fullUrl.substring(0, fullUrl.indexOf('WebhookNotification-dmNotification')).replace(/\/$/, '');
+
+    var data = {
+        config: {
+            dmEnabled: dmEnabled,
+            ntEnabled: ntEnabled,
+            secureIntegrationMethod: methodValue,
+            webhookBaseUrl: webhookBaseUrl,
+            egressMleAlias: egressMleAlias,
+            standardBaseUrl: standardBaseUrl,
+            activeBaseUrl: webhookBaseUrl || standardBaseUrl
+        },
+        subscriptions: {},
+        external: []
+    };
+
+    var products = ['fraudManagement', 'unifiedCheckout', 'tokenManagement'];
+    products.forEach(function (productId) {
+        try {
+            var obj = CustomObjectMgr.getCustomObject(CUSTOM_OBJECT_TYPE, productId);
+            data.subscriptions[productId] = obj ? { webhookId: obj.custom.WebhookId, status: obj.custom.Status } : null;
+        } catch (e) { data.subscriptions[productId] = null; }
+    });
+
+    try {
+        products.forEach(function (productId) {
+            retrieveWebhooks(productId === 'fraudManagement' ? 'decisionManager' : productId, function (apiData, error) {
+                if (!error && apiData) {
+                    apiData.forEach(function (webhook) {
+                        var isInternal = false;
+                        Object.keys(data.subscriptions).forEach(function (key) {
+                            if (data.subscriptions[key] && data.subscriptions[key].webhookId === webhook.webhookId) isInternal = true;
+                        });
+                        if (!isInternal) data.external.push({ productId: productId, webhookId: webhook.webhookId, url: webhook.webhookUrl });
+                    });
+                }
+            });
+        });
+    } catch (e) {}
+    return data;
+}
+
+/**
+ * Explicit Sync: Matches webhooks to current Site Preferences.
+ */
+function syncWithPreferences() {
+    var data = getViewData();
+    var results = {};
+    if (data.config.dmEnabled && !data.subscriptions.fraudManagement) {
+        results.dm = exports.subscribeFraudManagement();
+    } else if (!data.config.dmEnabled && data.subscriptions.fraudManagement) {
+        results.dm = exports.unsubscribeFraudManagement();
+    }
+    if (data.config.secureIntegrationMethod === 'Unified_Checkout' && !data.subscriptions.unifiedCheckout) {
+        results.uc = exports.subscribeUC();
+    } else if (data.config.secureIntegrationMethod !== 'Unified_Checkout' && data.subscriptions.unifiedCheckout) {
+        results.uc = exports.unsubscribeUC();
+    }
+    if (data.config.ntEnabled && !data.subscriptions.tokenManagement) {
+        results.nt = exports.subscribeNetworkTokens();
+    } else if (!data.config.ntEnabled && data.subscriptions.tokenManagement) {
+        results.nt = exports.unsubscribeNetworkTokens();
+    }
+    return results;
+}
+
+/**
+ * Updates advanced preferences and webhooks.
+ */
+function updateAdvanced(baseUrl, egressMleAlias) {
+    var site = Site.getCurrent();
+    Transaction.wrap(function () {
+        try { site.setCustomPreferenceValue('Cybersource_Webhook_Base_URL', baseUrl || null); } catch(e) {}
+        try { site.setCustomPreferenceValue('Cybersource_EgressCertificateAlias', egressMleAlias || 'Cybersource_MLE_Egress_Private_Key'); } catch(e) {}
+    });
+    return syncWithPreferences();
+}
+
+exports.getViewData = getViewData;
+exports.syncWithPreferences = syncWithPreferences;
+exports.updateAdvanced = updateAdvanced;

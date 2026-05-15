@@ -2,9 +2,14 @@
 <div style="padding:20px">
     <h1>CyberSource Webhook Manager</h1>
     <isif condition="${pdict.success}"><div style="background:#f9f9f9;padding:10px;margin-bottom:20px;border:1px solid #ccc">Webhooks synchronized successfully.</div></isif>
+    <isif condition="${pdict.error === 'no_fraud_product'}">
+        <div style="background:#fce4ec;color:#c62828;padding:15px;margin-bottom:20px;border:2px solid #c62828;font-weight:bold">
+            ERROR: Fraud screening was enabled but neither Decision Manager nor Fraud Management Essentials is provisioned for this merchant. The feature has been automatically disabled. Please contact Visa Acceptance support to have a fraud product provisioned.
+        </div>
+    </isif>
     
     <isset name="dmMismatch" value="${pdict.config.dmEnabled && !pdict.subscriptions.fraudManagement}" scope="page" />
-    <isset name="ucMismatch" value="${pdict.config.secureIntegrationMethod === 'Unified_Checkout' && !pdict.subscriptions.alternativePaymentMethods}" scope="page" />
+    <isset name="ucMismatch" value="${pdict.config.secureIntegrationMethod === 'Unified_Checkout' && !pdict.subscriptions.unifiedCheckout}" scope="page" />
     <isset name="ntMismatch" value="${pdict.config.ntEnabled && !pdict.subscriptions.tokenManagement}" scope="page" />
 
     <isif condition="${dmMismatch || ucMismatch || ntMismatch}">
@@ -39,8 +44,8 @@
             <tr>
                 <td class="infobox_item">Unified Checkout (APM)</td>
                 <td class="infobox_item">${pdict.config.secureIntegrationMethod === 'Unified_Checkout' ? 'YES' : 'NO'}</td>
-                <td class="infobox_item">${pdict.subscriptions.alternativePaymentMethods ? 'ACTIVE' : 'NOT SUBSCRIBED'}</td>
-                <td class="infobox_item">${pdict.subscriptions.alternativePaymentMethods ? pdict.subscriptions.alternativePaymentMethods.webhookId : '-'}</td>
+                <td class="infobox_item">${pdict.subscriptions.unifiedCheckout ? 'ACTIVE' : 'NOT SUBSCRIBED'}</td>
+                <td class="infobox_item">${pdict.subscriptions.unifiedCheckout ? pdict.subscriptions.unifiedCheckout.webhookId : '-'}</td>
             </tr>
             <tr>
                 <td class="infobox_item">Network Token Management</td>
@@ -73,6 +78,13 @@
                     <td class="infobox_item">
                         <input type="text" name="egressMleAlias" value="${pdict.config.egressMleAlias}" style="width:100%" placeholder="Cybersource_MLE_Egress_Private_Key"/>
                         <div style="font-size:11px;color:#666;margin-top:5px">This must match the alias of your .p12 key in <b>Private Keys and Certificates</b>.</div>
+                    </td>
+                </tr>
+                <tr>
+                    <td class="infobox_item"><b>Egress Public Key (from certChain.pem)</b></td>
+                    <td class="infobox_item">
+                        <textarea name="egressPublicKey" style="width:100%; height: 100px" placeholder="-----BEGIN PUBLIC KEY-----&#10;...&#10;-----END PUBLIC KEY-----">${pdict.config.egressPublicKey}</textarea>
+                        <div style="font-size:11px;color:#666;margin-top:5px">Copy the "pub" key content from the certChain.pem output file created in EBC. This is required for Asymmetric Message-Level Encryption (MLE).</div>
                     </td>
                 </tr>
             </tbody>

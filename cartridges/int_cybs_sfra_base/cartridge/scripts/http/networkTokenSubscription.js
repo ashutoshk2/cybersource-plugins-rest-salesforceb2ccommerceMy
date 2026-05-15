@@ -26,7 +26,7 @@ function retrieveAllCreatedWebhooks(callback) {
     var accepts = ['application/json;charset=utf-8'];
     var returnType = {};
     apiClient.instance.callApi(
-        '/notification-subscriptions/v1/webhooks', 'GET',
+        '/notification-subscriptions/v2/webhooks', 'GET',
         pathParams, queryParams, headerParams, formParams, postBody,
         authNames, contentTypes, accepts, returnType, callback
     );
@@ -69,8 +69,7 @@ function createWebhookSubscription(callback) {
         name: 'Network Tokens Webhook',
         description: 'Webhook for Network Token Subscription',
         organizationId: merchantId,
-        productId: 'tokenManagement',
-        eventTypes: ['tms.networktoken.updated'],
+        products: [{ productId: 'tokenManagement', eventTypes: ['tms.networktoken.updated'] }],
         webhookUrl: URLUtils.https('WebhookNotification-tokenUpdate').toString(),
         healthCheckUrl: URLUtils.https('WebhookNotification-tokenUpdate').toString(),
         notificationScope: 'SELF',
@@ -79,12 +78,12 @@ function createWebhookSubscription(callback) {
             firstRetry: 1,
             interval: 1,
             numberOfRetries: 3,
-            deactivateFlag: 'false',
+            deactivateFlag: 'true',
             repeatSequenceCount: 0,
             repeatSequenceWaitTime: 0
         },
         securityPolicy: {
-            securityType: 'KEY',
+            securityType: 'key',
             proxyType: 'external'
         }
     };
@@ -103,7 +102,30 @@ function createWebhookSubscription(callback) {
     var accepts = ['application/json;charset=utf-8'];
     var returnType = {};
     apiClient.instance.callApi(
-        '/notification-subscriptions/v1/webhooks', 'POST',
+        '/notification-subscriptions/v2/webhooks', 'POST',
+        pathParams, queryParams, headerParams, formParams, postBody,
+        authNames, contentTypes, accepts, returnType, callback
+    );
+}
+
+function activateWebhookSubscription(webhookId, callback) {
+    var postBody = { status: 'ACTIVE' };
+
+    var pathParams = {
+    };
+    var queryParams = {
+    };
+    var headerParams = {
+    };
+    var formParams = {
+    };
+
+    var authNames = [];
+    var contentTypes = ['application/json;charset=utf-8'];
+    var accepts = ['application/json;charset=utf-8'];
+    var returnType = {};
+    apiClient.instance.callApi(
+        '/notification-subscriptions/v2/webhooks/' + webhookId + '/status', 'PUT',
         pathParams, queryParams, headerParams, formParams, postBody,
         authNames, contentTypes, accepts, returnType, callback
     );
@@ -124,7 +146,7 @@ function deleteSusbscriprion(id, callback){
     var accepts = ['application/json;charset=utf-8'];
     var returnType = {};
     apiClient.instance.callApi(
-        '/notification-subscriptions/v1/webhooks/{webhookId}' , 'DELETE',
+        '/notification-subscriptions/v2/webhooks/{webhookId}' , 'DELETE',
         pathParams, queryParams, headerParams, formParams, postBody,
         authNames, contentTypes, accepts, returnType, callback
     );
@@ -162,6 +184,13 @@ function createNetworkTokenSubscription() {
                         throw new Error(new errors.API_CLIENT_ERROR(JSON.stringify(data)));
                     }
                 });
+                if (webhookId) {
+                    activateWebhookSubscription(webhookId, function(data, error, response) {
+                        if (error) {
+                            Logger.error("Error activating network token webhook: " + JSON.stringify(data));
+                        }
+                    });
+                }
                 Transaction.wrap(function () {
                     var obj = CustomObjectMgr.getCustomObject("Network Tokens Webhook", merchantId);
                     if (obj == null) {
@@ -181,5 +210,6 @@ module.exports = {
     retrieveAllCreatedWebhooks: retrieveAllCreatedWebhooks,
     createWebhookSecurityKey: createWebhookSecurityKey,
     createWebhookSubscription: createWebhookSubscription,
+    activateWebhookSubscription: activateWebhookSubscription,
     createNetworkTokenSubscription: createNetworkTokenSubscription
 };

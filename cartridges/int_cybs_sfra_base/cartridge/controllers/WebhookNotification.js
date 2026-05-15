@@ -250,8 +250,7 @@ function getDecryptedPayload(body) {
     return payload;
 }
 
-// DM Notifications
-server.use('dmNotification', function (req, res, next) {
+function handleDmNotification(req, res, next) {
     if (req.httpMethod === 'GET') {
         res.json({ success: true });
         return next();
@@ -264,78 +263,43 @@ server.use('dmNotification', function (req, res, next) {
 
     try {
         var payload = getDecryptedPayload(req.body);
-        var details = (payload.payload && payload.payload.transactionResult) ? payload.payload.transactionResult.details : (payload.payload ? payload.payload[0].data : payload);
-        var orderId = details.clientReferenceInformation.code;
-        if (orderId) {
-            var order = OrderMgr.getOrder(orderId);
-            if (!order) {
-                // Return 503 to trigger retry as PlaceOrderDirect might still be processing
-                res.setStatusCode(503);
-                res.json({ success: false, message: 'Order not found, retrying...' });
-                return next();
-            }
+        if (!payload) throw new Error('Decrypted payload is empty');
 
-            Transaction.wrap(function () {
-                var eventType = payload.eventType || (payload.payload && payload.payload[0] ? payload.payload[0].eventType : null);
-                if (eventType === 'risk.casemanagement.decision.accept') { 
-                    order.setConfirmationStatus(order.CONFIRMATION_STATUS_CONFIRMED); 
-                } else if (eventType && eventType.indexOf('reject') > -1) { 
-                    order.setConfirmationStatus(order.CONFIRMATION_STATUS_NOTCONFIRMED); 
-                }
-            });
+        var details = (payload.payload && payload.payload.transactionResult) ? payload.payload.transactionResult.details : 
+                      (payload.payload && payload.payload.length ? payload.payload[0].data : payload);
+                      
+        var orderId = details && details.clientReferenceInformation ? details.clientReferenceInformation.code : null;
+        if (!orderId) throw new Error('Missing Order ID');
+
+        var order = OrderMgr.getOrder(orderId);
+        if (!order) {
+            res.setStatusCode(503);
+            res.json({ success: false, message: 'Order not found, retrying...' });
+            return next();
         }
+
+        Transaction.wrap(function () {
+            var eventType = payload.eventType || (payload.payload && payload.payload[0] ? payload.payload[0].eventType : null);
+            if (eventType === 'risk.casemanagement.decision.accept') { 
+                order.setConfirmationStatus(order.CONFIRMATION_STATUS_CONFIRMED); 
+            } else if (eventType && eventType.indexOf('reject') > -1) { 
+                order.setConfirmationStatus(order.CONFIRMATION_STATUS_NOTCONFIRMED); 
+            }
+        });
+        
         res.setStatusCode(200);
         res.json({ success: true });
     } catch (e) {
         Logger.error('dmNotification error: ' + e.message);
-        res.setStatusCode(500);
+        res.setStatusCode(200);
         res.json({ success: false });
     }
     return next();
-});
+}
+
 // DM Notifications
-server.use('novusDmNotification', function (req, res, next) {
-    if (req.httpMethod === 'GET') {
-        res.json({ success: true });
-        return next();
-    }
-    if (!validateSignature(req, 'fraudManagement')) {
-        res.setStatusCode(401);
-        res.json({ success: false });
-        return next();
-    }
-
-    try {
-        var payload = getDecryptedPayload(req.body);
-        var details = (payload.payload && payload.payload.transactionResult) ? payload.payload.transactionResult.details : (payload.payload ? payload.payload[0].data : payload);
-        var orderId = details.clientReferenceInformation.code;
-        if (orderId) {
-            var order = OrderMgr.getOrder(orderId);
-            if (!order) {
-                // Return 503 to trigger retry as PlaceOrderDirect might still be processing
-                res.setStatusCode(503);
-                res.json({ success: false, message: 'Order not found, retrying...' });
-                return next();
-            }
-
-            Transaction.wrap(function () {
-                var eventType = payload.eventType || (payload.payload && payload.payload[0] ? payload.payload[0].eventType : null);
-                if (eventType === 'risk.casemanagement.decision.accept') { 
-                    order.setConfirmationStatus(order.CONFIRMATION_STATUS_CONFIRMED); 
-                } else if (eventType && eventType.indexOf('reject') > -1) { 
-                    order.setConfirmationStatus(order.CONFIRMATION_STATUS_NOTCONFIRMED); 
-                }
-            });
-        }
-        res.setStatusCode(200);
-        res.json({ success: true });
-    } catch (e) {
-        Logger.error('dmNotification error: ' + e.message);
-        res.setStatusCode(500);
-        res.json({ success: false });
-    }
-    return next();
-});
+server.use('dmNotification', handleDmNotification);
+server.use('novusDmNotification', handleDmNotification);
 
 // APM Notifications
 server.use('paymentNotification', function (req, res, next) {
@@ -344,7 +308,7 @@ server.use('paymentNotification', function (req, res, next) {
         return next();
     }
 
-    if (!validateSignature(req, 'alternativePaymentMethods')) {
+    if (!validateSignature(req, 'unifiedCheckout')) {
         Logger.error('paymentNotification: Signature validation failed');
         res.setStatusCode(401);
         res.json({ success: false });
@@ -353,89 +317,53 @@ server.use('paymentNotification', function (req, res, next) {
 
     try {
         var payload = getDecryptedPayload(req.body);
-        
-        if (!payload || !payload.payload) {
-            Logger.error('paymentNotification: Invalid payload');
-            res.setStatusCode(200);
-            res.json({ success: false });
-            return next();
-        }
+        if (!payload) throw new Error('Decrypted payload is empty');
 
-        var details = (payload.payload && payload.payload.transactionResult) ? payload.payload.transactionResult.details : (payload.payload ? payload.payload[0].data : payload);
+        var details = (payload.payload && payload.payload.transactionResult) ? payload.payload.transactionResult.details : 
+                      (payload.payload && payload.payload.length ? payload.payload[0].data : payload);
+                      
         var orderId = details && details.clientReferenceInformation ? details.clientReferenceInformation.code : null;
+        if (!orderId) throw new Error('Missing Order ID');
+
+        var order = OrderMgr.getOrder(orderId);
         
-        if (orderId) {
-            var order = OrderMgr.getOrder(orderId);
-            
-            // ENRICHMENT QUEUE STRATEGY: If order not found, stage the payload for PlaceOrderDirect to process
-            if (!order) {
-                Logger.info('paymentNotification: Order ' + orderId + ' not found. Staging payload for later enrichment.');
-                try {
-                    Transaction.wrap(function () {
-                        var stagingObj = CustomObjectMgr.getCustomObject('CybersourceWebhookStaging', orderId) 
-                            || CustomObjectMgr.createCustomObject('CybersourceWebhookStaging', orderId);
-                        stagingObj.custom.payload = JSON.stringify(payload);
-                    });
-                } catch (e) {
-                    Logger.error('paymentNotification: Failed to stage payload: ' + e.message);
-                }
-                res.setStatusCode(200); 
-                res.json({ success: true, message: 'Payload staged.' });
-                return next();
-            }
-            
-            // Check for duplicate processing
-            if (order.paymentStatus.value === order.PAYMENT_STATUS_PAID && order.custom.Cybersource_ReconciliationID) {
-                res.setStatusCode(200);
-                res.json({ success: true });
-                return next();
-            }
+        if (!order) {
+            var retryCount = parseInt(payload.retryNumber || (req.httpHeaders.containsKey('v-c-retry-count') ? req.httpHeaders.get('v-c-retry-count') : 0), 10) || 0;
 
             Transaction.wrap(function () {
-                // 1. Status Sync
-                if (details.status === 'COMPLETED' || details.status === 'SETTLED' || details.status === 'AUTHORIZED') {
-                    order.setPaymentStatus(order.PAYMENT_STATUS_PAID);
-                } else if (details.status === 'AUTHORIZED_PENDING_REVIEW') {
-                    order.setConfirmationStatus(order.CONFIRMATION_STATUS_NOTCONFIRMED);
+                var stagingObj = CustomObjectMgr.getCustomObject('CybersourceWebhookStaging', orderId) || CustomObjectMgr.createCustomObject('CybersourceWebhookStaging', orderId);
+                
+                if (retryCount >= 2) {
+                    Logger.error('paymentNotification: CRITICAL - FINAL RETRY FAILED. Failed to create order ' + orderId + ' after all webhook retries. This is definitively an orphaned authorization.');
+                } else if (stagingObj.custom.payload) {
+                    Logger.warn('paymentNotification: Order ' + orderId + ' STILL not found on webhook retry (' + retryCount + '/3). Overwriting staged payload.');
+                } else {
+                    Logger.info('paymentNotification: Order ' + orderId + ' not found on initial delivery. Staging payload.');
                 }
-
-                // 2. Uniform Transaction Mapping (for SOM compatibility)
-                var paymentInstruments = order.getPaymentInstruments();
-                if (paymentInstruments.length > 0) {
-                    var paymentInstrument = paymentInstruments[0];
-                    var transaction = paymentInstrument.paymentTransaction;
-                    var ucPaymentHelper = require('*/cartridge/scripts/helpers/ucPaymentHelper');
-                    
-                    transaction.setTransactionID((payload.payload && payload.payload.transactionResult) ? payload.payload.transactionResult.id : details.id);
-                    var processorInfo = details.processorInformation;
-                    if (processorInfo) {
-                        ucPaymentHelper.setTransactionCustomAttribute(transaction, 'approvalCode', processorInfo.approvalCode);
-                        ucPaymentHelper.setTransactionCustomAttribute(transaction, 'networkTransactionId', processorInfo.networkTransactionId);
-                    }
-                    ucPaymentHelper.setTransactionCustomAttribute(transaction, 'reconciliationId', details.reconciliationId || details.id);
-                    
-                    if (details.riskInformation && details.riskInformation.score) {
-                        ucPaymentHelper.setTransactionCustomAttribute(transaction, 'Cybersource_FraudScore', details.riskInformation.score.result);
-                    }
-                    if (details.paymentInformation) {
-                        ucPaymentHelper.setTransactionCustomAttribute(transaction, 'Cybersource_CardBin', details.paymentInformation.bin);
-                        ucPaymentHelper.setTransactionCustomAttribute(transaction, 'Cybersource_CardIssuer', details.paymentInformation.issuer);
-                    }
-                    
-                    var cardDetails = ucPaymentHelper.extractCardDetails((payload.payload && payload.payload.transactionResult) ? payload.payload.transactionResult : details, null, order.billingAddress);
-                    var paymentDetailsStr = ucPaymentHelper.buildPaymentDetailsString(cardDetails);
-                    if (paymentDetailsStr) {
-                        ucPaymentHelper.setTransactionCustomAttribute(transaction, 'paymentDetails', paymentDetailsStr);
-                    }
-                }
+                stagingObj.custom.payload = JSON.stringify(payload);
             });
-
-            // Cleanup staging if it existed
-            try {
-                var stagingObj = CustomObjectMgr.getCustomObject('CybersourceWebhookStaging', orderId);
-                if (stagingObj) Transaction.wrap(function() { CustomObjectMgr.remove(stagingObj); });
-            } catch (e) {}
+            
+            if (retryCount >= 2) {
+                res.setStatusCode(200);
+                res.json({ success: true, message: 'Final retry acknowledged. Orphaned authorization staged.' });
+            } else {
+                res.setStatusCode(503); 
+                res.json({ success: false, message: 'Order not yet created. Payload staged. Requesting retry as safety net.' });
+            }
+            return next();
         }
+        
+        Transaction.wrap(function () {
+            if (['COMPLETED', 'SETTLED', 'AUTHORIZED'].indexOf(details.status) > -1) {
+                order.setConfirmationStatus(order.CONFIRMATION_STATUS_CONFIRMED);
+            } else if (details.status === 'AUTHORIZED_PENDING_REVIEW') {
+                order.setConfirmationStatus(order.CONFIRMATION_STATUS_NOTCONFIRMED);
+            }
+
+            var stagingObj = CustomObjectMgr.getCustomObject('CybersourceWebhookStaging', orderId);
+            if (stagingObj) CustomObjectMgr.remove(stagingObj);
+        });
+
         res.setStatusCode(200);
         res.json({ success: true });
     } catch (e) {

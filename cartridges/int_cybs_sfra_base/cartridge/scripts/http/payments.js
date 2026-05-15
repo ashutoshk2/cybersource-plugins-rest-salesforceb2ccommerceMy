@@ -27,6 +27,9 @@ function httpAuthorizeWithToken(cardData, customerEmail, referenceInformationCod
     var errors = require('~/cartridge/scripts/util/errors.js');
     var mapper = require('~/cartridge/scripts/util/mapper.js');
 
+    var webhookActivationHelper = require('~/cartridge/scripts/helpers/webhookActivationHelper');
+    webhookActivationHelper.activateWebhooks();
+
     var instance = new cybersourceRestApi.PaymentsApi(configObject);
 
     var clientReferenceInformation = new cybersourceRestApi.Ptsv2paymentsClientReferenceInformation();
@@ -218,6 +221,9 @@ function httpZeroDollarAuth(
     var cybersourceRestApi = require('../../apiClient/index');
 
     var errors = require('~/cartridge/scripts/util/errors');
+    var webhookActivationHelper = require('~/cartridge/scripts/helpers/webhookActivationHelper');
+    webhookActivationHelper.activateWebhooks();
+
     var instance = new cybersourceRestApi.PaymentsApi(configObject);
 
     var clientReferenceInformation = new cybersourceRestApi.Ptsv2paymentsClientReferenceInformation();
@@ -334,6 +340,9 @@ function httpZeroDollarAuthWithTransientToken(
     var configObject = require('../../configuration/index');
     var cybersourceRestApi = require('../../apiClient/index');
     var errors = require('~/cartridge/scripts/util/errors');
+    var webhookActivationHelper = require('~/cartridge/scripts/helpers/webhookActivationHelper');
+    webhookActivationHelper.activateWebhooks();
+
     var instance = new cybersourceRestApi.PaymentsApi(configObject);
 
     var clientReferenceInformation = new cybersourceRestApi.Ptsv2paymentsClientReferenceInformation();
@@ -440,6 +449,9 @@ function httpAuthorizeWithTransientToken(transientToken, customerEmail, referenc
     var cybersourceRestApi = require('../../apiClient/index');
     var Logger = require('dw/system/Logger');
     var logger = Logger.getLogger('Cybersource', isEcheck ? 'EcheckAuthorization' : 'CreditCardAuthorization');
+
+    var webhookActivationHelper = require('~/cartridge/scripts/helpers/webhookActivationHelper');
+    webhookActivationHelper.activateWebhooks();
 
     var instance = new cybersourceRestApi.PaymentsApi(configObject);
 
@@ -575,8 +587,12 @@ function httpAuthorizeWithTransientToken(transientToken, customerEmail, referenc
 function generateUcCaptureContext(isMiniCart, selectedPaymentInstrumentId) {
     var Logger = require('dw/system/Logger');
     var ucPaymentHelper = require('~/cartridge/scripts/helpers/ucPaymentHelper');
+    var webhookActivationHelper = require('~/cartridge/scripts/helpers/webhookActivationHelper');
 
     try {
+        // Activate webhooks for the checkout session
+        webhookActivationHelper.activateWebhooks();
+
         var basket = require('dw/order/BasketMgr').getCurrentBasket();
         if (!basket) {
             Logger.error('[payments.js] generateUcCaptureContext - ERROR: basket is null/undefined');
@@ -816,8 +832,10 @@ function generateUcCaptureContext(isMiniCart, selectedPaymentInstrumentId) {
 function generateUcCaptureContextSaveCard() {
     var Logger = require('dw/system/Logger');
     var ucPaymentHelper = require('~/cartridge/scripts/helpers/ucPaymentHelper');
+    var webhookActivationHelper = require('~/cartridge/scripts/helpers/webhookActivationHelper');
 
     try {
+        webhookActivationHelper.activateWebhooks();
         var configObject = require('../../configuration/index');
         var cybersourceRestApi = require('../../apiClient/index');
 

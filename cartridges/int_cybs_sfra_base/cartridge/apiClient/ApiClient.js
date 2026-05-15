@@ -21,7 +21,7 @@ _exports.prototype.createService = function () {
             }
             svc.URL = url;
             svc.setRequestMethod(method.toUpperCase());
-            if (method.toUpperCase() === 'POST' || method.toUpperCase() === 'PATCH') {
+            if (method.toUpperCase() === 'POST' || method.toUpperCase() === 'PATCH' || method.toUpperCase() === 'PUT') {
                 if (typeof requestBody === 'string') {
                     return requestBody;
                 }
@@ -129,7 +129,7 @@ _exports.prototype.getHttpSignature = function (resource, method, merchantKeyId,
     if (method === "get" || method === "delete") {
         var headersForGetMethod = "host date request-target v-c-merchant-id";
         signatureHeader += ", headers=\"" + headersForGetMethod + "\"";
-    } else if (method === "post" || method === "patch") {
+    } else if (method === "post" || method === "patch" || method === "put") {
         var headersForPostMethod = "host date request-target digest v-c-merchant-id";
         signatureHeader += ", headers=\"" + headersForPostMethod + "\"";
     }
@@ -142,7 +142,7 @@ _exports.prototype.getHttpSignature = function (resource, method, merchantKeyId,
     if (method === "get" || method === "delete") {
         var targetUrlForGet = method + " " + resource;
         signatureString += targetUrlForGet + '\n';
-    } else if (method === "post" || method === "patch") {
+    } else if (method === "post" || method === "patch" || method === "put") {
         // Digest for POST call
         var digest = this.generateDigest(payload);
 
@@ -202,7 +202,7 @@ _exports.prototype.callApi = function (path, httpMethod, pathParams, queryParams
     var acceptType = accepts.join(';');
  
     var date = new Date(Date.now()).toUTCString();
-    if (method === 'post' || method === 'patch') {
+    if (method === 'post' || method === 'patch' || method === 'put') {
         if (typeof bodyParam === 'string') {
             bodyParam = JSON.parse(bodyParam);
         }
@@ -256,7 +256,7 @@ _exports.prototype.callApi = function (path, httpMethod, pathParams, queryParams
     var normalizedHeaders = this.normalizeParams(headerParams);
  
     // Calling service.
-    if (method === 'post' || method === 'patch') {
+    if (method === 'post' || method === 'patch' || method === 'put') {
         var response = this.createService().call(url, normalizedHeaders, method, payload);
     } else {
         var response = this.createService().call(url, normalizedHeaders, method);

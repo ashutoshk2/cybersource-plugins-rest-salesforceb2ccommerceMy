@@ -132,6 +132,9 @@ exports.authorizeOrderPayment = function (order, response) {
     var paymentError = null;
     var ApplePayHookResult = require('dw/extensions/applepay/ApplePayHookResult');
     var cybersourceRestApi = require('~/cartridge/apiClient/index');
+    var webhookActivationHelper = require('~/cartridge/scripts/helpers/webhookActivationHelper');
+    webhookActivationHelper.activateWebhooks();
+
     var instance = new cybersourceRestApi.PaymentsApi(configObject);
     // eslint-disable-next-line no-undef
     session.privacy.orderPaymentSuccessful = false;
