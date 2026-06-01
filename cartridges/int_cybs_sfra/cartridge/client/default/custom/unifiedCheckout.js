@@ -1,4 +1,4 @@
-/**
+​/**
  * Cybersource Unified Checkout JavaScript
  * Handles the initialization and management of Unified Checkout widget
  */
@@ -728,6 +728,9 @@ var unifiedCheckout = {
         $('#uc-payment-token').val('');
         $('#uc-transaction-id').val('');
         $('#uc-response').val('');
+
+        // Disconnect save card observer/polling and remove info message
+        $('.uc-guest-info').remove();
     },
 
 
@@ -868,8 +871,10 @@ var unifiedCheckout = {
             if (!sidebar) {
                 mountArgs.paymentScreen = '#embeddedPaymentContainer';
             }
-
             var token = await checkout.mount(mountArgs);
+
+            // Show guest save-card info after widget is mounted
+            self.showGuestSaveCardInfo();
 
             // For checkout page: run completeMandate orchestration (3DS/DM/Auth)
             // For minicart/cart: also run completeMandate orchestration with captured billing/shipping
@@ -1651,6 +1656,9 @@ var unifiedCheckout = {
                 $(this).remove();
             });
 
+            // Remove guest save card info message
+            $('.uc-guest-info').remove();
+
             // Remove hidden UC fields that exist outside the container
             $('#ucCaptureContext, #uc-client-library, #uc-client-library-integrity').remove();
 
@@ -2142,6 +2150,69 @@ var unifiedCheckout = {
         }
 
         this.showSaveCardError(errorMsg);
+    },
+
+    /**
+     * Show guest save-card info message below the UC widget.
+     * Conditions: (1) guest user, (2) capture context has requestSaveCredentials: true.
+     * The UC SDK renders the save-card checkbox inside an iframe, so we rely on the
+     * JWT to know the checkbox will be shown rather than trying to detect it in the DOM.
+     */
+    showGuestSaveCardInfo: function() {
+        // Only show for guest users
+        var isGuest = $('#checkout-main').data('customer-type') === 'guest';
+        if (!isGuest) {
+            console.log('[UC] Not a guest user — skipping save card info');
+            return;
+        }
+
+        // Check capture context for requestSaveCredentials
+        var captureContext = $('#ucCaptureContext').val();
+        if (!captureContext) {
+            console.log('[UC] No capture context found — skipping save card info');
+            return;
+        }
+        try {
+            var decoded = parseJwt(captureContext);
+            var requestSaveCredentials = decoded
+                && decoded.ctx
+                && decoded.ctx[0]
+                && decoded.ctx[0].data
+                && decoded.ctx[0].data.captureMandate
+                && decoded.ctx[0].data.captureMandate.requestSaveCredentials === true;
+            if (!requestSaveCredentials) {
+                console.log('[UC] requestSaveCredentials is not true — skipping save card info');
+                return;
+            }
+        } catch (e) {
+            console.warn('[UC] Could not decode capture context for guest save card check:', e);
+            return;
+        }
+
+        // Don't insert if already present
+        if ($('.uc-guest-info').length) {
+            return;
+        }
+
+        var infoHtml = '<div class="alert alert-info mt-2 uc-guest-info" role="alert">'
+            + 'You are checking out as a guest. If you choose to save your card, '
+            + 'you will need to create an account to access your saved payment methods in the future.'
+            + '</div>';
+
+        // Insert after the UC container (same sibling pattern used by handleError)
+        var $ucContainer = $('#unified-checkout-container');
+        if ($ucContainer.length) {
+            $ucContainer.after(infoHtml);
+        } else {
+            // Fallback: after embeddedPaymentContainer or buttonPaymentListContainer
+            var $fallback = $('#embeddedPaymentContainer').length
+                ? $('#embeddedPaymentContainer')
+                : $('#buttonPaymentListContainer');
+            if ($fallback.length) {
+                $fallback.after(infoHtml);
+            }
+        }
+        console.log('[UC] Guest save card info message displayed');
     },
 
     /**

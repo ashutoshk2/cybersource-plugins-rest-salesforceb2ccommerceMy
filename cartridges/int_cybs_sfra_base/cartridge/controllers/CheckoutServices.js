@@ -564,17 +564,18 @@ server.post('PlaceOrderDirect', server.middleware.https, function (req, res, nex
     // For minicart/cart flows: Populate addresses from transient token via getPaymentDetails API
     // UC widget captures billing/shipping via captureMandate when requestShipping=true, billingType='FULL'
     // The addresses are NOT in the completeMandate JWT - they come from the transient token API
+    var paymentDetails = null;
     if (transientToken && (!currentBasket.billingAddress || !currentBasket.defaultShipment.shippingAddress)) {
         try {
-            var paymentDetails = payments.getPaymentDetails(transientToken);
+            paymentDetails = payments.getPaymentDetails(transientToken);
             if (paymentDetails && paymentDetails.orderInformation) {
                 // Populate addresses from API response
                 ucPaymentHelper.populateBasketAddressesFromPaymentDetails(currentBasket, paymentDetails, Transaction);
                 logger.info('PlaceOrderDirect: Addresses populated from getPaymentDetails API (minicart/cart flow)');
-                
+
                 // Set default shipping method if not present
                 ucPaymentHelper.setDefaultShippingMethod(currentBasket, Transaction);
-                
+
                 // Recalculate basket totals with new addresses (for tax calculation)
                 Transaction.wrap(function () {
                     basketCalculationHelpers.calculateTotals(currentBasket);
@@ -618,40 +619,58 @@ server.post('PlaceOrderDirect', server.middleware.https, function (req, res, nex
     var detectedPaymentMethod = ucPaymentHelper.detectPaymentMethod(jwtPayload);
     var isDigitalWallet = detectedPaymentMethod === 'DW_GOOGLE_PAY' || detectedPaymentMethod === 'DW_APPLE_PAY';
 
-    // Create or update payment instrument with correct payment method
-    Transaction.wrap(function () {
-        var existingInstruments = currentBasket.getPaymentInstruments();
-        var paymentInstrument;
-
-        for (var i = 0; i < existingInstruments.length; i++) {
-            var existing = existingInstruments[i];
-            if (existing.paymentMethod === detectedPaymentMethod) {
-                paymentInstrument = existing;
-            } else {
-                currentBasket.removePaymentInstrument(existing);
-            }
+    // Bank transfer Handle needs routing/account from getPaymentDetails. Reuse the
+    // response fetched above for addresses; fetch here only if not already done.
+    if (detectedPaymentMethod === 'BANK_TRANSFER' && !paymentDetails && transientToken) {
+        try {
+            paymentDetails = payments.getPaymentDetails(transientToken);
+        } catch (e) {
+            logger.error('PlaceOrderDirect: getPaymentDetails for BANK_TRANSFER failed: {0}', e.message || e);
+            secureResponseHelper.secureJsonResponse(res, {
+                error: true,
+                errorMessage: Resource.msg('error.technical', 'checkout', null)
+            });
+            return next();
         }
+    }
 
-        if (!paymentInstrument) {
-            paymentInstrument = currentBasket.createPaymentInstrument(
-                detectedPaymentMethod,
-                currentBasket.totalGrossPrice
-            );
-            logger.info('PlaceOrderDirect: Created payment instrument with method: {0}', detectedPaymentMethod);
-        }
+    // Delegate payment instrument creation to the registered Handle hook for
+    // the resolved processor. Each hook owns its own Transaction.wrap and
+    // method-specific instrument setup.
+    var processorId = ucPaymentHelper.getProcessorIdForMethod(detectedPaymentMethod);
+    if (!processorId) {
+        logger.error('PlaceOrderDirect: No processor mapped for method {0}', detectedPaymentMethod);
+        secureResponseHelper.secureJsonResponse(res, {
+            error: true,
+            errorMessage: Resource.msg('error.technical', 'checkout', null)
+        });
+        return next();
+    }
 
-            if (currentBasket.billingAddress && currentBasket.billingAddress.fullName) {
-                paymentInstrument.setCreditCardHolder(currentBasket.billingAddress.fullName);
-            }
+    var ucPaymentInformation = {
+        jwtPayload: jwtPayload,
+        transientToken: transientToken,
+        paymentMethod: detectedPaymentMethod,
+        isDigitalWallet: isDigitalWallet,
+        paymentDetails: paymentDetails,
+        fromUC: true
+    };
 
-            if (transientToken) {
-                paymentInstrument.custom.UCToken = transientToken;
-            }
-
-        // Extract and set card details before validation (required for SFRA validatePayment cardType check)
-        var cardDetails = ucPaymentHelper.extractCardDetails(jwtPayload, transientToken, currentBasket.billingAddress);
-        ucPaymentHelper.updatePaymentInstrumentCardDetails(paymentInstrument, cardDetails, isDigitalWallet);
-    });
+    var handleResult = hooksHelper(
+        'app.payment.processor.' + processorId,
+        'Handle',
+        currentBasket,
+        ucPaymentInformation,
+        require('app_storefront_base/cartridge/scripts/hooks/payment/processor/basic_credit').Handle
+    );
+    if (handleResult.error) {
+        logger.error('PlaceOrderDirect: Handle hook failed for method {0} (processor {1})', detectedPaymentMethod, processorId);
+        secureResponseHelper.secureJsonResponse(res, {
+            error: true,
+            errorMessage: Resource.msg('error.payment.not.valid', 'checkout', null)
+        });
+        return next();
+    }
 
     // Calculate basket totals
     Transaction.wrap(function () {
@@ -692,7 +711,6 @@ server.post('PlaceOrderDirect', server.middleware.https, function (req, res, nex
     // Extract transaction details from JWT payload
     var transactionId = jwtPayload.id;
     var processorInfo = jwtPayload.details && jwtPayload.details.processorInformation;
-    var isDigitalWallet = detectedPaymentMethod === 'DW_GOOGLE_PAY' || detectedPaymentMethod === 'DW_APPLE_PAY';
 
     // Set order status in session for fraud detection hook
     session.privacy.orderStatus = authStatus;

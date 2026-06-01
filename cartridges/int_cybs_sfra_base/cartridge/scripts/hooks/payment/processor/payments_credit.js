@@ -16,43 +16,33 @@ var payerAuthentication = require('~/cartridge/scripts/http/payerAuthentication'
 var configObject = require('~/cartridge/configuration/index.js');
 
 /**
- * Check if Payer Authentication should be applied
+ * Check if Payer Authentication should be applied. Google Pay routes through
+ * its own processor (PAYMENTS_GOOGLEPAY) since the UC migration, so this hook
+ * only sees CREDIT_CARD instruments. The wallet/method exclusions below are
+ * defensive for any callers that may still pass non-credit instruments.
+ *
  * @param {dw.order.PaymentInstrument} paymentInstrument - The payment instrument
  * @returns {boolean} - Returns true if Payer Authentication conditions are met
  */
 function shouldApplyPayerAuthentication(paymentInstrument) {
-    var isVisaCTP = false;
-    var isApplePayUC = false;
-    var isEcheck = false;
-    var performPayerAuth = true;
-    var isGPay_PayerAuthEnabled = false;
-
     if (empty(paymentInstrument)) {
         return false;
     }
 
     var paymentMethod = paymentInstrument.paymentMethod;
+    var isVisaCTP = !empty(paymentMethod) && paymentMethod.equals('CLICK_TO_PAY');
+    var isApplePayUC = !empty(paymentMethod) && paymentMethod.equals('DW_APPLE_PAY');
+    var isGooglePay = !empty(paymentMethod) && paymentMethod.equals('DW_GOOGLE_PAY');
+    var isEcheck = !empty(paymentMethod) && paymentMethod.equals('BANK_TRANSFER');
 
-    if (!empty(paymentMethod)) {
-        isVisaCTP = paymentMethod.equals('CLICK_TO_PAY');
-    }
-    if (!empty(paymentMethod)) {
-        isApplePayUC = paymentMethod.equals('DW_APPLE_PAY');
-    }
-    if (!empty(paymentMethod)) {
-        isEcheck = paymentMethod.equals('BANK_TRANSFER');
-    }
-    // Get 3DS mode and card scheme
     var threeDSMode = payerAuthentication.get3DSMode();
     var cardType = payerAuthentication.getCardType(paymentInstrument);
-    // Check if 3DS should be skipped based on mode and card scheme
+    var performPayerAuth = true;
     if ('NO' === threeDSMode.value || ('DATA_ONLY_NO' === threeDSMode.value && !('VISA' === cardType || 'MASTERCARD' === cardType || 'MAESTRO' === cardType))) {
         performPayerAuth = false;
     }
-    if (!empty(paymentInstrument.custom.GooglePayEncryptedData) && paymentInstrument.custom.isGooglePaycardHolderAuthenticated == false && performPayerAuth) {
-        isGPay_PayerAuthEnabled = true;
-    }
-    return ((performPayerAuth && empty(paymentInstrument.custom.GooglePayEncryptedData)) || isGPay_PayerAuthEnabled) && configObject.cartridgeEnabled && !isVisaCTP && !isEcheck && !isApplePayUC;
+
+    return performPayerAuth && configObject.cartridgeEnabled && !isVisaCTP && !isEcheck && !isApplePayUC && !isGooglePay;
 }
 
 /**
@@ -162,6 +152,67 @@ function createToken(
 }
 
 /**
+ * Build a CREDIT_CARD payment instrument from the UC completeMandate flow.
+ * Used when PlaceOrderDirect dispatches Handle via hooksHelper with
+ * paymentInformation.fromUC = true. Skips form access and relies entirely on
+ * the JWT + transient token.
+ *
+ * @param {dw.order.Basket} basket
+ * @param {Object} paymentInformation - { jwtPayload, transientToken, fromUC, ... }
+ * @returns {Object} { fieldErrors, serverErrors, error }
+ */
+function handleUCCreditCard(basket, paymentInformation) {
+    var ucPaymentHelper = require('~/cartridge/scripts/helpers/ucPaymentHelper');
+    var Logger = require('dw/system/Logger');
+    var logger = Logger.getLogger('Cybersource', 'PaymentProcessor');
+    var serverErrors = [];
+
+    try {
+        Transaction.wrap(function () {
+            basket.removeAllPaymentInstruments();
+
+            var existing = basket.getPaymentInstruments(PaymentInstrument.METHOD_CREDIT_CARD);
+            collections.forEach(existing, function (item) {
+                basket.removePaymentInstrument(item);
+            });
+
+            var paymentInstrument = basket.createPaymentInstrument(
+                PaymentInstrument.METHOD_CREDIT_CARD, basket.totalGrossPrice
+            );
+
+            if (basket.billingAddress && basket.billingAddress.fullName) {
+                paymentInstrument.setCreditCardHolder(basket.billingAddress.fullName);
+            }
+
+            if (paymentInformation.transientToken) {
+                paymentInstrument.custom.UCToken = paymentInformation.transientToken;
+            }
+
+            var cardDetails = ucPaymentHelper.extractCardDetails(
+                paymentInformation.jwtPayload,
+                paymentInformation.transientToken,
+                basket.billingAddress
+            );
+            ucPaymentHelper.updatePaymentInstrumentCardDetails(paymentInstrument, cardDetails, false);
+        });
+
+        return {
+            fieldErrors: {},
+            serverErrors: serverErrors,
+            error: false
+        };
+    } catch (e) {
+        logger.error('payments_credit.handleUCCreditCard error for basket {0}: {1}', basket.UUID, e.message || e);
+        serverErrors.push(Resource.msg('error.payment.not.valid', 'checkout', null));
+        return {
+            fieldErrors: {},
+            serverErrors: serverErrors,
+            error: true
+        };
+    }
+}
+
+/**
  * Verifies that entered credit card information is a valid card. If the information is valid a
  * credit card payment instrument is created
  * @param {dw.order.Basket} basket Current users's basket
@@ -169,6 +220,11 @@ function createToken(
  * @return {Object} returns an error object
  */
 function Handle(basket, paymentInformation) {
+    // UC completeMandate flow (PlaceOrderDirect): no form, JWT-driven.
+    if (paymentInformation && paymentInformation.fromUC) {
+        return handleUCCreditCard(basket, paymentInformation);
+    }
+
     var configObject = require('~/cartridge/configuration/index.js');
     var Logger = require('dw/system/Logger');
     var logger = Logger.getLogger('Cybersource', 'PaymentProcessor');
@@ -278,10 +334,7 @@ function Authorize(orderNumber, paymentInstrument, paymentProcessor) {
         securityCode: paymentForm.creditCardFields.securityCode.htmlValue,
         expirationMonth: paymentInstrument.creditCardExpirationMonth,
         expirationYear: paymentInstrument.creditCardExpirationYear,
-        cardType: paymentInstrument.creditCardType ? paymentInstrument.creditCardType.toLowerCase() : null,
-        // eslint-disable-next-line no-undef
-        gPayToken: paymentInstrument.custom.GooglePayEncryptedData,
-
+        cardType: paymentInstrument.creditCardType ? paymentInstrument.creditCardType.toLowerCase() : null
     };
 
     // Check if payer authentication is required before proceeding with authorization. If required, return early to trigger payer authentication setup, enroll and validation.
@@ -322,13 +375,7 @@ function Authorize(orderNumber, paymentInstrument, paymentProcessor) {
             session.privacy.orderStatus = result.status;
             paymentInstrument.paymentTransaction.setTransactionID(result.id);
             paymentInstrument.paymentTransaction.setPaymentProcessor(paymentProcessor);
-            if (!empty(card.gPayToken)) {
-                paymentInstrument.paymentTransaction.custom.paymentDetails = paymentInstrument.maskedCreditCardNumber + ', '
-                    + paymentInstrument.creditCardType;
-            } else if (paymentInstrument.custom.UCToken !== null && paymentInstrument.paymentMethod === 'DW_GOOGLE_PAY') {
-            } else {
-                paymentInstrument.paymentTransaction.custom.paymentDetails = paymentInstrument.creditCardNumber + ', ' + paymentInstrument.creditCardType;
-            }
+            paymentInstrument.paymentTransaction.custom.paymentDetails = paymentInstrument.creditCardNumber + ', ' + paymentInstrument.creditCardType;
 
             delete paymentInstrument.custom.UCToken;
         });
@@ -352,17 +399,9 @@ function Authorize(orderNumber, paymentInstrument, paymentProcessor) {
                             session.privacy.orderStatus = cybersourceResponseData.status;
                             paymentInstrument.paymentTransaction.setTransactionID(cybersourceResponseData.id);
                             paymentInstrument.paymentTransaction.setPaymentProcessor(paymentProcessor);
-                            if (!empty(card.gPayToken)) {
-                                paymentInstrument.paymentTransaction.custom.paymentDetails = paymentInstrument.maskedCreditCardNumber + ', '
-                                    + paymentInstrument.creditCardType;
-                            } else if (paymentInstrument.custom.UCToken !== null && paymentInstrument.paymentMethod === 'DW_GOOGLE_PAY') {
-                            } else {
-                                paymentInstrument.paymentTransaction.custom.paymentDetails = paymentInstrument.creditCardNumber + ', ' + paymentInstrument.creditCardType;
-                            }
+                            paymentInstrument.paymentTransaction.custom.paymentDetails = paymentInstrument.creditCardNumber + ', ' + paymentInstrument.creditCardType;
 
                             paymentInstrument.custom.UCToken = null;
-                            paymentInstrument.custom.GooglePayEncryptedData = null;
-                            paymentInstrument.custom.isGooglePaycardHolderAuthenticated = null;
                         });
                     }
                     errorData.message = cybersourceResponseData.errorInformation.message; // Store original for debugging

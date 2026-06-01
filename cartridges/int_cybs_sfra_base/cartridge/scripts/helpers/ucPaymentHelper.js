@@ -298,12 +298,23 @@ function decodeJwtPayload(token) {
 // ============================================================================
 
 /**
- * Detect payment method from completeMandate JWT paymentSolution
+ * Detect payment method from completeMandate JWT.
+ *
+ * Order of checks:
+ * 1. paymentInformation.bank present → BANK_TRANSFER (eCheck has no paymentSolution code)
+ * 2. processingInformation.paymentSolution code → DW_GOOGLE_PAY / DW_APPLE_PAY / CLICK_TO_PAY
+ * 3. Default → CREDIT_CARD
+ *
  * @param {Object} jwtPayload - Decoded completeMandate JWT payload
  * @returns {string} - Payment method ID
  */
 function detectPaymentMethod(jwtPayload) {
-    var processingInfo = jwtPayload.details && jwtPayload.details.processingInformation;
+    var details = jwtPayload && jwtPayload.details;
+    if (details && details.paymentInformation && details.paymentInformation.bank) {
+        return 'BANK_TRANSFER';
+    }
+
+    var processingInfo = details && details.processingInformation;
     var paymentSolution = processingInfo && processingInfo.paymentSolution;
 
     if (paymentSolution === '012') {
@@ -314,6 +325,41 @@ function detectPaymentMethod(jwtPayload) {
         return 'CLICK_TO_PAY';
     }
     return 'CREDIT_CARD';
+}
+
+/**
+ * Resolve the processor hook key for a given payment method ID.
+ * @param {string} paymentMethodId - SFCC payment method ID (e.g. 'DW_APPLE_PAY')
+ * @returns {string|null} - Lower-cased processor ID for use in 'app.payment.processor.<id>'
+ */
+function getProcessorIdForMethod(paymentMethodId) {
+    var PaymentMgr = require('dw/order/PaymentMgr');
+    var method = PaymentMgr.getPaymentMethod(paymentMethodId);
+    if (!method) return null;
+    var processor = method.getPaymentProcessor();
+    if (!processor) return null;
+    return processor.ID.toLowerCase();
+}
+
+/**
+ * Extract bank details from a getPaymentDetails API response.
+ * @param {Object} paymentDetails - Response from payments.getPaymentDetails(transientToken)
+ * @param {Object} [billingAddress] - Optional billing address for accountHolder fallback
+ * @returns {Object} - { routingNumber, accountNumber, accountHolder }
+ */
+function extractBankDetails(paymentDetails, billingAddress) {
+    var bank = paymentDetails && paymentDetails.paymentInformation && paymentDetails.paymentInformation.bank;
+    var routingNumber = bank && bank.routingNumber ? bank.routingNumber : '';
+    var accountNumber = bank && bank.account && bank.account.number ? bank.account.number : '';
+    var accountHolder = '';
+    if (billingAddress && billingAddress.fullName) {
+        accountHolder = billingAddress.fullName;
+    }
+    return {
+        routingNumber: routingNumber,
+        accountNumber: accountNumber,
+        accountHolder: accountHolder
+    };
 }
 
 // ============================================================================
@@ -1098,7 +1144,9 @@ module.exports = {
     
     // Payment method detection
     detectPaymentMethod: detectPaymentMethod,
-    
+    getProcessorIdForMethod: getProcessorIdForMethod,
+    extractBankDetails: extractBankDetails,
+
     // Card details extraction
     extractCardDetails: extractCardDetails,
     buildPaymentDetailsString: buildPaymentDetailsString,
