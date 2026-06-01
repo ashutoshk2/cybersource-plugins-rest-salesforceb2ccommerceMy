@@ -47,7 +47,6 @@ function retrieveWebhooks(productId, callback) {
     var queryParams = { organizationId: merchantId, productId: productId };
     apiClient.instance.callApi('/notification-subscriptions/v2/webhooks', 'GET', {}, queryParams, {}, {}, null, [], ['application/json;charset=utf-8'], ['application/json;charset=utf-8'], {}, function(data, error, response) {
         if (error && response && response.statusCode === 404) {
-            // A 404 here simply means "no subscriptions found", which is not an application error.
             if (callback) callback([], null, response);
         } else {
             if (callback) callback(data, error, response);
@@ -120,8 +119,14 @@ function deleteSubscription(webhookId, callback) {
 function subscribeProduct(configId) {
     var config = WEBHOOK_CONFIGS[configId];
     var site = Site.getCurrent();
-    var customBaseUrl = site.getCustomPreferenceValue('Cybersource_Webhook_Base_URL');
-    var webhookUrl = customBaseUrl ? (customBaseUrl.replace(/\/$/, '') + '/' + config.notificationEndpoint) : URLUtils.https(new URLAction(config.notificationEndpoint, site.ID)).toString();
+    
+    var webhookBaseUrl = '';
+    try {
+        var globalObj = CustomObjectMgr.getCustomObject(CUSTOM_OBJECT_TYPE, 'globalConfiguration');
+        if (globalObj) webhookBaseUrl = globalObj.custom.BaseUrl;
+    } catch (e) {}
+
+    var webhookUrl = webhookBaseUrl ? (webhookBaseUrl.replace(/\/$/, '') + '/' + config.notificationEndpoint) : URLUtils.https(new URLAction(config.notificationEndpoint, site.ID)).toString();
 
     var existingObj = CustomObjectMgr.getCustomObject(CUSTOM_OBJECT_TYPE, configId);
     if (existingObj && existingObj.custom.WebhookId && existingObj.custom.WebhookUrl === webhookUrl) {
@@ -141,15 +146,12 @@ function subscribeProduct(configId) {
         var productList = Array.isArray(prodData) ? prodData : (prodData && prodData.products ? prodData.products : null);
         if (!prodError && productList) {
             var found = false;
-            
             if (configId === 'fraudManagement') {
                 for (var i = 0; i < productList.length; i++) {
                     var availableProd = productList[i].productId;
                     if (availableProd === 'decisionManager' || availableProd === 'fraudManagementEssentials') {
-                        // find matching config
                         for (var j = 0; j < config.products.length; j++) {
                             if (config.products[j].productId === availableProd) {
-                                // temporarily swap products array to create specific subscription
                                 var originalProducts = config.products;
                                 config.products = [config.products[j]];
                                 createSubscription(config, webhookUrl, function (data, error) { if (!error && data.webhookId) webhookId = data.webhookId; });
@@ -163,7 +165,6 @@ function subscribeProduct(configId) {
                 }
                 if (!found) specificError = 'NO_FRAUD_PRODUCT';
             } else {
-                // For UC and Token Management, verify they exist in the enabled products list
                 for (var k = 0; k < productList.length; k++) {
                     if (productList[k].productId === config.products[0].productId) {
                         found = true;
@@ -171,13 +172,9 @@ function subscribeProduct(configId) {
                         break;
                     }
                 }
-                if (!found) {
-                    Logger.error('Attempted to subscribe to ' + config.products[0].productId + ' but it is not enabled for this merchant in CyberSource EBC.');
-                    specificError = 'PRODUCT_NOT_ENABLED';
-                }
+                if (!found) specificError = 'PRODUCT_NOT_ENABLED';
             }
         } else {
-            Logger.error('Failed to retrieve available products list from CyberSource.');
             specificError = 'API_ERROR';
         }
     });
@@ -207,31 +204,30 @@ function unsubscribeProduct(configId) {
     return { success: true };
 }
 
-exports.retrieveWebhooks = retrieveWebhooks;
-exports.subscribeFraudManagement = function() { return subscribeProduct('fraudManagement'); };
-exports.unsubscribeFraudManagement = function() { return unsubscribeProduct('fraudManagement'); };
-exports.subscribeUC = function() { return subscribeProduct('unifiedCheckout'); };
-exports.unsubscribeUC = function() { return unsubscribeProduct('unifiedCheckout'); };
-exports.subscribeNetworkTokens = function() { return subscribeProduct('tokenManagement'); };
-exports.unsubscribeNetworkTokens = function() { return unsubscribeProduct('tokenManagement'); };
-
 /**
  * Consolidates all data needed for the Webhook Manager view
  */
 function getViewData() {
     var site = Site.getCurrent();
-    
     var method = site.getCustomPreferenceValue('VisaAcceptance_Secure_Integration_Method');
     var methodValue = (method && method.value) ? method.value : (method || '');
     var dmEnabled = site.getCustomPreferenceValue('Cybersource_DecisionManager') || false;
     var ntEnabled = site.getCustomPreferenceValue('Cybersource_NetworkToken') || false;
-    var webhookBaseUrl = site.getCustomPreferenceValue('Cybersource_Webhook_Base_URL') || '';
     var egressMleAlias = site.getCustomPreferenceValue('Cybersource_EgressCertificateAlias') || 'Cybersource_MLE_Egress_Private_Key';
     
-    // Calculate what the URL looks like by default for this site
     var testAction = new URLAction('WebhookNotification-dmNotification', site.ID);
     var fullUrl = URLUtils.https(testAction).toString();
     var standardBaseUrl = fullUrl.substring(0, fullUrl.indexOf('WebhookNotification-dmNotification')).replace(/\/$/, '');
+
+    var webhookBaseUrl = '';
+    var egressPublicKey = '';
+    try {
+        var globalObj = CustomObjectMgr.getCustomObject(CUSTOM_OBJECT_TYPE, 'globalConfiguration');
+        if (globalObj) {
+            webhookBaseUrl = globalObj.custom.BaseUrl || '';
+            egressPublicKey = globalObj.custom.EgressPublicKey || '';
+        }
+    } catch (e) {}
 
     var data = {
         config: {
@@ -240,6 +236,7 @@ function getViewData() {
             secureIntegrationMethod: methodValue,
             webhookBaseUrl: webhookBaseUrl,
             egressMleAlias: egressMleAlias,
+            egressPublicKey: egressPublicKey,
             standardBaseUrl: standardBaseUrl,
             activeBaseUrl: webhookBaseUrl || standardBaseUrl
         },
@@ -273,42 +270,52 @@ function getViewData() {
     return data;
 }
 
-/**
- * Explicit Sync: Matches webhooks to current Site Preferences.
- */
 function syncWithPreferences() {
     var data = getViewData();
     var results = {};
     if (data.config.dmEnabled && !data.subscriptions.fraudManagement) {
-        results.dm = exports.subscribeFraudManagement();
+        results.dm = subscribeProduct('fraudManagement');
     } else if (!data.config.dmEnabled && data.subscriptions.fraudManagement) {
-        results.dm = exports.unsubscribeFraudManagement();
+        results.dm = unsubscribeProduct('fraudManagement');
     }
     if (data.config.secureIntegrationMethod === 'Unified_Checkout' && !data.subscriptions.unifiedCheckout) {
-        results.uc = exports.subscribeUC();
+        results.uc = subscribeProduct('unifiedCheckout');
     } else if (data.config.secureIntegrationMethod !== 'Unified_Checkout' && data.subscriptions.unifiedCheckout) {
-        results.uc = exports.unsubscribeUC();
+        results.uc = unsubscribeProduct('unifiedCheckout');
     }
     if (data.config.ntEnabled && !data.subscriptions.tokenManagement) {
-        results.nt = exports.subscribeNetworkTokens();
+        results.nt = subscribeProduct('tokenManagement');
     } else if (!data.config.ntEnabled && data.subscriptions.tokenManagement) {
-        results.nt = exports.unsubscribeNetworkTokens();
+        results.nt = unsubscribeProduct('tokenManagement');
     }
     return results;
 }
 
-/**
- * Updates advanced preferences and webhooks.
- */
-function updateAdvanced(baseUrl, egressMleAlias) {
+function updateAdvanced(baseUrl, egressMleAlias, egressPublicKey) {
     var site = Site.getCurrent();
     Transaction.wrap(function () {
-        try { site.setCustomPreferenceValue('Cybersource_Webhook_Base_URL', baseUrl || null); } catch(e) {}
         try { site.setCustomPreferenceValue('Cybersource_EgressCertificateAlias', egressMleAlias || 'Cybersource_MLE_Egress_Private_Key'); } catch(e) {}
+        try {
+            var globalObj = CustomObjectMgr.getCustomObject(CUSTOM_OBJECT_TYPE, 'globalConfiguration') || CustomObjectMgr.createCustomObject(CUSTOM_OBJECT_TYPE, 'globalConfiguration');
+            globalObj.custom.BaseUrl = baseUrl || '';
+            globalObj.custom.EgressPublicKey = egressPublicKey || '';
+        } catch(e) {}
     });
+
+    uploadAsymmetricKey(egressPublicKey, function(data, error) {
+        if (error) Logger.error('Failed to upload Egress Public Key: ' + JSON.stringify(error));
+    });
+
     return syncWithPreferences();
 }
 
+exports.retrieveWebhooks = retrieveWebhooks;
+exports.subscribeFraudManagement = function() { return subscribeProduct('fraudManagement'); };
+exports.unsubscribeFraudManagement = function() { return unsubscribeProduct('fraudManagement'); };
+exports.subscribeUC = function() { return subscribeProduct('unifiedCheckout'); };
+exports.unsubscribeUC = function() { return unsubscribeProduct('unifiedCheckout'); };
+exports.subscribeNetworkTokens = function() { return subscribeProduct('tokenManagement'); };
+exports.unsubscribeNetworkTokens = function() { return unsubscribeProduct('tokenManagement'); };
 exports.getViewData = getViewData;
 exports.syncWithPreferences = syncWithPreferences;
 exports.updateAdvanced = updateAdvanced;

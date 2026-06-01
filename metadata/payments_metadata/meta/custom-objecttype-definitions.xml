@@ -36,4 +36,91 @@
             </attribute-group>
         </group-definitions>
     </custom-type>
+
+    <custom-type type-id="CyberSource Webhook Subscription">
+        <display-name xml:lang="x-default">CyberSource Webhook Subscription</display-name>
+        <description xml:lang="x-default">Stores subscription details for CyberSource Webhooks (DM, UC, Token Management)</description>
+        <staging-mode>no-staging</staging-mode>
+        <storage-scope>site</storage-scope>
+        <key-definition attribute-id="SubscriptionType">
+            <type>string</type>
+            <min-length>0</min-length>
+        </key-definition>
+        <attribute-definitions>
+            <attribute-definition attribute-id="WebhookId">
+                <display-name xml:lang="x-default">Webhook ID</display-name>
+                <type>string</type>
+                <mandatory-flag>false</mandatory-flag>
+                <externally-managed-flag>false</externally-managed-flag>
+            </attribute-definition>
+            <attribute-definition attribute-id="SecurityKey">
+                <display-name xml:lang="x-default">Security Key / Shared Secret</display-name>
+                <type>string</type>
+                <mandatory-flag>false</mandatory-flag>
+                <externally-managed-flag>false</externally-managed-flag>
+            </attribute-definition>
+            <attribute-definition attribute-id="WebhookUrl">
+                <display-name xml:lang="x-default">Webhook URL</display-name>
+                <type>string</type>
+                <mandatory-flag>false</mandatory-flag>
+                <externally-managed-flag>false</externally-managed-flag>
+            </attribute-definition>
+            <attribute-definition attribute-id="Status">
+                <display-name xml:lang="x-default">Status</display-name>
+                <type>string</type>
+                <mandatory-flag>false</mandatory-flag>
+                <externally-managed-flag>false</externally-managed-flag>
+            </attribute-definition>
+            <attribute-definition attribute-id="BaseUrl">
+                <display-name xml:lang="x-default">Custom Webhook Base URL</display-name>
+                <type>string</type>
+                <mandatory-flag>false</mandatory-flag>
+                <externally-managed-flag>false</externally-managed-flag>
+            </attribute-definition>
+            <attribute-definition attribute-id="EgressPublicKey">
+                <display-name xml:lang="x-default">Egress Public Key (MLE)</display-name>
+                <type>text</type>
+                <mandatory-flag>false</mandatory-flag>
+                <externally-managed-flag>false</externally-managed-flag>
+            </attribute-definition>
+        </attribute-definitions>
+        <group-definitions>
+            <attribute-group group-id="Details">
+                <display-name xml:lang="x-default">Details</display-name>
+                <attribute attribute-id="SubscriptionType"/>
+                <attribute attribute-id="WebhookId"/>
+                <attribute attribute-id="SecurityKey"/>
+                <attribute attribute-id="WebhookUrl"/>
+                <attribute attribute-id="Status"/>
+                <attribute attribute-id="BaseUrl"/>
+                <attribute attribute-id="EgressPublicKey"/>
+            </attribute-group>
+        </group-definitions>
+    </custom-type>
+
+    <custom-type type-id="CybersourceWebhookStaging">
+        <display-name xml:lang="x-default">Cybersource Webhook Staging</display-name>
+        <description xml:lang="x-default">Temporarily stores webhook payloads that arrive before the order is created.</description>
+        <staging-mode>no-staging</staging-mode>
+        <storage-scope>site</storage-scope>
+        <key-definition attribute-id="OrderID">
+            <type>string</type>
+            <min-length>0</min-length>
+        </key-definition>
+        <attribute-definitions>
+            <attribute-definition attribute-id="payload">
+                <display-name xml:lang="x-default">JSON Payload</display-name>
+                <type>text</type>
+                <mandatory-flag>false</mandatory-flag>
+                <externally-managed-flag>false</externally-managed-flag>
+            </attribute-definition>
+        </attribute-definitions>
+        <group-definitions>
+            <attribute-group group-id="Content">
+                <display-name xml:lang="x-default">Content</display-name>
+                <attribute attribute-id="OrderID"/>
+                <attribute attribute-id="payload"/>
+            </attribute-group>
+        </group-definitions>
+    </custom-type>
 </metadata>

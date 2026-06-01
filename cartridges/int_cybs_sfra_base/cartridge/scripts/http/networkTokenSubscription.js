@@ -65,13 +65,23 @@ function createWebhookSecurityKey(callback) {
 
 function createWebhookSubscription(callback) {
     var URLUtils = require('dw/web/URLUtils');
+    var endpoint = 'WebhookNotification-tokenUpdate';
+    
+    var webhookBaseUrl = '';
+    try {
+        var globalObj = CustomObjectMgr.getCustomObject('CyberSource Webhook Subscription', 'globalConfiguration');
+        if (globalObj) webhookBaseUrl = globalObj.custom.BaseUrl;
+    } catch (e) {}
+
+    var webhookUrl = webhookBaseUrl ? (webhookBaseUrl.replace(/\/$/, '') + '/' + endpoint) : URLUtils.https(endpoint).toString();
+
     var postBody = {
         name: 'Network Tokens Webhook',
         description: 'Webhook for Network Token Subscription',
         organizationId: merchantId,
         products: [{ productId: 'tokenManagement', eventTypes: ['tms.networktoken.updated'] }],
-        webhookUrl: URLUtils.https('WebhookNotification-tokenUpdate').toString(),
-        healthCheckUrl: URLUtils.https('WebhookNotification-tokenUpdate').toString(),
+        webhookUrl: webhookUrl,
+        healthCheckUrl: webhookUrl,
         notificationScope: 'SELF',
         retryPolicy: {
             algorithm: 'ARITHMETIC',
@@ -153,54 +163,52 @@ function deleteSusbscriprion(id, callback){
 }
 function createNetworkTokenSubscription() {
     retrieveAllCreatedWebhooks(function (data, error, response) {
-        if (data[0].webhookId) {
+        if (!error && data && data.length > 0 && data[0].webhookId) {
             var obj = CustomObjectMgr.getCustomObject("Network Tokens Webhook", merchantId);
-                if (obj == null) {
-                    deleteSusbscriprion(data[0].webhookId, function (data, error, responseData) {
-                        if(responseData.status === 'OK'){
-                            createNetworkTokenSubscription();
+            if (obj == null) {
+                deleteSusbscriprion(data[0].webhookId, function (delData, delError, responseData) {
+                    if (responseData && responseData.statusCode === 204) {
+                        createNetworkTokenSubscription();
+                    }
+                });
+                return;
+            } 
+        }
+        
+        if (error || (response && response.statusCode === 404)) {
+            var errorObj = {};
+            try { errorObj = (typeof data === 'string') ? JSON.parse(data) : data; } catch(e) { errorObj = {}; }
+            
+            if (response.statusCode === 404 || errorObj.statusCode === 404) {
+                var key = '';
+                createWebhookSecurityKey(function (keyData, keyError) {
+                    if (!keyError && keyData.status === 'SUCCESS') {
+                        key = keyData.keyInformation.key;
+                    }
+                });
+                
+                var webhookId = '';
+                createWebhookSubscription(function (subData, subError) {
+                    if (!subError) {
+                        webhookId = subData.webhookId;
+                    }
+                });
+                
+                if (webhookId) {
+                    activateWebhookSubscription(webhookId, function(actData, actError) {
+                        if (actError) {
+                            Logger.error("Error activating network token webhook: " + webhookId);
                         }
                     });
-                } 
-        }
-        if (error) {
-            data = JSON.parse(data);
-            if (data.statusCode === 404) {
-                var key = '';
-                createWebhookSecurityKey(function (data, error, response) {
-                    if (!error) {
-                        if (data.status === 'SUCCESS') {
-                            key = data.keyInformation.key;
-                        }
-                    } else {
-                        throw new Error(new errors.API_CLIENT_ERROR(JSON.stringify(data)));
-                    }
-                });
-                var webhookId = '';
-                createWebhookSubscription(function (data, error, response) {
-                    if (!error) {
-                        webhookId = data.webhookId;
-                    } else {
-                        throw new Error(new errors.API_CLIENT_ERROR(JSON.stringify(data)));
-                    }
-                });
-                if (webhookId) {
-                    activateWebhookSubscription(webhookId, function(data, error, response) {
-                        if (error) {
-                            Logger.error("Error activating network token webhook: " + JSON.stringify(data));
-                        }
+
+                    Transaction.wrap(function () {
+                        var obj = CustomObjectMgr.getCustomObject("Network Tokens Webhook", merchantId) || CustomObjectMgr.createCustomObject('Network Tokens Webhook', merchantId);
+                        obj.custom.SecurityKey = key;
+                        obj.custom.SubscriptionId = webhookId;
                     });
                 }
-                Transaction.wrap(function () {
-                    var obj = CustomObjectMgr.getCustomObject("Network Tokens Webhook", merchantId);
-                    if (obj == null) {
-                        obj = CustomObjectMgr.createCustomObject('Network Tokens Webhook', merchantId);
-                    }
-                    obj.custom.SecurityKey = key;
-                    obj.custom.SubscriptionId = webhookId;
-                });
-            } else {
-                throw new Error(new errors.API_CLIENT_ERROR(JSON.stringify(data)));
+            } else if (response.statusCode !== 200) {
+                Logger.error('Network Token Subscription API Error: ' + response.statusCode);
             }
         }
     });
