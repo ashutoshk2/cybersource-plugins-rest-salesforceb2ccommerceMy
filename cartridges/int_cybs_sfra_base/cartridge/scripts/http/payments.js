@@ -769,6 +769,12 @@ function generateUcCaptureContext(isMiniCart, selectedPaymentInstrumentId) {
         // TODO: Add code (orderId) and partner info when order creation flow is finalized
         requestObj.data.clientReferenceInformation = {};
 
+                // Client Reference Information - application tracking for CyberSource
+        requestObj.data.clientReferenceInformation = {
+            applicationName: Constants.APPLICATION_NAME,
+            applicationVersion: Constants.APPLICATION_VERSION
+        };
+
         // Device Information: Capture context API only supports ipAddress in deviceInformation
         // Full device data (for 3DS) is handled during payment authorization, not capture context
         requestObj.data.deviceInformation = ucPaymentHelper.buildCaptureContextDeviceInformation();
