@@ -599,6 +599,20 @@ function generateUcCaptureContext(isMiniCart, selectedPaymentInstrumentId) {
             return { error: true, errorMessage: 'Basket not found' };
         }
 
+        // Reserve an SFCC order number to use as the UC v1 client reference code.
+        // Reused on SCA retry / re-renders so capture-context, auth, and the eventual
+        // SFCC order all share the same identifier. checkoutHelpers.createOrder picks
+        // this up from session.privacy.ucOrderNo and clears it on success.
+        var OrderMgr = require('dw/order/OrderMgr');
+        var Transaction = require('dw/system/Transaction');
+        var reservedOrderNo = session.privacy.ucOrderNo;
+        if (!reservedOrderNo) {
+            Transaction.wrap(function () {
+                reservedOrderNo = OrderMgr.createOrderNo();
+            });
+            session.privacy.ucOrderNo = reservedOrderNo;
+        }
+
         var configObject = require('../../configuration/index');
         var cybersourceRestApi = require('../../apiClient/index');
 

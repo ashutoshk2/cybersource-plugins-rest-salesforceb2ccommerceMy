@@ -310,9 +310,30 @@ function decodeJwtPayload(token) {
  */
 function detectPaymentMethod(jwtPayload) {
     var details = jwtPayload && jwtPayload.details;
-    if (details && details.paymentInformation && details.paymentInformation.bank) {
+    var paymentInfo = details && details.paymentInformation;
+
+    // eCheck/ACH first: a bank object means ACH, never a redirect bank-transfer APM.
+    // NOTE: PPRO online bank transfers (iDEAL, Bancontact, Multibanco, ...) do NOT
+    // populate paymentInformation.bank in real payloads - they are identified by
+    // paymentType below. (If a live PPRO result is ever found to populate .bank, add a
+    // routingNumber guard here so only true eCheck maps to BANK_TRANSFER.)
+    if (paymentInfo && paymentInfo.bank) {
         return 'BANK_TRANSFER';
     }
+
+    // Alternate payment methods carry details.paymentInformation.paymentType.
+    // Validated against real payloads: iDEAL {name:'ppro',type:'bank transfer',
+    // method:'IDLPP'}, Multibanco {method:'MLTBT'}, Tink {method:{name:'tinkPayByBank'},
+    // name:'bankTransfer'}, AFFIRM {name:'INVOICE',method:{name:'AFFIRM'}}. Cards and
+    // wallets never carry paymentType. This is checked BEFORE the card branch because
+    // real APM payloads ALSO echo the scheme code into paymentInformation.card.type
+    // (e.g. card.type 'IDLPP'/'MLTBT'), which would otherwise be misread as a card.
+    // Routed through one generic ALT_PAYMENT_METHOD; the scheme is recorded from
+    // getApmDescriptor by the alt_payment processor.
+    if (getApmDescriptor(jwtPayload)) {
+        return 'ALT_PAYMENT_METHOD';
+    }
+
 
     var processingInfo = details && details.processingInformation;
     var paymentSolution = processingInfo && processingInfo.paymentSolution;
@@ -324,8 +345,52 @@ function detectPaymentMethod(jwtPayload) {
     } else if (paymentSolution === '027') {
         return 'CLICK_TO_PAY';
     }
+
+    
+    // Card present (PAN entry / tokenized saved card / wallet-backed card).
+    if (paymentInfo && (paymentInfo.card || paymentInfo.tokenizedCard)) {
+        return 'CREDIT_CARD';
+    }
+
+    // Resilience fallback: an unknown non-card paymentSolution with no card -> APM
+    // (e.g. PayPal/Venmo/Paze whose exact paymentSolution codes are unconfirmed).
+    if (paymentSolution) {
+        return 'ALT_PAYMENT_METHOD';
+    }
+    
+
     return 'CREDIT_CARD';
 }
+
+
+/**
+ * Extract the alternate-payment-method descriptor from a completeMandate JWT.
+ * Reads details.paymentInformation.paymentType, normalizing the method whether it is
+ * a string (e.g. 'IDLPP', 'MLTBT') or an object (e.g. { name: 'tinkPayByBank' },
+ * { name: 'AFFIRM' }). Used both to classify a result as ALT_PAYMENT_METHOD and to
+ * record which scheme was used on the payment instrument.
+ *
+ * @param {Object} jwtPayload - Decoded completeMandate JWT payload
+ * @returns {Object|null} - { name, method } where both are strings, or null if no
+ *                          paymentType descriptor is present
+ */
+function getApmDescriptor(jwtPayload) {
+    var details = jwtPayload && jwtPayload.details;
+    var paymentType = details && details.paymentInformation && details.paymentInformation.paymentType;
+    if (!paymentType) {
+        return null;
+    }
+    var name = paymentType.name || '';
+    var method = '';
+    if (paymentType.method) {
+        method = (typeof paymentType.method === 'string') ? paymentType.method : (paymentType.method.name || '');
+    }
+    if (!name && !method) {
+        return null;
+    }
+    return { name: name, method: method };
+}
+
 
 /**
  * Resolve the processor hook key for a given payment method ID.
@@ -520,6 +585,32 @@ function setTransactionCustomAttribute(paymentTransaction, attributeName, value)
     return false;
 }
 
+
+/**
+ * Safely set a custom attribute on a payment instrument. Mirrors
+ * setTransactionCustomAttribute - no-ops (without throwing) when the attribute is not
+ * defined in the system-object metadata, so alternate-payment-method recording does
+ * not fail an order in an environment where the metadata has not been imported yet.
+ *
+ * @param {dw.order.PaymentInstrument} paymentInstrument - Payment instrument
+ * @param {string} attributeName - Custom attribute name
+ * @param {*} value - Value to set
+ * @returns {boolean} - True if attribute was set
+ */
+function setInstrumentCustomAttribute(paymentInstrument, attributeName, value) {
+    if (!value) return false;
+    try {
+        if (attributeName in paymentInstrument.custom) {
+            paymentInstrument.custom[attributeName] = value;
+            return true;
+        }
+    } catch (e) {
+        logger.debug('Custom attribute {0} not available on PaymentInstrument', attributeName);
+    }
+    return false;
+}
+
+
 // ============================================================================
 // Authorization Status Functions
 // ============================================================================
@@ -536,7 +627,12 @@ function setTransactionCustomAttribute(paymentTransaction, attributeName, value)
  * - CAPTURED: Capture/sale successful
  * - PARTIAL_CAPTURED: Partial capture successful
  * - PENDING: Transaction pending (some capture flows)
- * 
+ *
+ * PENDING is also the normal terminal state for asynchronous/redirect alternate
+ * payment methods (PPRO bank transfers, some BNPL). The order is placed but left
+ * NOTCONFIRMED and reconciled later by the webhook (WebhookNotification) when the
+ * provider settles - SFCC has no request-time async to poll status here.
+ *
  * @param {string} status - Status from completeMandate JWT
  * @returns {boolean} - True if status is valid for order placement
  */
@@ -548,7 +644,18 @@ function isValidAuthorizationStatus(status) {
         // CAPTURE (sale) statuses
         'CAPTURED',
         'PARTIAL_CAPTURED',
-        'PENDING'
+        'PENDING',
+        
+        // Alternate payment method (PPRO / BNPL) non-decline outcomes. Validated
+        // against real payloads: iDEAL/Multibanco -> PENDING, Tink -> SETTLE_INITIATED,
+        // AFFIRM -> AUTHORIZED / PENDING / COMPLETED. PENDING and SETTLE_INITIATED
+        // orders are placed NOTCONFIRMED and reconciled by the webhook;
+        // COMPLETED / SETTLED are already settled. Cards never use these statuses, so
+        // there is no card-flow regression.
+        'COMPLETED',
+        'SETTLED',
+        'SETTLE_INITIATED'
+        
     ];
     return validStatuses.indexOf(status) !== -1;
 }
@@ -586,6 +693,7 @@ function buildBillToAddress(basket) {
         lastName: billingAddress.lastName || '',
         email: basket.customerEmail || '',
         phoneNumber: billingAddress.phone || '',
+        phoneType: 'work',
         address1: billingAddress.address1 || '',
         address2: billingAddress.address2 || '',
         locality: billingAddress.city || '',
@@ -674,54 +782,75 @@ function buildLineItems(basket) {
         var lineItem = allLineItems[i];
         var itemObject = null;
 
+        // All line amounts are NET (tax-exclusive). Tax is sent separately in taxAmount.
+        // amountDetails.totalAmount is the GROSS basket total, so:
+        //   sum(line totalAmount) + sum(line taxAmount) === amountDetails.totalAmount.
+        // Sending a gross (tax-inclusive) totalAmount here while ALSO sending taxAmount
+        // double-counts tax, the totals stop reconciling, and wallets/APMs (PayPal, Venmo,
+        // Google Pay) silently refuse to render. Only a zero-tax basket happened to work.
         if (lineItem instanceof dw.order.ProductLineItem) {
+            var productDescription = lineItem.productName || '';
+            if (lineItem.product && lineItem.product.shortDescription && lineItem.product.shortDescription.markup) {
+                productDescription = lineItem.product.shortDescription.markup;
+            }
+            if (productDescription.length > 255) {
+                productDescription = productDescription.substring(0, 255);
+            }
+            // proratedPrice distributes order-level discounts across lines (net of tax);
+            // fall back to adjustedNetPrice when there are none.
+            var prodNet = (lineItem.proratedPrice && lineItem.proratedPrice.value > 0) ?
+                lineItem.proratedPrice.value : lineItem.adjustedNetPrice.value;
+            var prodQty = lineItem.quantityValue || 1;
+            // Per CyberSource UC REST: unitPrice is per-item, totalAmount is the net
+            // extended amount, and taxAmount is the TOTAL tax for the line (not per-unit).
+            // amountDetails.taxAmount carries the basket-total tax so the breakdown
+            // reconciles. (SOAP/Simple Order API uses per-unit tax - a different surface.)
             itemObject = {
                 productName: lineItem.productName || '',
-                quantity: lineItem.quantityValue,
-                unitPrice: formatAmount(lineItem.basePrice.value, currencyCode),
-                totalAmount: formatAmount(lineItem.adjustedGrossPrice.value, currencyCode),
-                taxAmount: formatAmount(lineItem.adjustedTax.value > 0 ? lineItem.adjustedTax.value : 0, currencyCode),
-                productCode: 'default',
+                productDescription: productDescription,
+                quantity: prodQty,
+                unitPrice: formatAmount(prodNet / prodQty, currencyCode),
+                totalAmount: formatAmount(prodNet, currencyCode),
+                taxAmount: formatAmount(lineItem.adjustedTax && lineItem.adjustedTax.value > 0 ? lineItem.adjustedTax.value : 0, currencyCode),
+                typeOfSupply: '00',
                 productSku: lineItem.productID || ''
             };
-
-            if (lineItem.proratedPrice && lineItem.proratedPrice.value > 0) {
-                itemObject.unitPrice = formatAmount(lineItem.proratedPrice.value / lineItem.quantityValue, currencyCode);
-                itemObject.totalAmount = formatAmount(lineItem.proratedPrice.value, currencyCode);
-            }
         } else if (lineItem instanceof dw.order.GiftCertificateLineItem) {
             itemObject = {
                 productName: 'GIFT_CERTIFICATE',
+                productDescription: 'GIFT_CERTIFICATE',
                 quantity: 1,
-                unitPrice: formatAmount(lineItem.adjustedPrice.value, currencyCode),
-                totalAmount: formatAmount(lineItem.adjustedGrossPrice.value, currencyCode),
+                unitPrice: formatAmount(lineItem.netPrice.value, currencyCode),
+                totalAmount: formatAmount(lineItem.netPrice.value, currencyCode),
                 taxAmount: formatAmount(0, currencyCode),
-                productCode: 'GIFT_CERTIFICATE',
+                typeOfSupply: '00',
                 productSku: 'GIFT_CERTIFICATE'
             };
         } else if (lineItem instanceof dw.order.ShippingLineItem) {
             if (lineItem.adjustedPrice.value === 0) {
                 continue;
             }
+            var shipNet = lineItem.adjustedNetPrice.value;
             itemObject = {
                 productName: lineItem.ID || 'SHIPPING',
+                productDescription: lineItem.ID || 'SHIPPING',
                 quantity: 1,
-                unitPrice: formatAmount(lineItem.adjustedPrice.value, currencyCode),
-                totalAmount: formatAmount(lineItem.adjustedGrossPrice.value, currencyCode),
-                productCode: 'SHIPPING',
+                unitPrice: formatAmount(shipNet, currencyCode),
+                totalAmount: formatAmount(shipNet, currencyCode),
+                taxAmount: formatAmount(lineItem.adjustedTax && lineItem.adjustedTax.value > 0 ? lineItem.adjustedTax.value : 0, currencyCode),
+                typeOfSupply: '01',
                 productSku: lineItem.ID || 'SHIPPING'
             };
-            if (lineItem.adjustedTax && lineItem.adjustedTax.value > 0) {
-                itemObject.taxAmount = formatAmount(lineItem.adjustedTax.value, currencyCode);
-            }
         } else if (lineItem instanceof dw.order.ProductShippingLineItem) {
+            var surchargeNet = lineItem.adjustedNetPrice.value;
             itemObject = {
                 productName: 'SHIPPING_SURCHARGE',
+                productDescription: 'SHIPPING_SURCHARGE',
                 quantity: 1,
-                unitPrice: formatAmount(lineItem.adjustedPrice.value, currencyCode),
-                totalAmount: formatAmount(lineItem.adjustedGrossPrice.value, currencyCode),
-                taxAmount: formatAmount(lineItem.adjustedTax ? lineItem.adjustedTax.value : 0, currencyCode),
-                productCode: 'SHIPPING_SURCHARGE',
+                unitPrice: formatAmount(surchargeNet, currencyCode),
+                totalAmount: formatAmount(surchargeNet, currencyCode),
+                taxAmount: formatAmount(lineItem.adjustedTax && lineItem.adjustedTax.value > 0 ? lineItem.adjustedTax.value : 0, currencyCode),
+                typeOfSupply: '01',
                 productSku: 'SHIPPING_SURCHARGE'
             };
         }
@@ -766,28 +895,29 @@ function buildCompleteMandate(configObject, isTokenizationEnabled, isRegisteredC
 /**
  * Build orderInformation object for capture context
  * @param {dw.order.Basket} basket - Current basket
- * @param {boolean} isMiniCart - Whether this is minicart flow
  * @returns {Object} - orderInformation object
  */
-function buildOrderInformation(basket, isMiniCart) {
+function buildOrderInformation(basket) {
     var currencyCode = basket.currencyCode;
     var orderInformation = {
         amountDetails: {
             totalAmount: formatAmount(basket.totalGrossPrice.value, currencyCode),
-            currency: currencyCode
+            currency: currencyCode,
+            taxAmount: formatAmount(basket.totalTax.value > 0 ? basket.totalTax.value : 0, currencyCode)
         }
     };
 
-    if (!isMiniCart) {
-        var billTo = buildBillToAddress(basket);
-        if (billTo) {
-            orderInformation.billTo = billTo;
-        }
+    // Populate billTo/shipTo whenever the basket has them, for both checkout and
+    // Express Pay flows, so the capture-context mirrors the data CyberSource needs to
+    // render APMs and wallets. The build helpers return null when no address exists.
+    var billTo = buildBillToAddress(basket);
+    if (billTo) {
+        orderInformation.billTo = billTo;
+    }
 
-        var shipTo = buildShipToAddress(basket);
-        if (shipTo) {
-            orderInformation.shipTo = shipTo;
-        }
+    var shipTo = buildShipToAddress(basket);
+    if (shipTo) {
+        orderInformation.shipTo = shipTo;
     }
 
     var lineItems = buildLineItems(basket);
@@ -1144,6 +1274,9 @@ module.exports = {
     
     // Payment method detection
     detectPaymentMethod: detectPaymentMethod,
+    
+    getApmDescriptor: getApmDescriptor,
+    
     getProcessorIdForMethod: getProcessorIdForMethod,
     extractBankDetails: extractBankDetails,
 
@@ -1154,6 +1287,9 @@ module.exports = {
     
     // Transaction custom attributes
     setTransactionCustomAttribute: setTransactionCustomAttribute,
+    
+    setInstrumentCustomAttribute: setInstrumentCustomAttribute,
+    
     
     // Authorization status
     isValidAuthorizationStatus: isValidAuthorizationStatus,

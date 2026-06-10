@@ -380,17 +380,10 @@
                 <externally-managed-flag>false</externally-managed-flag>
             </attribute-definition>
             <attribute-definition attribute-id="Cybersource_CertificateAlias">
-                <display-name xml:lang="x-default">Alias of the Certificate (Ingress)</display-name>
-                <description xml:lang="x-default">Alias of the "CyberSource_SJC_US" Certificate imported in "Private Keys and Certificates" for request encryption.</description>
+                <display-name xml:lang="x-default">Alias of the Certificate</display-name>
+                <description xml:lang="x-default">Alias of the "CyberSource_SJC_US" Certificate imported in "Private Keys and Certificates".</description>
                 <type>string</type>
                 <externally-managed-flag>false</externally-managed-flag>
-            </attribute-definition>
-            <attribute-definition attribute-id="Cybersource_EgressCertificateAlias">
-                <display-name xml:lang="x-default">Alias of the Certificate (Egress/Webhooks)</display-name>
-                <description xml:lang="x-default">Alias of the Merchant P12 key imported in "Private Keys and Certificates" for response/webhook decryption.</description>
-                <type>string</type>
-                <externally-managed-flag>false</externally-managed-flag>
-                <default-value>Cybersource_MLE_Egress_Private_Key</default-value>
             </attribute-definition>
             <attribute-definition attribute-id="VisaAcceptance_Secure_Integration_Method">
                 <display-name xml:lang="x-default">Secure Integration Method</display-name>
@@ -610,7 +603,6 @@
                 <attribute attribute-id="Cybersource_MLEEnabled"/>
                 <attribute attribute-id="Cybersource_CertificateSerialNo"/>
                 <attribute attribute-id="Cybersource_CertificateAlias"/>
-                <attribute attribute-id="Cybersource_EgressCertificateAlias"/>
             </attribute-group>
             <attribute-group group-id="VisaAcceptance_SecureIntegrationConfiguration">
                 <display-name xml:lang="x-default">Secure Integration Configuration</display-name>

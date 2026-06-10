@@ -75,6 +75,10 @@
         {
             "name": "app.payment.processor.payments_googlepay",
             "script": "./cartridge/scripts/hooks/payment/processor/google_pay_uc"
+        },
+        {
+            "name": "app.payment.processor.alt_payment",
+            "script": "./cartridge/scripts/hooks/payment/processor/alt_payment"
         }
 
     ]

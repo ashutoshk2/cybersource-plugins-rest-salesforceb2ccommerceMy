@@ -491,17 +491,6 @@ SecureIntegrationConfiguration:{
                 flags: {
                     mandatory: false
                 }
-            },
-            /** @type {CustomPreference} */
-            ConversionDetailReportLookbackTime: {
-                id: 'Cybersource_ConversionDetailReportLookbackTime',
-                display_name: 'Conversion Detail Report Lookback time',
-                description: 'Number of hours the job will look back for new decisions. CS does not support lookbacks over 24 hours. Do not set above 24',
-                type: Types.int,
-                default: '23',
-                flags: {
-                    mandatory: false
-                }
             }
         }
     },

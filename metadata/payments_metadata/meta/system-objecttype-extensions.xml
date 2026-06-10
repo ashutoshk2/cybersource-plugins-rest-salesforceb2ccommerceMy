@@ -15,12 +15,40 @@
                 <externally-managed-flag>false</externally-managed-flag>
                 <min-length>0</min-length>
             </attribute-definition>
+            <!-- START GENAI -->
+            <attribute-definition attribute-id="reconciliationId">
+                <display-name xml:lang="x-default">Reconciliation ID</display-name>
+                <type>string</type>
+                <mandatory-flag>false</mandatory-flag>
+                <externally-managed-flag>false</externally-managed-flag>
+                <min-length>0</min-length>
+            </attribute-definition>
+            <attribute-definition attribute-id="approvalCode">
+                <display-name xml:lang="x-default">Approval Code</display-name>
+                <type>string</type>
+                <mandatory-flag>false</mandatory-flag>
+                <externally-managed-flag>false</externally-managed-flag>
+                <min-length>0</min-length>
+            </attribute-definition>
+            <attribute-definition attribute-id="networkTransactionId">
+                <display-name xml:lang="x-default">Network Transaction ID</display-name>
+                <type>string</type>
+                <mandatory-flag>false</mandatory-flag>
+                <externally-managed-flag>false</externally-managed-flag>
+                <min-length>0</min-length>
+            </attribute-definition>
+            <!-- END GENAI -->
         </custom-attribute-definitions>
         <group-definitions>
             <attribute-group group-id="Custom">
                 <display-name xml:lang="x-default">Custom</display-name>
                 <attribute attribute-id="AmountPaid"/>
                 <attribute attribute-id="paymentDetails"/>
+                <!-- START GENAI -->
+                <attribute attribute-id="reconciliationId"/>
+                <attribute attribute-id="approvalCode"/>
+                <attribute attribute-id="networkTransactionId"/>
+                <!-- END GENAI -->
             </attribute-group>
         </group-definitions>
     </type-extension>
@@ -74,6 +102,29 @@
                 <mandatory-flag>false</mandatory-flag>
                 <externally-managed-flag>false</externally-managed-flag>
             </attribute-definition>
+            <!-- START GENAI -->
+            <attribute-definition attribute-id="apmPaymentType">
+                <display-name xml:lang="x-default">APM Payment Type</display-name>
+                <type>string</type>
+                <mandatory-flag>false</mandatory-flag>
+                <externally-managed-flag>false</externally-managed-flag>
+                <min-length>0</min-length>
+            </attribute-definition>
+            <attribute-definition attribute-id="apmMethod">
+                <display-name xml:lang="x-default">APM Method</display-name>
+                <type>string</type>
+                <mandatory-flag>false</mandatory-flag>
+                <externally-managed-flag>false</externally-managed-flag>
+                <min-length>0</min-length>
+            </attribute-definition>
+            <attribute-definition attribute-id="apmMandateType">
+                <display-name xml:lang="x-default">APM Mandate Type</display-name>
+                <type>string</type>
+                <mandatory-flag>false</mandatory-flag>
+                <externally-managed-flag>false</externally-managed-flag>
+                <min-length>0</min-length>
+            </attribute-definition>
+            <!-- END GENAI -->
              <attribute-definition attribute-id="isGooglePaycardHolderAuthenticated">
                 <display-name xml:lang="x-default">Google Pay Card Holder Authenticated</display-name>
                 <type>boolean</type>
@@ -96,6 +147,11 @@
             </attribute-group>
             <attribute-group group-id="UnifiedCheckout">
                 <attribute attribute-id="UCToken"/>
+                <!-- START GENAI -->
+                <attribute attribute-id="apmPaymentType"/>
+                <attribute attribute-id="apmMethod"/>
+                <attribute attribute-id="apmMandateType"/>
+                <!-- END GENAI -->
             </attribute-group>
             <attribute-group group-id="GooglePay">
                 <attribute attribute-id="isGooglePaycardHolderAuthenticated"/>
