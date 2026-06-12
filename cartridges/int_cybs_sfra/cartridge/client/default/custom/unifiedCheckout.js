@@ -1,4 +1,4 @@
-​/**
+/**
  * Cybersource Unified Checkout JavaScript
  * Handles the initialization and management of Unified Checkout widget
  */
@@ -976,6 +976,20 @@ var unifiedCheckout = {
                 $('#expirationMonth').val(decodedJwt.content.paymentInformation.tokenizedCard.expirationMonth.value);
                 $('#expirationYear').val(decodedJwt.content.paymentInformation.tokenizedCard.expirationYear.value);
             }
+            
+            // Alternate payment method (paymentType present). Checked BEFORE the card
+            // branch because real APM tokens (e.g. iDEAL/Multibanco) also echo the
+            // scheme code into card.type, which would otherwise match the card branch.
+            // The main checkout completeMandate path is handled server-side by
+            // PlaceOrderDirect; this only labels the method for the minicart/
+            // SubmitPayment fallback (no card/bank fields to populate).
+            else if (decodedJwt.content.paymentInformation && decodedJwt.content.paymentInformation.paymentType) {
+                $('#uc-payment-method').val('ALT_PAYMENT_METHOD');
+                $('input[name="dwfrm_billing_creditCardFields_ucpaymentmethod"]').val('ALT_PAYMENT_METHOD');
+                $('input[name=dwfrm_billing_paymentMethod]').val('ALT_PAYMENT_METHOD');
+                console.log('alternate payment method detected');
+            }
+            
             // Handle regular credit card payments
             else if (decodedJwt.content.paymentInformation.card) {
                 if (decodedJwt.content.processingInformation &&
@@ -2338,6 +2352,16 @@ function processOtherCartAndMinicartPayments() {
     var isClickToPay = paymentSolutionValue == '027';
     var isApplePay = paymentSolutionValue == '001';
 
+    
+    // Alternate payment method (PPRO online bank transfer, BNPL, PayPal, Venmo, Paze):
+    // identified by a paymentType descriptor. Real APM tokens (iDEAL/Multibanco) ALSO
+    // echo the scheme code into card.type, so detection keys off paymentType presence
+    // (cards/wallets never carry paymentType), NOT card absence. The server records the
+    // specific scheme from the result JWT.
+    var minicartPaymentInfo = decodedJwt.content && decodedJwt.content.paymentInformation;
+    var isAltPayment = !!(minicartPaymentInfo && minicartPaymentInfo.paymentType);
+    
+
     // Determine payment method
     var paymentMethod = 'CREDIT_CARD';
     if (isClickToPay) {
@@ -2345,6 +2369,11 @@ function processOtherCartAndMinicartPayments() {
     } else if (isApplePay) {
         paymentMethod = 'DW_APPLE_PAY';
     }
+    
+    if (isAltPayment) {
+        paymentMethod = 'ALT_PAYMENT_METHOD';
+    }
+    
 
     // Get CSRF token
     var csrfToken = $('input[name="csrf_token"]').val() || $('.csrf_token').val();
@@ -2368,8 +2397,9 @@ function processOtherCartAndMinicartPayments() {
     }
 
     // Handle regular card data (Click to Pay or regular credit card)
+    // Skip for APMs: their card.type holds the scheme code (e.g. IDLPP), not a real PAN.
     var cardData = decodedJwt.content.paymentInformation.card;
-    if (cardData && !isApplePay) {
+    if (cardData && !isApplePay && !isAltPayment) { /* GENAI: added !isAltPayment guard */
         // Use the existing function to determine the card type and set the hidden input
         assignCorrectCardType(cardData.type.value);
 

@@ -729,13 +729,27 @@ server.post('PlaceOrderDirect', server.middleware.https, function (req, res, nex
                     paymentInstrument.paymentTransaction.setPaymentProcessor(paymentProcessor);
                 }
 
-                // Extract and set card details (pass order billing address for cardholder name)
-                var cardDetails = ucPaymentHelper.extractCardDetails(jwtPayload, transientToken, order.billingAddress);
-                ucPaymentHelper.updatePaymentInstrumentCardDetails(paymentInstrument, cardDetails, isDigitalWallet);
+                
+                if (detectedPaymentMethod === 'ALT_PAYMENT_METHOD') {
+                    // Alternate payment methods (PPRO bank transfers, BNPL, PayPal,
+                    // Venmo, Paze, ...) carry no card/bank-account data. Record the
+                    // scheme descriptor instead of card details.
+                    var apmDescriptor = ucPaymentHelper.getApmDescriptor(jwtPayload) || { name: '', method: '' };
+                    var apmDetailsStr = apmDescriptor.method || apmDescriptor.name || 'Alternate Payment';
+                    paymentInstrument.paymentTransaction.custom.paymentDetails = apmDetailsStr;
+                    ucPaymentHelper.setInstrumentCustomAttribute(paymentInstrument, 'apmPaymentType', apmDescriptor.name);
+                    ucPaymentHelper.setInstrumentCustomAttribute(paymentInstrument, 'apmMethod', apmDescriptor.method);
+                    ucPaymentHelper.setInstrumentCustomAttribute(paymentInstrument, 'apmMandateType', session.privacy.ucResolvedMandateType);
+                } else {
+                    // Extract and set card details (pass order billing address for cardholder name)
+                    var cardDetails = ucPaymentHelper.extractCardDetails(jwtPayload, transientToken, order.billingAddress);
+                    ucPaymentHelper.updatePaymentInstrumentCardDetails(paymentInstrument, cardDetails, isDigitalWallet);
 
-                // Set payment details string
-                var paymentDetailsStr = ucPaymentHelper.buildPaymentDetailsString(cardDetails);
-                paymentInstrument.paymentTransaction.custom.paymentDetails = paymentDetailsStr;
+                    // Set payment details string
+                    var paymentDetailsStr = ucPaymentHelper.buildPaymentDetailsString(cardDetails);
+                    paymentInstrument.paymentTransaction.custom.paymentDetails = paymentDetailsStr;
+                }
+                
 
                 // Store transient token for potential refunds/captures
                 if (transientToken) {
@@ -806,7 +820,13 @@ server.post('PlaceOrderDirect', server.middleware.https, function (req, res, nex
             Transaction.wrap(function () {
                 if (webhookDetails.status === 'COMPLETED' || webhookDetails.status === 'SETTLED' || webhookDetails.status === 'AUTHORIZED') {
                     order.setConfirmationStatus(order.CONFIRMATION_STATUS_CONFIRMED);
-                } else if (webhookDetails.status === 'AUTHORIZED_PENDING_REVIEW') {
+                
+                // PENDING / SETTLE_INITIATED cover asynchronous alternate payment
+                // methods that have not fully settled yet (e.g. iDEAL/Multibanco
+                // PENDING, Tink SETTLE_INITIATED); treated the same as
+                // AUTHORIZED_PENDING_REVIEW.
+                } else if (webhookDetails.status === 'AUTHORIZED_PENDING_REVIEW' || webhookDetails.status === 'PENDING' || webhookDetails.status === 'SETTLE_INITIATED') {
+                
                     order.setConfirmationStatus(order.CONFIRMATION_STATUS_NOTCONFIRMED);
                 }
                 CustomObjectMgr.remove(stagingObj);
@@ -816,6 +836,20 @@ server.post('PlaceOrderDirect', server.middleware.https, function (req, res, nex
     } catch (stagingErr) {
         logger.error('PlaceOrderDirect: Error applying staged webhook payload: {0}', stagingErr.message || stagingErr);
     }
+
+    
+    // Asynchronous/redirect alternate payment methods authorize as PENDING or
+    // SETTLE_INITIATED in the result JWT and settle later. If no settlement webhook has
+    // already confirmed the order above, leave it NOTCONFIRMED so it is not treated as
+    // fully paid until the WebhookNotification reconciliation promotes it. (SFCC has no
+    // request-time async to poll refresh-payment-status here.)
+    if ((authStatus === 'PENDING' || authStatus === 'SETTLE_INITIATED') && order.getConfirmationStatus().getValue() !== order.CONFIRMATION_STATUS_CONFIRMED) {
+        Transaction.wrap(function () {
+            order.setConfirmationStatus(order.CONFIRMATION_STATUS_NOTCONFIRMED);
+        });
+        logger.info('PlaceOrderDirect: Order {0} left NOTCONFIRMED pending APM settlement (status PENDING)', order.orderNo);
+    }
+    
 
     // Save TMS token to customer wallet if user opted to save card
     // Extract card details first (needed for wallet entry) - pass billing address for cardholder name

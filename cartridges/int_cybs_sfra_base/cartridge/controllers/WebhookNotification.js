@@ -15,14 +15,39 @@ function decryptMLEPayload(jweString) {
     if (!jweString) return null;
     var JWE = require('dw/crypto/JWE');
     var KeyRef = require('dw/crypto/KeyRef');
-    var alias = config.egressMleCertificateAlias || 'Cybersource_MLE_Egress_Private_Key';
     
+    // Fix: module requires the config as `configObject` (line 13); `config` was undefined and
+    // threw ReferenceError on every MLE webhook, breaking decryption before the alias resolved.
+    var alias = configObject.egressMleCertificateAlias || 'Cybersource_MLE_Egress_Private_Key';
+    
+
+    // Pin the JWE header before handing the payload to dw/crypto/JWE — defense-in-depth
+    // against algorithm-confusion and a clearer error when a misrouted webhook arrives.
+    var trimmed = jweString.trim();
+    var headerB64 = trimmed.split('.')[0];
+    if (headerB64) {
+        try {
+            var b64 = headerB64.replace(/-/g, '+').replace(/_/g, '/');
+            var padLen = b64.length % 4;
+            if (padLen === 2) b64 += '==';
+            else if (padLen === 3) b64 += '=';
+            var header = JSON.parse(Encoding.fromBase64(b64).toString());
+            if (header.alg !== 'RSA-OAEP-256' || header.enc !== 'A256GCM') {
+                Logger.error('decryptMLEPayload: unexpected JWE algorithms — alg=' + header.alg + ', enc=' + header.enc + '. Expected RSA-OAEP-256 + A256GCM per CyberSource webhook spec.');
+                throw new Error('Unsupported JWE algorithms');
+            }
+        } catch (he) {
+            if (he.message === 'Unsupported JWE algorithms') throw he;
+            // Header parse failure — fall through; JWE.parse below will surface a clearer error.
+        }
+    }
+
     try {
-        var jwe = JWE.parse(jweString.trim());
+        var jwe = JWE.parse(trimmed);
         jwe.decrypt(new KeyRef(alias));
         return jwe.getPayload();
     } catch (e) {
-        Logger.error('decryptMLEPayload failed for alias "' + alias + '": ' + e.message);
+        Logger.error('decryptMLEPayload failed for alias "' + alias + '": ' + e.message + '. Verify the .p12 private key is uploaded under Administration > Operations > Private Keys and Certificates with this exact alias.');
         throw e;
     }
 }
@@ -32,7 +57,7 @@ function decryptMLEPayload(jweString) {
  */
 function validateSignature(req, customObjectKey) {
     var digitalSignature = req.httpHeaders.get('v-c-signature');
-    Logger.error('Validating signature for ' + customObjectKey + ': ' + digitalSignature);
+    Logger.info('Validating signature for ' + customObjectKey);
     if (!digitalSignature || !req.body) return false;
     try {
         var signatureParts = digitalSignature.split(';');
@@ -46,20 +71,11 @@ function validateSignature(req, customObjectKey) {
 
         var hmac = new Mac('HmacSHA256');
         var secret = Encoding.fromBase64(obj.custom.SecurityKey);
-        
-        var variations = [req.body];
-        try {
-            var jsonBody = JSON.parse(req.body);
-            if (jsonBody.encryptedRequest) variations.push(jsonBody.encryptedRequest);
-            if (jsonBody.payload) variations.push(JSON.stringify(jsonBody.payload));
-        } catch (e) {}
 
-        for (var i = 0; i < variations.length; i++) {
-            var payloadToSign = variations[i];
-            var regenerated = hmac.digest(new Bytes(ts + '.' + payloadToSign, 'utf8'), secret);
-            if (regenerated.toString() === Encoding.fromBase64(s).toString()) return true;
-        }
-        return false;
+        // CyberSource signs `{timestamp}.{raw_body}`. The earlier 3-variant fallback
+        // re-stringified parsed JSON, which can never byte-match the original payload.
+        var regenerated = hmac.digest(new Bytes(ts + '.' + req.body, 'utf8'), secret);
+        return regenerated.toString() === Encoding.fromBase64(s).toString();
     } catch (e) { 
         Logger.error('Error in validateSignature: ' + e.message);
         return false; 
@@ -117,14 +133,25 @@ function handleDmNotification(req, res, next) {
             return next();
         }
 
+        
         Transaction.wrap(function () {
             var eventType = payload.eventType || (payload.payload && payload.payload[0] ? payload.payload[0].eventType : null);
-            if (eventType === 'risk.casemanagement.decision.accept') { 
-                order.setConfirmationStatus(order.CONFIRMATION_STATUS_CONFIRMED); 
-            } else if (eventType && eventType.indexOf('reject') > -1) { 
-                order.setConfirmationStatus(order.CONFIRMATION_STATUS_NOTCONFIRMED); 
+            if (eventType === 'risk.casemanagement.decision.accept') {
+                // Replicates DMOrderStatusUpdate.js cron behavior on ACCEPT.
+                OrderMgr.placeOrder(order);
+                order.setConfirmationStatus(order.CONFIRMATION_STATUS_CONFIRMED);
+                Logger.info('dmNotification: Order ( ' + orderId + ' ) successfully placed via case-management ACCEPT');
+            } else if (eventType && eventType.indexOf('reject') > -1) {
+                // Replicates DMOrderStatusUpdate.js cron behavior on REJECT.
+                var reviewerComment = (details && details.riskInformation && details.riskInformation.reviewerComments)
+                    || (details && details.reviewerComments)
+                    || '';
+                OrderMgr.failOrder(order, false);
+                order.cancelDescription = reviewerComment;
+                Logger.info('dmNotification: Order ( ' + orderId + ' ) canceled via case-management REJECT');
             }
         });
+        
         
         res.setStatusCode(200);
         res.json({ success: true });
@@ -140,7 +167,23 @@ function handleDmNotification(req, res, next) {
 server.use('dmNotification', handleDmNotification);
 server.use('novusDmNotification', handleDmNotification);
 
-// APM Notifications
+// APM (Unified Checkout) Notifications
+//
+// Architecture: the UC API *response* (handled inline at checkout) is the
+// primary source of truth for order placement and confirmation status. This
+// webhook is intentionally secondary — it serves two purposes only:
+//
+//   1. Enrichment: log additional transactional info (final settlement
+//      status, risk decisions, network token info) that wasn't in the
+//      synchronous response.
+//   2. Safety net: if the response handler never reached the order (e.g.
+//      browser closed mid-flow), stage the payload under
+//      `CybersourceWebhookStaging` so a manual / cron reconciliation can
+//      pick it up. The CyberSource retry policy gives us up to 3 deliveries.
+//
+// Important: the webhook MUST NOT downgrade an already-confirmed order back
+// to NOTCONFIRMED. A late-arriving AUTHORIZED_PENDING_REVIEW for an order the
+// response already confirmed is normal (review can clear after auth).
 server.use('paymentNotification', function (req, res, next) {
     if (req.httpMethod === 'GET') {
         res.json({ success: true });
@@ -158,20 +201,20 @@ server.use('paymentNotification', function (req, res, next) {
         var payload = getDecryptedPayload(req.body);
         if (!payload) throw new Error('Decrypted payload is empty');
 
-        var details = (payload.payload && payload.payload.transactionResult) ? payload.payload.transactionResult.details : 
+        var details = (payload.payload && payload.payload.transactionResult) ? payload.payload.transactionResult.details :
                       (payload.payload && payload.payload.length ? payload.payload[0].data : payload);
-                      
+
         var orderId = details && details.clientReferenceInformation ? details.clientReferenceInformation.code : null;
         if (!orderId) throw new Error('Missing Order ID');
 
         var order = OrderMgr.getOrder(orderId);
-        
+
         if (!order) {
             var retryCount = parseInt(payload.retryNumber || (req.httpHeaders.containsKey('v-c-retry-count') ? req.httpHeaders.get('v-c-retry-count') : 0), 10) || 0;
 
             Transaction.wrap(function () {
                 var stagingObj = CustomObjectMgr.getCustomObject('CybersourceWebhookStaging', orderId) || CustomObjectMgr.createCustomObject('CybersourceWebhookStaging', orderId);
-                
+
                 if (retryCount >= 2) {
                     Logger.error('paymentNotification: CRITICAL - FINAL RETRY FAILED. Failed to create order ' + orderId + ' after all webhook retries. This is definitively an orphaned authorization.');
                 } else if (stagingObj.custom.payload) {
@@ -181,22 +224,41 @@ server.use('paymentNotification', function (req, res, next) {
                 }
                 stagingObj.custom.payload = JSON.stringify(payload);
             });
-            
+
             if (retryCount >= 2) {
                 res.setStatusCode(200);
                 res.json({ success: true, message: 'Final retry acknowledged. Orphaned authorization staged.' });
             } else {
-                res.setStatusCode(503); 
+                res.setStatusCode(503);
                 res.json({ success: false, message: 'Order not yet created. Payload staged. Requesting retry as safety net.' });
             }
             return next();
         }
-        
+
+        // Enrichment logging — additional transactional info beyond what the
+        // synchronous UC response carried. Keep this lightweight; deeper
+        // persistence (e.g. order custom attrs) is left to merchant overrides.
+        var enrichment = {
+            orderId: orderId,
+            status: details && details.status,
+            id: details && details.id,
+            reconciliationId: details && details.reconciliationId,
+            riskDecision: details && details.riskInformation && details.riskInformation.providers
+                ? details.riskInformation.providers.decision : undefined,
+            networkTokenState: details && details.tokenInformation && details.tokenInformation.networkTokenOption
+                ? details.tokenInformation.networkTokenOption.state : undefined
+        };
+        Logger.info('paymentNotification enrichment for ' + orderId + ': ' + JSON.stringify(enrichment));
+
         Transaction.wrap(function () {
-            if (['COMPLETED', 'SETTLED', 'AUTHORIZED'].indexOf(details.status) > -1) {
+            // Response is primary for confirmation status. Only *promote* an
+            // unconfirmed order to CONFIRMED here as a safety net; never
+            // demote a confirmed order back to NOTCONFIRMED.
+            var currentStatus = order.getConfirmationStatus();
+            if (currentStatus !== order.CONFIRMATION_STATUS_CONFIRMED &&
+                ['COMPLETED', 'SETTLED', 'AUTHORIZED'].indexOf(details.status) > -1) {
                 order.setConfirmationStatus(order.CONFIRMATION_STATUS_CONFIRMED);
-            } else if (details.status === 'AUTHORIZED_PENDING_REVIEW') {
-                order.setConfirmationStatus(order.CONFIRMATION_STATUS_NOTCONFIRMED);
+                Logger.info('paymentNotification: Promoted order ' + orderId + ' to CONFIRMED via webhook safety net (response handler must have missed it).');
             }
 
             var stagingObj = CustomObjectMgr.getCustomObject('CybersourceWebhookStaging', orderId);
@@ -207,7 +269,7 @@ server.use('paymentNotification', function (req, res, next) {
         res.json({ success: true });
     } catch (e) {
         Logger.error('paymentNotification error: ' + e.message);
-        res.setStatusCode(200); 
+        res.setStatusCode(200);
         res.json({ success: false });
     }
     return next();

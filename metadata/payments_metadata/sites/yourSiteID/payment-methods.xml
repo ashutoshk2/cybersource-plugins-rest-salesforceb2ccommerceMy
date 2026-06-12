@@ -42,6 +42,13 @@
         <enabled-flag>false</enabled-flag>
         <processor-id>PAYMENTS_CREDIT</processor-id>
     </payment-method>
+    <!-- START GENAI -->
+    <payment-method method-id="ALT_PAYMENT_METHOD">
+        <name xml:lang="x-default">Alternate Payment Method</name>
+        <enabled-flag>true</enabled-flag>
+        <processor-id>ALT_PAYMENT</processor-id>
+    </payment-method>
+    <!-- END GENAI -->
 
     <payment-card card-type="China UnionPay">
         <name xml:lang="x-default">China UnionPay</name>
