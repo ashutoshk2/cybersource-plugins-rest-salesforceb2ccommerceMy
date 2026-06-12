@@ -93,7 +93,7 @@ function savePaymentInstrumentToWallet(billingData, currentBasket, customer) {
 
     // Determine payment method - check if UC token exists
     var isUCPayment = !empty(transientToken);
-    var isFlexPayment = !isUCPayment && billingData.paymentInformation;
+    var isDirectCardPayment = !isUCPayment && billingData.paymentInformation;
     if (isUCPayment) {
         return Transaction.wrap(function () {
             var paymentInstrument = wallet.createPaymentInstrument(PaymentInstrument.METHOD_CREDIT_CARD);
@@ -110,7 +110,7 @@ function savePaymentInstrumentToWallet(billingData, currentBasket, customer) {
             return paymentInstrument;
         });
 
-    } else if (isFlexPayment) {
+    } else if (isDirectCardPayment) {
         return Transaction.wrap(function () {
             var storedPaymentInstrument = wallet.createPaymentInstrument(PaymentInstrument.METHOD_CREDIT_CARD);
 

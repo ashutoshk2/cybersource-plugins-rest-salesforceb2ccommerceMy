@@ -103,4 +103,21 @@
             </attribute-group>
         </group-definitions>
     </type-extension>
+    <type-extension type-id="CustomerPaymentInstrument">
+        <custom-attribute-definitions>
+            <attribute-definition attribute-id="isDefault">
+                <display-name xml:lang="x-default">Default Payment Instrument</display-name>
+                <description xml:lang="x-default">Marks this saved card as the shopper's default. Exactly one saved card should have this set to true.</description>
+                <type>boolean</type>
+                <mandatory-flag>false</mandatory-flag>
+                <externally-managed-flag>false</externally-managed-flag>
+            </attribute-definition>
+        </custom-attribute-definitions>
+        <group-definitions>
+            <attribute-group group-id="Custom">
+                <display-name xml:lang="x-default">Custom</display-name>
+                <attribute attribute-id="isDefault"/>
+            </attribute-group>
+        </group-definitions>
+    </type-extension>
 </metadata>

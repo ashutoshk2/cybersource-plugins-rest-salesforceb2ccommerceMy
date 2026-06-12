@@ -37,9 +37,6 @@ module.exports = {
   SIGNATURE_ALGORITHAM: "SHA-256=",
   HmacSHA256: "HmacSHA256",
 
-  /* Flex microform constants */
-  CLIENT_VERSION : "v2",
-
   /* Unified Checkout constants */
   // v1.x: Auto-versioning recommended - omit clientVersion or set to "1.0"
   UC_CLIENT_VERSION: "1.0",

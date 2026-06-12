@@ -12,9 +12,7 @@ function activateWebhooks() {
 
         var webhooksToActivate = [
             { type: 'CyberSource Webhook Subscription', id: 'fraudManagement' },
-            { type: 'CyberSource Webhook Subscription', id: 'unifiedCheckout' },
-            { type: 'CyberSource Webhook Subscription', id: 'tokenManagement' },
-            { type: 'Network Tokens Webhook', id: configObject.merchantID, keyField: 'SubscriptionId' }
+            { type: 'CyberSource Webhook Subscription', id: 'unifiedCheckout' }
         ];
         
         webhooksToActivate.forEach(function(item) {

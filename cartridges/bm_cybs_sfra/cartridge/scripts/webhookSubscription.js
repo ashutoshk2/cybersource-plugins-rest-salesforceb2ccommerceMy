@@ -35,11 +35,6 @@ var WEBHOOK_CONFIGS = {
         description: 'UC Events Simulation',
         notificationEndpoint: 'WebhookNotification-paymentNotification',
         products: [{ productId: 'unifiedCheckout', eventTypes: ['uc.orders.transactionresults'] }]
-    },
-    tokenManagement: {
-        name: 'Token Management',
-        notificationEndpoint: 'WebhookNotification-tokenUpdate',
-        products: [{ productId: 'tokenManagement', eventTypes: ['tms.networktoken.updated', 'tms.networktoken.provisioned'] }]
     }
 };
 
@@ -212,7 +207,6 @@ function getViewData() {
     var method = site.getCustomPreferenceValue('VisaAcceptance_Secure_Integration_Method');
     var methodValue = (method && method.value) ? method.value : (method || '');
     var dmEnabled = site.getCustomPreferenceValue('Cybersource_DecisionManager') || false;
-    var ntEnabled = site.getCustomPreferenceValue('Cybersource_NetworkToken') || false;
     var egressMleAlias = site.getCustomPreferenceValue('Cybersource_EgressCertificateAlias') || 'Cybersource_MLE_Egress_Private_Key';
     
     var testAction = new URLAction('WebhookNotification-dmNotification', site.ID);
@@ -232,7 +226,6 @@ function getViewData() {
     var data = {
         config: {
             dmEnabled: dmEnabled,
-            ntEnabled: ntEnabled,
             secureIntegrationMethod: methodValue,
             webhookBaseUrl: webhookBaseUrl,
             egressMleAlias: egressMleAlias,
@@ -244,7 +237,7 @@ function getViewData() {
         external: []
     };
 
-    var products = ['fraudManagement', 'unifiedCheckout', 'tokenManagement'];
+    var products = ['fraudManagement', 'unifiedCheckout'];
     products.forEach(function (productId) {
         try {
             var obj = CustomObjectMgr.getCustomObject(CUSTOM_OBJECT_TYPE, productId);
@@ -283,11 +276,6 @@ function syncWithPreferences() {
     } else if (data.config.secureIntegrationMethod !== 'Unified_Checkout' && data.subscriptions.unifiedCheckout) {
         results.uc = unsubscribeProduct('unifiedCheckout');
     }
-    if (data.config.ntEnabled && !data.subscriptions.tokenManagement) {
-        results.nt = subscribeProduct('tokenManagement');
-    } else if (!data.config.ntEnabled && data.subscriptions.tokenManagement) {
-        results.nt = unsubscribeProduct('tokenManagement');
-    }
     return results;
 }
 
@@ -314,8 +302,6 @@ exports.subscribeFraudManagement = function() { return subscribeProduct('fraudMa
 exports.unsubscribeFraudManagement = function() { return unsubscribeProduct('fraudManagement'); };
 exports.subscribeUC = function() { return subscribeProduct('unifiedCheckout'); };
 exports.unsubscribeUC = function() { return unsubscribeProduct('unifiedCheckout'); };
-exports.subscribeNetworkTokens = function() { return subscribeProduct('tokenManagement'); };
-exports.unsubscribeNetworkTokens = function() { return unsubscribeProduct('tokenManagement'); };
 exports.getViewData = getViewData;
 exports.syncWithPreferences = syncWithPreferences;
 exports.updateAdvanced = updateAdvanced;

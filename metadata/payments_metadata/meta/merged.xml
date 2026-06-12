@@ -402,10 +402,6 @@
                         <display xml:lang="x-default">Unified Checkout</display>
                         <value>Unified_Checkout</value>
                     </value-definition>
-                    <value-definition>
-                        <display xml:lang="x-default">Microform</display>
-                        <value>Microform</value>
-                    </value-definition>
                 </value-definitions>
             </attribute-definition>
             <attribute-definition attribute-id="VisaAcceptance_UnifiedCheckout_DigitalPaymentMethods">
@@ -448,7 +444,7 @@
             </attribute-definition>
             <attribute-definition attribute-id="VisaAcceptance_AllowedCardNetworks">
                 <display-name xml:lang="x-default">Allowed Card Networks</display-name>
-                <description xml:lang="x-default">Configure card types for Microform or Unified Checkout</description>
+                <description xml:lang="x-default">Configure card types for Unified Checkout</description>
                 <type>enum-of-string</type>
                 <mandatory-flag>false</mandatory-flag>
                 <externally-managed-flag>false</externally-managed-flag>
@@ -534,6 +530,29 @@
                 <externally-managed-flag>false</externally-managed-flag>
                 <regex>^.{0,60}$</regex>
                 <default-value>Secure Payments powered by Visa Acceptance Solutions</default-value>
+            </attribute-definition>
+            <attribute-definition attribute-id="VisaAcceptance_UnifiedCheckout_ExpressPay">
+                <display-name xml:lang="x-default">Enable Express Pay</display-name>
+                <description xml:lang="x-default">When enabled, Unified Checkout is split into a Wallet instance (Apple Pay, Google Pay, Paze, PayPal, Venmo) and a Non-Wallet instance (cards, BNPL, bank transfers, eCheck, post-pay). See ISV Integration Guide section 11.</description>
+                <type>boolean</type>
+                <externally-managed-flag>false</externally-managed-flag>
+                <default-value>false</default-value>
+            </attribute-definition>
+            <attribute-definition attribute-id="VisaAcceptance_UnifiedCheckout_ClientVersion">
+                <display-name xml:lang="x-default">Checkout Version (optional)</display-name>
+                <description xml:lang="x-default">Value must be 1.x (e.g. 1, 1.0, 1.6). Optional — leave blank to always use the latest 1.x release. Only major-minor versions are accepted; patch versions like 1.0.0 are not allowed. Recommended: leave blank.</description>
+                <type>string</type>
+                <mandatory-flag>false</mandatory-flag>
+                <externally-managed-flag>false</externally-managed-flag>
+                <regex>^$|^1(\.\d+)?$</regex>
+                <default-value></default-value>
+            </attribute-definition>
+            <attribute-definition attribute-id="VisaAcceptance_UnifiedCheckout_AllowedCardPrefix">
+                <display-name xml:lang="x-default">Include Card Prefix in UC Response</display-name>
+                <description xml:lang="x-default">When enabled, Unified Checkout includes the card prefix (BIN) in the transient token response. Disabled by default. Recommended: leave disabled unless your integration requires the BIN.</description>
+                <type>boolean</type>
+                <externally-managed-flag>false</externally-managed-flag>
+                <default-value>false</default-value>
             </attribute-definition>
         </custom-attribute-definitions>
         <group-definitions>
@@ -622,6 +641,9 @@
                 <attribute attribute-id="VisaAcceptance_UnifiedCheckout_EnableECheck"/>
                 <attribute attribute-id="Cybersource_CardTransactionType"/>
                 <attribute attribute-id="VisaAcceptance_UnifiedCheckout_Cart_Minicart"/>
+                <attribute attribute-id="VisaAcceptance_UnifiedCheckout_ExpressPay"/>
+                <attribute attribute-id="VisaAcceptance_UnifiedCheckout_ClientVersion"/>
+                <attribute attribute-id="VisaAcceptance_UnifiedCheckout_AllowedCardPrefix"/>
             </attribute-group>
         </group-definitions>
     </type-extension>

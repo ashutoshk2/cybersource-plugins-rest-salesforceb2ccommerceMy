@@ -40,7 +40,7 @@
 
     <include formid="billToAddressFields" name="address"/>
     <field formid="saveCard" label="label.save.card" binding="saveCard" type="boolean" mandatory="false" checked="true" />
-    <field formid="flexresponse" type="string" /> 
+
     <field formid="ucpaymenttoken" type="string" />
     <field formid="transactionId" type="string" />
     <field formid="ucpaymentmethod" type="string" />

@@ -139,7 +139,6 @@ server.post('PayerAuthSetup', server.middleware.https, function (req, res, next)
     var billingForm = server.forms.getForm('billing');
     var card = {
         token: paymentInstrument.creditCardToken,
-        jwttoken: billingForm.creditCardFields.flexresponse.value,
         ucJwtToken: paymentInstrument.custom.UCToken,
         securityCode: billingForm.creditCardFields.securityCode.value,
         googlePayFluidData: paymentInstrument.custom.GooglePayEncryptedData
@@ -223,7 +222,6 @@ server.post('PayerAuthEnroll', server.middleware.https, function (req, res, next
         var currencyCode = order.currencyCode;
         var card = {
             token: paymentInstrument.creditCardToken,
-            jwttoken: billingForm.creditCardFields.flexresponse.value,
             ucJwtToken: paymentInstrument.custom.UCToken,
             securityCode: billingForm.creditCardFields.securityCode.value,
             googlePayFluidData: paymentInstrument.custom.GooglePayEncryptedData,
@@ -373,7 +371,6 @@ server.post('PayerAuthValidation', server.middleware.https, function (req, res, 
         var currencyCode = order.currencyCode;
         var card = {
             token: paymentInstrument.creditCardToken,
-            jwttoken: billingForm.creditCardFields.flexresponse.value,
             ucJwtToken: paymentInstrument.custom.UCToken,
             securityCode: billingForm.creditCardFields.securityCode.value,
             googlePayFluidData: paymentInstrument.custom.GooglePayEncryptedData,

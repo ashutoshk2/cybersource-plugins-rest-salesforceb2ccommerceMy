@@ -211,6 +211,110 @@ function populateBasketAddressesFromPaymentDetails(basket, paymentDetails, Trans
     });
 }
 
+/**
+ * Make the transient-token amountDetails the source of truth for the order's tax/total.
+ *
+ * The UC widget authorizes the merchant-facing total it computed from the capture-context
+ * request (including tax), and echoes it back in the transient token under
+ * orderInformation.amountDetails. When SFCC's tax service computes a different value (e.g. a
+ * sandbox with no tax provider), the storefront's Order-Confirm Total would not match what was
+ * actually charged. This helper distributes the token's taxAmount across the basket's product
+ * line items as a per-line tax RATE (SFCC's updateTax interprets its argument as a rate, not a
+ * dollar amount), then recomputes basket aggregates via updateTotals() — which, unlike
+ * calculateTotals, does NOT re-fire the dw.order.calculateTax hook (calculateAdjustments.js)
+ * that would otherwise wipe these per-line values.
+ *
+ * @param {dw.order.Basket} basket - current basket
+ * @param {Object} paymentDetails - decoded response from payments.getPaymentDetails
+ * @param {Object} TransactionObj - dw/system/Transaction
+ * @returns {boolean} - true if the override was applied, false on any no-op/guard
+ */
+function applyAmountDetailsFromPaymentDetails(basket, paymentDetails, TransactionObj) {
+    if (!paymentDetails || !paymentDetails.orderInformation || !paymentDetails.orderInformation.amountDetails) {
+        return false;
+    }
+    var amountDetails = paymentDetails.orderInformation.amountDetails;
+    var tokenTaxAmount = parseFloat(amountDetails.taxAmount);
+    var tokenTotalAmount = parseFloat(amountDetails.totalAmount);
+    if (isNaN(tokenTaxAmount) || isNaN(tokenTotalAmount)) {
+        return false;
+    }
+
+    // No churn if the storefront tax already matches the token (within a cent).
+    var currentTax = basket.totalTax && basket.totalTax.available ? basket.totalTax.value : 0;
+    if (Math.abs(currentTax - tokenTaxAmount) < 0.01) {
+        return false;
+    }
+
+    var productLineItems = basket.getAllProductLineItems();
+    if (!productLineItems || productLineItems.length === 0) {
+        logger.warn('applyAmountDetailsFromPaymentDetails: basket has no product line items; cannot distribute tax');
+        return false;
+    }
+    var pliArray = productLineItems.toArray();
+    var Money = require('dw/value/Money');
+    var currencyCode = basket.currencyCode;
+
+    // Proportional weight base: sum of product-line gross prices.
+    var totalGross = 0;
+    for (var g = 0; g < pliArray.length; g++) {
+        var grossMoney = pliArray[g].adjustedGrossPrice;
+        if (grossMoney && grossMoney.available) {
+            totalGross += grossMoney.value;
+        }
+    }
+    if (totalGross <= 0) {
+        return false;
+    }
+
+    TransactionObj.wrap(function () {
+        var distributed = 0;
+        var largestLine = null;
+        var largestGross = -1;
+        var largestLineShare = 0;
+        var largestLineNet = 0;
+
+        for (var i = 0; i < pliArray.length; i++) {
+            var pli = pliArray[i];
+            var lineGross = (pli.adjustedGrossPrice && pli.adjustedGrossPrice.available) ? pli.adjustedGrossPrice.value : 0;
+            var lineNet = (pli.adjustedNetPrice && pli.adjustedNetPrice.available) ? pli.adjustedNetPrice.value : 0;
+
+            // Per-line dollar share of the token tax, proportional to gross, rounded to cents.
+            var share = Math.round((tokenTaxAmount * (lineGross / totalGross)) * 100) / 100;
+
+            // Use the two-arg updateTax(rate, taxBasis) so we supply the basis explicitly:
+            // tax = rate * basis = share, regardless of the site's net/gross taxation policy or
+            // the "tax on adjusted price" preference (which otherwise make the one-arg basis
+            // system-determined and not equal to adjustedNetPrice).
+            var rate = lineNet > 0 ? (share / lineNet) : 0;
+            pli.updateTax(rate, new Money(lineNet, currencyCode));
+            distributed += share;
+
+            if (lineGross > largestGross) {
+                largestGross = lineGross;
+                largestLine = pli;
+                largestLineShare = share;
+                largestLineNet = lineNet;
+            }
+        }
+
+        // Reconcile rounding pennies on the largest line — again via the two-arg form with an
+        // explicit basis so the corrected tax equals correctedShare exactly.
+        var penny = Math.round((tokenTaxAmount - distributed) * 100) / 100;
+        if (penny !== 0 && largestLine && largestLineNet > 0) {
+            var correctedShare = largestLineShare + penny;
+            largestLine.updateTax(correctedShare / largestLineNet, new Money(largestLineNet, currencyCode));
+        }
+
+        // Recompute basket aggregates from line-item state WITHOUT re-firing the calculate hooks.
+        basket.updateTotals();
+    });
+
+    logger.info('applyAmountDetailsFromPaymentDetails: applied token taxAmount {0}; basket totalGrossPrice now {1}',
+        tokenTaxAmount, basket.totalGrossPrice.value);
+    return true;
+}
+
 // ============================================================================
 // Card Type Mapping Functions
 // ============================================================================
@@ -581,18 +685,25 @@ function buildBillToAddress(basket) {
     var billingAddress = basket.billingAddress;
     if (!billingAddress) return null;
 
-    return {
+    // UC v1 (ISV Phase 1): match the canonical billTo shape from Dan's reference payload —
+    // firstName, lastName, email, address1, address2, locality, administrativeArea, postalCode,
+    // country, phoneNumber, phoneType.
+    var billTo = {
         firstName: billingAddress.firstName || '',
         lastName: billingAddress.lastName || '',
         email: basket.customerEmail || '',
-        phoneNumber: billingAddress.phone || '',
         address1: billingAddress.address1 || '',
         address2: billingAddress.address2 || '',
         locality: billingAddress.city || '',
         administrativeArea: billingAddress.stateCode || '',
         postalCode: billingAddress.postalCode || '',
-        country: billingAddress.countryCode ? billingAddress.countryCode.value.toUpperCase() : ''
+        country: billingAddress.countryCode ? billingAddress.countryCode.value.toUpperCase() : '',
+        phoneNumber: billingAddress.phone || ''
     };
+    if (billTo.phoneNumber) {
+        billTo.phoneType = 'work';
+    }
+    return billTo;
 }
 
 /**
@@ -605,6 +716,8 @@ function buildShipToAddress(basket) {
     var shippingAddress = defaultShipment ? defaultShipment.shippingAddress : null;
     if (!shippingAddress) return null;
 
+    // UC v1 (ISV Phase 1): match Dan's reference payload — shipTo carries the address and
+    // recipient name only. No phoneNumber, no email.
     return {
         firstName: shippingAddress.firstName || '',
         lastName: shippingAddress.lastName || '',
@@ -675,14 +788,24 @@ function buildLineItems(basket) {
         var itemObject = null;
 
         if (lineItem instanceof dw.order.ProductLineItem) {
+            // UC v1 (ISV Phase 1): canonical line-item shape. typeOfSupply '00' = goods.
+            var product = lineItem.product;
+            var productDescription = '';
+            if (product && product.shortDescription) {
+                productDescription = product.shortDescription.markup || '';
+            }
+            if (!productDescription) {
+                productDescription = lineItem.productName || '';
+            }
             itemObject = {
+                productSku: lineItem.productID || '',
                 productName: lineItem.productName || '',
+                productDescription: productDescription,
                 quantity: lineItem.quantityValue,
                 unitPrice: formatAmount(lineItem.basePrice.value, currencyCode),
                 totalAmount: formatAmount(lineItem.adjustedGrossPrice.value, currencyCode),
-                taxAmount: formatAmount(lineItem.adjustedTax.value > 0 ? lineItem.adjustedTax.value : 0, currencyCode),
-                productCode: 'default',
-                productSku: lineItem.productID || ''
+                typeOfSupply: '00',
+                taxAmount: formatAmount(lineItem.adjustedTax.value > 0 ? lineItem.adjustedTax.value : 0, currencyCode)
             };
 
             if (lineItem.proratedPrice && lineItem.proratedPrice.value > 0) {
@@ -690,39 +813,45 @@ function buildLineItems(basket) {
                 itemObject.totalAmount = formatAmount(lineItem.proratedPrice.value, currencyCode);
             }
         } else if (lineItem instanceof dw.order.GiftCertificateLineItem) {
+            // typeOfSupply '00' = goods.
             itemObject = {
+                productSku: 'GIFT_CERTIFICATE',
                 productName: 'GIFT_CERTIFICATE',
+                productDescription: 'GIFT_CERTIFICATE',
                 quantity: 1,
                 unitPrice: formatAmount(lineItem.adjustedPrice.value, currencyCode),
                 totalAmount: formatAmount(lineItem.adjustedGrossPrice.value, currencyCode),
-                taxAmount: formatAmount(0, currencyCode),
-                productCode: 'GIFT_CERTIFICATE',
-                productSku: 'GIFT_CERTIFICATE'
+                typeOfSupply: '00',
+                taxAmount: formatAmount(0, currencyCode)
             };
         } else if (lineItem instanceof dw.order.ShippingLineItem) {
             if (lineItem.adjustedPrice.value === 0) {
                 continue;
             }
+            // typeOfSupply '01' = shipping/services.
             itemObject = {
+                productSku: lineItem.ID || 'SHIPPING',
                 productName: lineItem.ID || 'SHIPPING',
+                productDescription: 'SHIPPING',
                 quantity: 1,
                 unitPrice: formatAmount(lineItem.adjustedPrice.value, currencyCode),
                 totalAmount: formatAmount(lineItem.adjustedGrossPrice.value, currencyCode),
-                productCode: 'SHIPPING',
-                productSku: lineItem.ID || 'SHIPPING'
+                typeOfSupply: '01'
             };
             if (lineItem.adjustedTax && lineItem.adjustedTax.value > 0) {
                 itemObject.taxAmount = formatAmount(lineItem.adjustedTax.value, currencyCode);
             }
         } else if (lineItem instanceof dw.order.ProductShippingLineItem) {
+            // typeOfSupply '01' = shipping/services.
             itemObject = {
+                productSku: 'SHIPPING_SURCHARGE',
                 productName: 'SHIPPING_SURCHARGE',
+                productDescription: 'SHIPPING_SURCHARGE',
                 quantity: 1,
                 unitPrice: formatAmount(lineItem.adjustedPrice.value, currencyCode),
                 totalAmount: formatAmount(lineItem.adjustedGrossPrice.value, currencyCode),
-                taxAmount: formatAmount(lineItem.adjustedTax ? lineItem.adjustedTax.value : 0, currencyCode),
-                productCode: 'SHIPPING_SURCHARGE',
-                productSku: 'SHIPPING_SURCHARGE'
+                typeOfSupply: '01',
+                taxAmount: formatAmount(lineItem.adjustedTax ? lineItem.adjustedTax.value : 0, currencyCode)
             };
         }
 
@@ -771,10 +900,13 @@ function buildCompleteMandate(configObject, isTokenizationEnabled, isRegisteredC
  */
 function buildOrderInformation(basket, isMiniCart) {
     var currencyCode = basket.currencyCode;
+    // UC v1 (ISV Phase 1): mirror canonical amountDetails — totalAmount, currency, taxAmount.
+    var totalTax = basket.totalTax && basket.totalTax.value > 0 ? basket.totalTax.value : 0;
     var orderInformation = {
         amountDetails: {
             totalAmount: formatAmount(basket.totalGrossPrice.value, currencyCode),
-            currency: currencyCode
+            currency: currencyCode,
+            taxAmount: formatAmount(totalTax, currencyCode)
         }
     };
 
@@ -824,6 +956,96 @@ function extractTokenInformation(jwtPayload) {
 }
 
 /**
+ * Find an existing saved credit card that belongs to the given CyberSource
+ * instrumentIdentifier. The serialized token always begins with the
+ * instrumentIdentifier id ("<iid>-<piid>-flex[-<customerId>]"), so a card matches
+ * when the FIRST hyphen-separated segment of its token equals that id. Using the
+ * exact segment (rather than a string prefix) avoids false matches between ids where
+ * one is a prefix of another.
+ * @param {dw.customer.Wallet} wallet - customer wallet
+ * @param {string} instrumentIdentifierId - CyberSource instrumentIdentifier id
+ * @returns {dw.customer.CustomerPaymentInstrument|null} matching card or null
+ */
+function findCreditCardByInstrumentIdentifier(wallet, instrumentIdentifierId) {
+    if (!wallet || !instrumentIdentifierId) {
+        return null;
+    }
+    var paymentInstruments = wallet.getPaymentInstruments().toArray();
+    for (var i = 0; i < paymentInstruments.length; i++) {
+        var pi = paymentInstruments[i];
+        var existingToken = pi.creditCardToken;
+        if (existingToken && existingToken.split('-')[0] === instrumentIdentifierId) {
+            return pi;
+        }
+    }
+    return null;
+}
+
+/**
+ * Saves a tokenized credit card to the wallet, de-duplicating by instrumentIdentifier.
+ *
+ * SFCC permanently masks a persisted CustomerPaymentInstrument; once masked, its card
+ * setters throw "Payment Instrument Info attributes are already masked permanently". So
+ * when a card with the same instrumentIdentifier already exists we REPLACE it (create a
+ * fresh instrument, then remove the old one) inside a single transaction — rather than
+ * mutating the masked record — carrying over any missing details and the default
+ * (custom.isDefault) flag.
+ *
+ * @param {dw.customer.Wallet} wallet - customer wallet
+ * @param {string} serializedToken - serialized TMS token to store
+ * @param {Object} cardDetails - { cardHolderName, cardTypeName, maskedNumber, expirationMonth, expirationYear }
+ * @param {string} instrumentIdentifierId - CyberSource instrumentIdentifier id
+ * @returns {Object} { uuid: <saved card UUID>, replacedExisting: <boolean> }
+ */
+function upsertCreditCard(wallet, serializedToken, cardDetails, instrumentIdentifierId) {
+    var dwOrderPaymentInstrument = require('dw/order/PaymentInstrument');
+    var details = cardDetails || {};
+    var existingPI = findCreditCardByInstrumentIdentifier(wallet, instrumentIdentifierId);
+
+    var wasDefault = false;
+    var holder = details.cardHolderName;
+    var type = details.cardTypeName;
+    var masked = details.maskedNumber;
+    var expMonth = details.expirationMonth;
+    var expYear = details.expirationYear;
+
+    if (existingPI) {
+        // Getters are safe on a masked instrument; carry over anything the new details
+        // don't provide so the replacement record stays complete.
+        try {
+            wasDefault = !!(existingPI.custom && existingPI.custom.isDefault);
+        } catch (e) {
+            wasDefault = false;
+        }
+        holder = holder || existingPI.creditCardHolder;
+        type = type || existingPI.creditCardType;
+        masked = masked || existingPI.maskedCreditCardNumber;
+        expMonth = expMonth || existingPI.creditCardExpirationMonth;
+        expYear = expYear || existingPI.creditCardExpirationYear;
+    }
+
+    var savedUUID = null;
+    Transaction.wrap(function () {
+        var newPI = wallet.createPaymentInstrument(dwOrderPaymentInstrument.METHOD_CREDIT_CARD);
+        if (holder) { newPI.setCreditCardHolder(holder); }
+        if (type) { newPI.setCreditCardType(type); }
+        if (masked) { newPI.setCreditCardNumber(masked); }
+        if (expMonth) { newPI.setCreditCardExpirationMonth(parseInt(expMonth, 10)); }
+        if (expYear) { newPI.setCreditCardExpirationYear(parseInt(expYear, 10)); }
+        newPI.setCreditCardToken(serializedToken);
+        if (wasDefault) {
+            newPI.custom.isDefault = true;
+        }
+        if (existingPI) {
+            wallet.removePaymentInstrument(existingPI);
+        }
+        savedUUID = newPI.UUID;
+    });
+
+    return { uuid: savedUUID, replacedExisting: !!existingPI };
+}
+
+/**
  * Save TMS token to customer wallet from completeMandate response
  * @param {Object} jwtPayload - Decoded completeMandate JWT payload
  * @param {Object} cardDetails - Card details object
@@ -854,7 +1076,6 @@ function saveTokenToWallet(jwtPayload, cardDetails, customer) {
     }
 
     var CustomerMgr = require('dw/customer/CustomerMgr');
-    var dwOrderPaymentInstrument = require('dw/order/PaymentInstrument');
     var TRLHelper = require('~/cartridge/scripts/helpers/tokenRateLimiterHelper.js');
 
     try {
@@ -868,7 +1089,6 @@ function saveTokenToWallet(jwtPayload, cardDetails, customer) {
         }
 
         var wallet = customerObj.profile.wallet;
-        var paymentInstruments = wallet.getPaymentInstruments().toArray();
 
         var serializedToken;
         if (tokenInfo.customer && tokenInfo.customer.id) {
@@ -892,64 +1112,18 @@ function saveTokenToWallet(jwtPayload, cardDetails, customer) {
             ].join('-');
         }
 
-        var instrumentIdentifierId = tokenInfo.instrumentIdentifier.id;
-        var existingPI = null;
-        
-        for (var i = 0; i < paymentInstruments.length; i++) {
-            var pi = paymentInstruments[i];
-            var existingToken = pi.creditCardToken;
-            if (existingToken && existingToken.indexOf(instrumentIdentifierId) === 0) {
-                existingPI = pi;
-                break;
-            }
-        }
+        var upsertResult = upsertCreditCard(wallet, serializedToken, cardDetails, tokenInfo.instrumentIdentifier.id);
+        logger.info('saveTokenToWallet: Card {0}. InstrumentIdentifier: {1}',
+            upsertResult.replacedExisting ? 'updated (replaced)' : 'saved', tokenInfo.instrumentIdentifier.id);
 
-        if (existingPI) {
-            Transaction.wrap(function () {
-                if (cardDetails.expirationMonth) {
-                    existingPI.setCreditCardExpirationMonth(parseInt(cardDetails.expirationMonth, 10));
-                }
-                if (cardDetails.expirationYear) {
-                    existingPI.setCreditCardExpirationYear(parseInt(cardDetails.expirationYear, 10));
-                }
-                existingPI.setCreditCardToken(serializedToken);
-                
-                logger.info('saveTokenToWallet: Updated existing card expiry. InstrumentIdentifier: {0}',
-                    instrumentIdentifierId);
-            });
-            return true;
-        }
-
-        Transaction.wrap(function () {
-            var newPI = wallet.createPaymentInstrument(dwOrderPaymentInstrument.METHOD_CREDIT_CARD);
-
-            if (cardDetails.cardHolderName) {
-                newPI.setCreditCardHolder(cardDetails.cardHolderName);
+        // Only a brand-new card counts against the rate limiter (a replace is not a new insertion).
+        if (!upsertResult.replacedExisting) {
+            if (isAllowed.resetTimer) {
+                TRLHelper.resetTimer(customerObj);
             }
-            if (cardDetails.cardTypeName) {
-                newPI.setCreditCardType(cardDetails.cardTypeName);
+            if (isAllowed.increaseCounter) {
+                TRLHelper.increaseCounter(customerObj);
             }
-            if (cardDetails.maskedNumber) {
-                newPI.setCreditCardNumber(cardDetails.maskedNumber);
-            }
-            if (cardDetails.expirationMonth) {
-                newPI.setCreditCardExpirationMonth(parseInt(cardDetails.expirationMonth, 10));
-            }
-            if (cardDetails.expirationYear) {
-                newPI.setCreditCardExpirationYear(parseInt(cardDetails.expirationYear, 10));
-            }
-
-            newPI.setCreditCardToken(serializedToken);
-
-            logger.info('saveTokenToWallet: Token saved successfully. InstrumentIdentifier: {0}',
-                tokenInfo.instrumentIdentifier.id);
-        });
-
-        if (isAllowed.resetTimer) {
-            TRLHelper.resetTimer(customerObj);
-        }
-        if (isAllowed.increaseCounter) {
-            TRLHelper.increaseCounter(customerObj);
         }
 
         return true;
@@ -1135,7 +1309,8 @@ module.exports = {
     populateBasketAddresses: populateBasketAddresses,
     updateViewDataFromForm: updateViewDataFromForm,
     populateBasketAddressesFromPaymentDetails: populateBasketAddressesFromPaymentDetails,
-    
+    applyAmountDetailsFromPaymentDetails: applyAmountDetailsFromPaymentDetails,
+
     // Card type mapping
     mapCardType: mapCardType,
     
@@ -1181,6 +1356,8 @@ module.exports = {
     // TMS token saving
     didUserRequestSaveCard: didUserRequestSaveCard,
     extractTokenInformation: extractTokenInformation,
+    findCreditCardByInstrumentIdentifier: findCreditCardByInstrumentIdentifier,
+    upsertCreditCard: upsertCreditCard,
     saveTokenToWallet: saveTokenToWallet,
     
     // Shipping method

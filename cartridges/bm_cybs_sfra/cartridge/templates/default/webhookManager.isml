@@ -10,9 +10,8 @@
     
     <isset name="dmMismatch" value="${pdict.config.dmEnabled && !pdict.subscriptions.fraudManagement}" scope="page" />
     <isset name="ucMismatch" value="${pdict.config.secureIntegrationMethod === 'Unified_Checkout' && !pdict.subscriptions.unifiedCheckout}" scope="page" />
-    <isset name="ntMismatch" value="${pdict.config.ntEnabled && !pdict.subscriptions.tokenManagement}" scope="page" />
 
-    <isif condition="${dmMismatch || ucMismatch || ntMismatch}">
+    <isif condition="${dmMismatch || ucMismatch}">
         <div style="background:#fce4ec;color:#c62828;padding:15px;margin-bottom:20px;border:2px solid #c62828;font-weight:bold">
             CRITICAL: Configuration Mismatch Detected! <br/>
             Some features are enabled in Site Preferences but do not have active webhook subscriptions. <br/>
@@ -46,12 +45,6 @@
                 <td class="infobox_item">${pdict.config.secureIntegrationMethod === 'Unified_Checkout' ? 'YES' : 'NO'}</td>
                 <td class="infobox_item">${pdict.subscriptions.unifiedCheckout ? 'ACTIVE' : 'NOT SUBSCRIBED'}</td>
                 <td class="infobox_item">${pdict.subscriptions.unifiedCheckout ? pdict.subscriptions.unifiedCheckout.webhookId : '-'}</td>
-            </tr>
-            <tr>
-                <td class="infobox_item">Network Token Management</td>
-                <td class="infobox_item">${pdict.config.ntEnabled ? 'YES' : 'NO'}</td>
-                <td class="infobox_item">${pdict.subscriptions.tokenManagement ? 'ACTIVE' : 'NOT SUBSCRIBED'}</td>
-                <td class="infobox_item">${pdict.subscriptions.tokenManagement ? pdict.subscriptions.tokenManagement.webhookId : '-'}</td>
             </tr>
         </table>
         <div style="text-align:right;margin-bottom:30px"><button type="submit" class="button">Synchronize Webhooks with Site Preferences</button></div>

@@ -140,8 +140,10 @@ function getConfig(config) {
         unifiedCheckoutLabel: config.unifiedCheckoutLabel || customPreferences.SecureIntegrationConfiguration.Preferences.CheckoutLabelforUnifiedCheckout.getValue(),
         minicartEnabled: config.VisaAcceptance_UnifiedCheckout_Cart_Minicart || customPreferences.SecureIntegrationConfiguration.Preferences.VisaAcceptance_UnifiedCheckout_Cart_Minicart.getValue(),
         cardTransactionType: config.cardTransactionType || customPreferences.SecureIntegrationConfiguration.Preferences.CardTransactionType.getValue(),
+        unifiedCheckoutExpressPay: typeof config.unifiedCheckoutExpressPay === 'boolean' ? config.unifiedCheckoutExpressPay : customPreferences.SecureIntegrationConfiguration.Preferences.UnifiedCheckoutExpressPay.getValue(),
+        unifiedCheckoutClientVersion: config.unifiedCheckoutClientVersion || customPreferences.SecureIntegrationConfiguration.Preferences.UnifiedCheckoutClientVersion.getValue(),
+        unifiedCheckoutAllowedCardPrefix: typeof config.unifiedCheckoutAllowedCardPrefix === 'boolean' ? config.unifiedCheckoutAllowedCardPrefix : customPreferences.SecureIntegrationConfiguration.Preferences.UnifiedCheckoutAllowedCardPrefix.getValue(),
 
-        flexMicroformEnabled: secureIntegrationMethod == 'Microform',
         unifiedCheckoutEnabled: secureIntegrationMethod == 'Unified_Checkout',
     };
 }

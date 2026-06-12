@@ -2106,7 +2106,9 @@ var unifiedCheckout = {
             data: {
                 csrf_token: csrfToken,
                 completeMandateJwt: completeMandateJwt,
-                transientToken: transientToken
+                transientToken: transientToken,
+                // Send the "make default" checkbox state so the server can flag the saved card.
+                makeDefaultPayment: $('#makeDefaultPayment').is(':checked')
             },
             success: function(data) {
                 $.spinner().stop();

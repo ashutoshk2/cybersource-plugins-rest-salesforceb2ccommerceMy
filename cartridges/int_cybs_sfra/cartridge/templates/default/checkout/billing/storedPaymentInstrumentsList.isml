@@ -1,0 +1,60 @@
+<isloop items="${pdict.customer.customerPaymentInstruments}" var="paymentInstrument" status="loopState">
+    <isscript>
+        // Extract TMS paymentInstrumentId from raw payment instrument token
+        // The pdict model doesn't expose creditCardToken, so we need to get the raw PI
+        var tmsPaymentInstrumentId = '';
+        try {
+            var CustomerMgr = require('dw/customer/CustomerMgr');
+            var customer = session.getCustomer();
+            if (customer && customer.authenticated && customer.profile && customer.profile.wallet) {
+                var rawPIs = customer.profile.wallet.getPaymentInstruments('CREDIT_CARD').toArray();
+                for (var i = 0; i < rawPIs.length; i++) {
+                    if (rawPIs[i].UUID === paymentInstrument.UUID) {
+                        var token = rawPIs[i].creditCardToken;
+                        if (token && token.indexOf('-') > 0) {
+                            var tokenParts = token.split('-');
+                            if (tokenParts.length >= 2) {
+                                tmsPaymentInstrumentId = tokenParts[1];
+                            }
+                        }
+                        break;
+                    }
+                }
+            }
+        } catch (e) {
+            // Log error but continue
+        }
+    </isscript>
+    <iscomment>
+        Pre-select the shopper's default saved card. The account model sorts the default
+        card first, so isDefault is set on it; loopState.first is the fallback for shoppers
+        who have no default flagged yet. Exactly one card ends up with 'selected-payment'.
+    </iscomment>
+    <div class="row saved-payment-instrument ${(paymentInstrument.isDefault || loopState.first) ? 'selected-payment' : ''}" data-uuid="${paymentInstrument.UUID}" data-pi-id="${tmsPaymentInstrumentId}">
+        <div class="saved-payment-information col-6 col-md-3">
+            <img class="card-image"
+                 src="${paymentInstrument.cardTypeImage.src}"
+                 alt="${paymentInstrument.cardTypeImage.alt}" />
+        </div>
+        <div class="saved-payment-information col-6 col-md-9">
+            <div class="saved-credit-card-type">
+                <span>
+                    ${Resource.msg('msg.payment.type.credit', 'confirmation', null)}
+                    ${paymentInstrument.creditCardType}
+                </span>
+                <isif condition="${paymentInstrument.isDefault}">
+                    <span class="default-payment-badge">${Resource.msg('label.payment.default', 'payment', null)}</span>
+                </isif>
+            </div>
+            <div class="saved-credit-card-number">
+                ${paymentInstrument.maskedCreditCardNumber}
+            </div>
+            <div class="saved-credit-card-expiration-date">
+                <span>
+                    ${Resource.msg('msg.card.type.ending', 'confirmation', null)}
+                    ${paymentInstrument.creditCardExpirationMonth}/${paymentInstrument.creditCardExpirationYear}
+                </span>
+            </div>
+        </div>
+    </div>
+</isloop>

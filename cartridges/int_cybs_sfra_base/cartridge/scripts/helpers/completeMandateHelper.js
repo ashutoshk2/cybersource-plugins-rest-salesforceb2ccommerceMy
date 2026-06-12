@@ -433,15 +433,8 @@ function buildLineItems(basket) {
 function buildCompleteMandate(configObject, isTokenizationEnabled, isRegisteredCustomer, customer) {
     var completeMandate = {};
 
-    // Transaction Type: AUTH, CAPTURE, or PREFER_AUTH based on BM configuration
-    var configuredTransactionType = (configObject.cardTransactionType || 'auth').toString().toLowerCase();
-    if (configuredTransactionType === 'sale') {
-        completeMandate.type = 'CAPTURE';
-    } else if (configuredTransactionType === 'prefer_auth') {
-        completeMandate.type = 'PREFER_AUTH';
-    } else {
-        completeMandate.type = 'AUTH';
-    }
+    // UC v1 (ISV Phase 1): completeMandate.type is managed via EBC and must NOT be sent
+    // from the capture-context request. Read it back from the capture-context response if needed.
 
     // Decision Manager: Enable based on BM configuration
     completeMandate.decisionManager = !!configObject.fmeDmEnabled;

@@ -10,178 +10,7 @@ var userLoggedIn = require('*/cartridge/scripts/middleware/userLoggedIn');
 var page = module.superModule;
 server.extend(page);
 
-var verificationResultEnum = {
-    ADDRESS_ACCEPTED: 'ADDRESS_ACCEPTED',
-    SELECTION_REQUIRED: 'SELECTION_REQUIRED',
-    VERIFICATION_FAILED: 'VERIFICATION_FAILED'
-};
-
-/**
- * *
- * @param {*} paymentForm *
- * @returns {*} *
- */
-function setDetailsObject(paymentForm) { // eslint-disable-line no-unused-vars
-    return {
-        name: '',
-        cardNumber: '',
-        cardType: '',
-        expirationMonth: '',
-        expirationYear: '',
-        paymentForm: ''
-    };
-}
-
-/**
- * *
- * @param {*} addressFieldsForm *
- * @returns {*} *
- */
-function verifyAddess(addressFieldsForm) {
-    var addressVerification = require('~/cartridge/scripts/http/addressVerification');
-    var mapper = require('~/cartridge/scripts/util/mapper.js');
-    var DAVAddress = mapper.SFFCAddressToProviderAddress(addressFieldsForm);
-    var result = {
-        status: null,
-        standard: null,
-        original: DAVAddress
-    };
-    if (addressFieldsForm.addressAccepted.checked || !configObject.davEnabled) {
-        result.status = verificationResultEnum.ADDRESS_ACCEPTED;
-    } else {
-        var DAVResult = addressVerification.httpVerifyCustomerAddress(DAVAddress);
-        if (DAVResult.status === addressVerification.STATUSCODES.COMPLETED) {
-            var standardAddress = DAVResult.data.standardAddress;
-            var inputEqualsStandardAddress = standardAddress.address1.withApartment === DAVAddress.address1
-                && standardAddress.administrativeArea === DAVAddress.administrativeArea
-                && standardAddress.country === DAVAddress.country
-                && standardAddress.locality === DAVAddress.locality
-                && standardAddress.postalCode === DAVAddress.postalCode;
-            if (inputEqualsStandardAddress) {
-                result.status = verificationResultEnum.ADDRESS_ACCEPTED;
-            } else {
-                result.status = verificationResultEnum.SELECTION_REQUIRED;
-                result.standard = standardAddress;
-            }
-        } else {
-            result.status = verificationResultEnum.VERIFICATION_FAILED;
-        }
-    }
-    return result;
-}
-
 if (configObject.tokenizationEnabled && configObject.cartridgeEnabled) {
-    // eslint-disable-next-line consistent-return
-    server.prepend('SavePayment', csrfProtection.validateAjaxRequest, userLoggedIn.validateLoggedInAjax, function (req, res, next) {
-        var redirectURL;
-        try {
-            var tokenRateLimiterHelper = require('~/cartridge/scripts/helpers/tokenRateLimiterHelper');
-            // eslint-disable-next-line no-undef
-            var isallowed = tokenRateLimiterHelper.IsCustumerAllowedSinglePaymentInstrumentInsertion(customer);
-            if (isallowed.result) {
-                return next();
-            }
-            if (isallowed.reason.indexOf(tokenRateLimiterHelper.FailureReason.RateLimitExceeded) >= 0) {
-                redirectURL = URLUtils.url('Error-ErrorCodeAjaxRedirect',
-                    'err', 'unable.to.save.payment.due.to.rate.limiter',
-                    'statuscode', 429).toString();
-                res.setStatusCode(429);
-                res.redirectUrl = redirectURL;
-                next();
-            }
-        } catch (e) {
-            redirectURL = URLUtils.url('Error-ErrorCodeAjaxRedirect',
-                'err', 'card.not.authorized',
-                'statuscode', 400).toString();
-            res.setStatusCode(400);
-            res.redirectUrl = redirectURL;
-            next();
-        }
-    });
-
-    server.append('SavePayment', csrfProtection.validateAjaxRequest, userLoggedIn.validateLoggedInAjax, function (req, res, next) {
-        next();
-    });
-
-    server.append('SavePayment', csrfProtection.validateAjaxRequest, userLoggedIn.validateLoggedInAjax, function (req, res, next) {
-        var HookMgr = require('dw/system/HookMgr');
-        var PaymentMgr = require('dw/order/PaymentMgr');
-        var dwOrderPaymentInstrument = require('dw/order/PaymentInstrument');
-        var accountHelpers = require('*/cartridge/scripts/helpers/accountHelpers');
-        this.on('route:BeforeComplete', function (req1, res1) {
-            var paymentForm = server.forms.getForm('creditCard');
-            var CustomerMgr = require('dw/customer/CustomerMgr');
-            var Transaction = require('dw/system/Transaction');
-            var Resource = require('dw/web/Resource');
-            var formInfo = res1.getViewData();
-            var customer = CustomerMgr.getCustomerByCustomerNumber(
-                req1.currentCustomer.profile.customerNo
-            );
-            if (typeof formInfo.fields === 'object'
-                && 'dwfrm_creditCard_cardNumber' in formInfo.fields
-                && formInfo.fields.dwfrm_creditCard_cardNumber === Resource.msg('error.message.creditnumber.invalid', 'forms', null)
-                && /XXX/.test(paymentForm.cardNumber.htmlValue)) {
-                var wallet = customer.getProfile().getWallet();
-                Transaction.wrap(function () {
-                    var paymentInstrument = wallet.createPaymentInstrument(dwOrderPaymentInstrument.METHOD_CREDIT_CARD);
-                    paymentInstrument.setCreditCardHolder(paymentForm.cardOwner.value);
-                    paymentInstrument.setCreditCardNumber(paymentForm.cardNumber.value);
-                    paymentInstrument.setCreditCardType(paymentForm.cardType.value);
-                    paymentInstrument.setCreditCardExpirationMonth(paymentForm.expirationMonth.value);
-                    paymentInstrument.setCreditCardExpirationYear(paymentForm.expirationYear.value);
-
-                    var processor = PaymentMgr.getPaymentMethod(dwOrderPaymentInstrument.METHOD_CREDIT_CARD).getPaymentProcessor();
-                    var token = HookMgr.callHook(
-                        'app.payment.processor.' + processor.ID.toLowerCase(),
-                        'createToken'
-                    );
-
-                    paymentInstrument.setCreditCardToken(token);
-                });
-
-                // Send account edited email
-                accountHelpers.sendAccountEditedEmail(customer.profile);
-
-                secureResponseHelper.secureJsonResponse(res1, {
-                    success: true,
-                    redirectUrl: URLUtils.url('PaymentInstruments-List').toString()
-                });
-
-                // Token rate limiter.
-                var tokenRateLimiterHelper = require('~/cartridge/scripts/helpers/tokenRateLimiterHelper');
-                var paymentInstruments = wallet.getPaymentInstruments().toArray();
-                // check duplicate logic here
-                // eslint-disable-next-line no-undef
-                tokenRateLimiterHelper.checkDuplicateInstrumentIdentifier(paymentInstruments, session.privacy.tokenInformation, customer);
-
-                // eslint-disable-next-line no-undef
-                var limiterResult = tokenRateLimiterHelper.IsCustumerAllowedSinglePaymentInstrumentInsertion(customer);
-                if (limiterResult.result) {
-                    if (limiterResult.resetTimer) {
-                        // eslint-disable-next-line no-undef
-                        tokenRateLimiterHelper.resetTimer(customer);
-                    }
-
-                    if (limiterResult.increaseCounter) {
-                        // eslint-disable-next-line no-undef
-                        tokenRateLimiterHelper.increaseCounter(customer);
-                    }
-                }
-                // eslint-disable-next-line no-undef
-                session.privacy.tokenInformation = '';
-                res1.setViewData(setDetailsObject(paymentForm));
-            }
-        });
-        return next();
-    });
-
-    server.post('VerifyAddress', csrfProtection.validateAjaxRequest, userLoggedIn.validateLoggedInAjax, function (req, res, next) {
-        var addressFieldsForm = server.forms.getForm('creditCard').billToAddressFields;
-        var result = verifyAddess(addressFieldsForm);
-        secureResponseHelper.secureJsonResponse(res, result);
-        next();
-    });
-
     server.prepend('DeletePayment', userLoggedIn.validateLoggedInAjax, function (req, res, next) {
         var tokenManagement = require('../scripts/http/tokenManagement');
         var mapper = require('~/cartridge/scripts/util/mapper.js');
@@ -220,6 +49,51 @@ if (configObject.tokenizationEnabled && configObject.cartridgeEnabled) {
     });
 
     /**
+     * PaymentInstruments-SetDefault : Marks a saved card as the shopper's default.
+     * Mirrors the OOB Address-SetDefault flow. Sets custom.isDefault on the selected
+     * card and clears it on all others (exactly one default), then returns to the list.
+     * @name Cybersource/PaymentInstruments-SetDefault
+     * @function
+     * @memberof PaymentInstruments
+     * @param {middleware} - userLoggedIn.validateLoggedIn
+     * @param {querystringparameter} - UUID - UUID of the card to make default
+     * @param {serverfunction} - get
+     */
+    server.get('SetDefault', userLoggedIn.validateLoggedIn, function (req, res, next) {
+        var CustomerMgr = require('dw/customer/CustomerMgr');
+        var defaultPaymentHelper = require('~/cartridge/scripts/helpers/defaultPaymentHelper');
+        var uuid = req.querystring.UUID;
+        var customer = CustomerMgr.getCustomerByCustomerNumber(
+            req.currentCustomer.profile.customerNo
+        );
+        var wallet = customer.getProfile().getWallet();
+        this.on('route:BeforeComplete', function () {
+            if (uuid) {
+                defaultPaymentHelper.setDefaultByUUID(wallet, uuid);
+            }
+            res.redirect(URLUtils.url('PaymentInstruments-List'));
+        });
+        return next();
+    });
+
+    /**
+     * Appends to PaymentInstruments-DeletePayment so that deleting the default card
+     * promotes another saved card to default (keeps exactly one default when cards remain).
+     */
+    server.append('DeletePayment', userLoggedIn.validateLoggedInAjax, function (req, res, next) {
+        var CustomerMgr = require('dw/customer/CustomerMgr');
+        var defaultPaymentHelper = require('~/cartridge/scripts/helpers/defaultPaymentHelper');
+        this.on('route:BeforeComplete', function (req1) {
+            var customer = CustomerMgr.getCustomerByCustomerNumber(
+                req1.currentCustomer.profile.customerNo
+            );
+            var wallet = customer.getProfile().getWallet();
+            defaultPaymentHelper.ensureSingleDefault(wallet);
+        });
+        return next();
+    });
+
+    /**
      * PaymentInstruments-SavePaymentDirect
      * 
      * Handles card save for UC v1.x completeMandate flow (My Account - Add Payment)
@@ -236,7 +110,6 @@ if (configObject.tokenizationEnabled && configObject.cartridgeEnabled) {
         var Transaction = require('dw/system/Transaction');
         var Resource = require('dw/web/Resource');
         var Logger = require('dw/system/Logger');
-        var dwOrderPaymentInstrument = require('dw/order/PaymentInstrument');
         var payments = require('~/cartridge/scripts/http/payments');
         var ucPaymentHelper = require('~/cartridge/scripts/helpers/ucPaymentHelper');
         var accountHelpers = require('*/cartridge/scripts/helpers/accountHelpers');
@@ -319,6 +192,7 @@ if (configObject.tokenizationEnabled && configObject.cartridgeEnabled) {
 
         // Save token to wallet
         var saveResult = ucPaymentHelper.saveTokenToWallet(jwtPayload, cardDetails, customerObj);
+        logger.info('SavePaymentDirect: saveTokenToWallet result={0}', saveResult);
 
         if (!saveResult) {
             // If saveTokenToWallet returns false, token may not be in JWT
@@ -350,29 +224,19 @@ if (configObject.tokenizationEnabled && configObject.cartridgeEnabled) {
                         ].join('-');
                     }
 
-                    Transaction.wrap(function () {
-                        var newPI = wallet.createPaymentInstrument(dwOrderPaymentInstrument.METHOD_CREDIT_CARD);
+                    // Dedupe: if a card with the same instrumentIdentifier already exists,
+                    // update it instead of creating a duplicate (mirrors saveTokenToWallet).
+                    // Upsert de-dupes by instrumentIdentifier and REPLACES an existing card
+                    // (SFCC masks persisted instruments permanently, so we cannot mutate them).
+                    var upsertResult = ucPaymentHelper.upsertCreditCard(
+                        wallet,
+                        serializedToken,
+                        cardDetails,
+                        tokenInfo.instrumentIdentifier.id
+                    );
 
-                        if (cardDetails.cardHolderName) {
-                            newPI.setCreditCardHolder(cardDetails.cardHolderName);
-                        }
-                        if (cardDetails.cardTypeName) {
-                            newPI.setCreditCardType(cardDetails.cardTypeName);
-                        }
-                        if (cardDetails.maskedNumber) {
-                            newPI.setCreditCardNumber(cardDetails.maskedNumber);
-                        }
-                        if (cardDetails.expirationMonth) {
-                            newPI.setCreditCardExpirationMonth(parseInt(cardDetails.expirationMonth, 10));
-                        }
-                        if (cardDetails.expirationYear) {
-                            newPI.setCreditCardExpirationYear(parseInt(cardDetails.expirationYear, 10));
-                        }
-
-                        newPI.setCreditCardToken(serializedToken);
-                    });
-
-                    logger.info('SavePaymentDirect: Card saved successfully via fallback. InstrumentIdentifier: {0}',
+                    logger.info('SavePaymentDirect: Card {0} via fallback upsert. InstrumentIdentifier: {1}',
+                        upsertResult.replacedExisting ? 'updated (replaced)' : 'saved',
                         tokenInfo.instrumentIdentifier.id);
                 } else {
                     logger.error('SavePaymentDirect: No token information in JWT response');
@@ -398,6 +262,26 @@ if (configObject.tokenizationEnabled && configObject.cartridgeEnabled) {
         }
         if (isAllowed.increaseCounter) {
             tokenRateLimiterHelper.increaseCounter(customerObj);
+        }
+
+        // Maintain the default saved card: first card or ticked checkbox becomes default.
+        var defaultPaymentHelper = require('~/cartridge/scripts/helpers/defaultPaymentHelper');
+        var defaultWallet = customerObj.getProfile().getWallet();
+        var savedCards = defaultPaymentHelper.getCreditCardInstruments(defaultWallet);
+        if (savedCards.length > 0) {
+            // The UC AJAX posts makeDefaultPayment as a boolean; read it as such.
+            var makeDefaultChecked = request.httpParameterMap.makeDefaultPayment.booleanValue;
+            // Identify the card we just saved/updated by its instrumentIdentifier (robust
+            // against wallet ordering and against an upsert that replaced an existing card).
+            var savedTokenInfo = ucPaymentHelper.extractTokenInformation(jwtPayload);
+            var savedPI = (savedTokenInfo && savedTokenInfo.instrumentIdentifier)
+                ? ucPaymentHelper.findCreditCardByInstrumentIdentifier(defaultWallet, savedTokenInfo.instrumentIdentifier.id)
+                : null;
+            if (savedPI && (makeDefaultChecked || savedCards.length === 1)) {
+                defaultPaymentHelper.setDefaultByUUID(defaultWallet, savedPI.UUID);
+            } else {
+                defaultPaymentHelper.ensureSingleDefault(defaultWallet);
+            }
         }
 
         // Send account edited email

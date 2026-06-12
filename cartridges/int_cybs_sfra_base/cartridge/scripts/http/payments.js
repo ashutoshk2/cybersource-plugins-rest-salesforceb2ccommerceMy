@@ -155,16 +155,12 @@ function httpAuthorizeWithToken(cardData, customerEmail, referenceInformationCod
         var tokenInformation = new cybersourceRestApi.Ptsv2paymentsTokenInformation(); // eslint-disable-line no-redeclare
         tokenInformation.transientTokenJwt = cardData.ucJwtToken;
         request.tokenInformation = tokenInformation;
-    } else if (cardData.jwttoken) { // subscription OFF and Flex ON
-        var tokenInformation = new cybersourceRestApi.Ptsv2paymentsTokenInformation(); // eslint-disable-line no-redeclare
-        tokenInformation.transientTokenJwt = cardData.jwttoken;
-        request.tokenInformation = tokenInformation;
     } else if (cardData.gPayToken) {
         var fluidData = new cybersourceRestApi.Ptsv2paymentsPaymentInformationFluidData();
         fluidData.value = cardData.gPayToken;
         paymentInformation.fluidData = fluidData;
         request.paymentInformation = paymentInformation;
-    } else { // subscription OFF and Flex OFF
+    } else { // no stored token: raw card data (default payment form)
         var card = {}; // eslint-disable-line no-redeclare
         card.expirationMonth = padNumber(cardData.expirationMonth, 2, '0');
         card.expirationYear = cardData.expirationYear.toString();
@@ -302,10 +298,6 @@ function httpZeroDollarAuth(
     var result = '';
     instance.createPayment(request, function (data, error, response) { // eslint-disable-line no-unused-vars
         if (!error) {
-            if (configObject.networkTokenizationEnabled && data.processorInformation.paymentAccountReferenceNumber) {
-                var networkTokenSubscription = require('./networkTokenSubscription');
-                networkTokenSubscription.createNetworkTokenSubscription();
-            }
             if (data.status === 'AUTHORIZED' || data.status === 'AUTHORIZED_PENDING_REVIEW') {
                 result = data;
                 return data;
@@ -410,10 +402,6 @@ function httpZeroDollarAuthWithTransientToken(
     var result = '';
     instance.createPayment(request, function (data, error, response) { // eslint-disable-line no-unused-vars
         if (!error) {
-            if (configObject.networkTokenizationEnabled && data.processorInformation.paymentAccountReferenceNumber) {
-                var networkTokenSubscription = require('./networkTokenSubscription');
-                networkTokenSubscription.createNetworkTokenSubscription();
-            }
             if (data.status === 'AUTHORIZED' || data.status === 'AUTHORIZED_PENDING_REVIEW') {
                 result = data;
                 return data;
@@ -960,49 +948,6 @@ function generateUcCaptureContextSaveCard() {
     }
 }
 
-/**
- * @returns {*} *
- */
-function createFlexKey() { // eslint-disable-line no-unused-vars
-    var configObject = require('../../configuration/index');
-
-    var cybersourceRestApi = require('../../apiClient/index');
-
-    var keyGenerationApi = new cybersourceRestApi.KeyGenerationApi(configObject);
-    var allowedCNetworks = configObject.allowedCardNetworks;
-    var list = [];
-    if (empty(allowedCNetworks)) {
-        list.push('VISA');
-    } else {
-        for (let i = 0; allowedCNetworks[i] != null; i++) {
-            list.push(allowedCNetworks[i].value);
-        }
-    }
-
-    var publicKeyRequest = {
-        'targetOrigins': [
-            Constants.PROXY_PREFIX + '://' + request.httpHost
-        ],
-        'allowedCardNetworks': list,
-        'clientVersion': Constants.CLIENT_VERSION,
-        'transientTokenResponseOptions': {
-            'includeCardPrefix': false
-        }
-    };
-    var opts = {};
-    opts.format = 'JWT';
-
-    var response = {};
-    keyGenerationApi.generatePublicKey(opts.format, publicKeyRequest, function (data, error, result) { // eslint-disable-line no-unused-vars
-        if (!error) {
-            response = data;
-        } else {
-            throw new Error(data);
-        }
-    });
-    return response;
-}
-
 // function to decode capture context and validate capture context using the public key
 function jwtDecode(jwt) {
     var captureContext = jwt;
@@ -1271,7 +1216,6 @@ function decodeCompleteMandateJwt(jwt) {
 module.exports = {
     httpAuthorizeWithToken: httpAuthorizeWithToken,
     httpAuthorizeWithTransientToken: httpAuthorizeWithTransientToken,
-    createFlexKey: createFlexKey,
     httpZeroDollarAuth: httpZeroDollarAuth,
     httpZeroDollarAuthWithTransientToken: httpZeroDollarAuthWithTransientToken,
     updateCustomerPaymentInstrument: updateCustomerPaymentInstrument,

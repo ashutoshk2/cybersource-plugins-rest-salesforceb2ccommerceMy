@@ -3,11 +3,6 @@
  * @param {*} result *
  */
 function TokenizeCard(result) {
-    var configObject = require('../../configuration/index');
-    if (configObject.networkTokenizationEnabled && result.processorInformation && result.processorInformation.paymentAccountReferenceNumber) {
-        var networkTokenSubscription = require('~/cartridge/scripts/http/networkTokenSubscription');
-        networkTokenSubscription.createNetworkTokenSubscription();
-    }
     if (session.getCustomer().isAuthenticated() && result.tokenInformation) {
         var TRLHelper = require('~/cartridge/scripts/helpers/tokenRateLimiterHelper.js');
         var CustomerMgr = require('dw/customer/CustomerMgr');

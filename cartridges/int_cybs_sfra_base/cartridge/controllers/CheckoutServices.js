@@ -825,20 +825,6 @@ server.post('PlaceOrderDirect', server.middleware.https, function (req, res, nex
         logger.info('PlaceOrderDirect: TMS token saved to customer wallet');
     }
 
-    // Network Token Subscription: Subscribe to network token lifecycle updates when enabled
-    // This allows the integration to receive webhook notifications when network tokens are updated
-    var configObject = require('~/cartridge/configuration/index');
-    if (configObject.networkTokenizationEnabled && processorInfo && processorInfo.paymentAccountReferenceNumber) {
-        try {
-            var networkTokenSubscription = require('~/cartridge/scripts/http/networkTokenSubscription');
-            networkTokenSubscription.createNetworkTokenSubscription();
-            logger.info('PlaceOrderDirect: Network token subscription created/verified for PAR');
-        } catch (ntError) {
-            // Log but don't fail the order - network token subscription is non-critical
-            logger.warn('PlaceOrderDirect: Failed to create network token subscription: {0}', ntError.message || ntError);
-        }
-    }
-
     // Save addresses to address book for logged in customers
     if (req.currentCustomer.addressBook) {
         var allAddresses = addressHelpers.gatherShippingAddresses(order);

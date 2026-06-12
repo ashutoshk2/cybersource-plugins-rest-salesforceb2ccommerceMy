@@ -5,21 +5,6 @@ var configObject = require('../configuration/index');
 var secureResponseHelper = require('~/cartridge/scripts/helpers/secureResponseHelper');
 
 if (configObject.cartridgeEnabled) {
-    server.get('CreateFlexToken', server.middleware.https, function (req, res, next) {
-        var Flex = require('~/cartridge/scripts/http/payments');
-        var flexResult = Flex.createFlexKey(); 
-        var parsedPayload = Flex.jwtDecode(flexResult);
-        if(parsedPayload != null){
-            var clientLibrary = parsedPayload.ctx[0].data.clientLibrary;
-            var clientLibraryIntegrity = parsedPayload.ctx[0].data.clientLibraryIntegrity;
-            secureResponseHelper.secureRender(res, 'secureAcceptanceFlexMicroformContent', {
-                flexTokenResult: flexResult,
-                clientLibrary: clientLibrary,
-                clientLibraryIntegrity: clientLibraryIntegrity
-            });
-            next();
-        }
-    });
     /**
      * Helper function to handle UC token creation and rendering
      * @param {boolean} isMiniCart - Flag to indicate if this is for mini cart

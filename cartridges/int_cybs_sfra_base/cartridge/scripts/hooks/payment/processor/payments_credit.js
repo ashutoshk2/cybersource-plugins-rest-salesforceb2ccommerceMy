@@ -98,29 +98,7 @@ function createToken(
             if (address) {
                 address = mapper.SFFCAddressToProviderAddress(address);
             }
-            var tokenInformation;
-            var billingForm;
-            if (skipFlexCheck !== undefined) {
-                if (!configObject.flexMicroformEnabled) {
-                    tokenInformation = tokenManagement.httpCreateToken(accounNumber, expiryMonth, expiryYear, securityCode, email, address, referenceCode, skipDMFlag);
-                } else {
-                    billingForm = server.forms.getForm('billing');
-                    tokenInformation = tokenManagement.httpFlexCreateToken(
-                        billingForm.creditCardFields.flexresponse.value,
-                        email,
-                        address,
-                        referenceCode
-                    );
-                }
-            } else {
-                billingForm = server.forms.getForm('billing');
-                tokenInformation = tokenManagement.httpFlexCreateToken(
-                    billingForm.creditCardFields.flexresponse.value,
-                    email,
-                    address,
-                    referenceCode
-                );
-            }
+            var tokenInformation = tokenManagement.httpCreateToken(accounNumber, expiryMonth, expiryYear, securityCode, email, address, referenceCode, skipDMFlag);
 
             if (tokenInformation.customer != null && tokenInformation.customer.id != null) {
                 // eslint-disable-next-line no-undef
@@ -233,14 +211,14 @@ function Handle(basket, paymentInformation) {
     var cardErrors = {};
     var serverErrors = [];
     var cardNumber = paymentInformation.cardNumber.value;
-    var cardSecurityCode = (configObject.flexMicroformEnabled || configObject.unifiedCheckoutEnabled) ? '' : paymentInformation.securityCode.value;
+    var cardSecurityCode = configObject.unifiedCheckoutEnabled ? '' : paymentInformation.securityCode.value;
     var expirationMonth = paymentInformation.expirationMonth.value;
     var expirationYear = paymentInformation.expirationYear.value;
     var email = basket.customerEmail;
     var cardType = paymentInformation.cardType.value;
 
     // Fallback to base implementation for traditional payment processing
-    if (!configObject.flexMicroformEnabled && !configObject.unifiedCheckoutEnabled) {
+    if (!configObject.unifiedCheckoutEnabled) {
         var baseResult = baseBasicCreditHook.Handle(basket, paymentInformation);
         if (baseResult.error) {
             return baseResult;
@@ -328,7 +306,6 @@ function Authorize(orderNumber, paymentInstrument, paymentProcessor) {
     var mapper = require('~/cartridge/scripts/util/mapper.js');
     var card = {
         token: paymentInstrument.creditCardToken,
-        jwttoken: paymentForm.creditCardFields.flexresponse.value,
         ucJwtToken: paymentInstrument.custom.UCToken,
         creditcardnumber: paymentInstrument.creditCardNumber,
         securityCode: paymentForm.creditCardFields.securityCode.htmlValue,

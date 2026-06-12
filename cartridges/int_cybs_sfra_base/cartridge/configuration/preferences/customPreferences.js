@@ -418,7 +418,7 @@ SecureIntegrationConfiguration:{
             AllowedCardNetworks: {
                 id: 'VisaAcceptance_AllowedCardNetworks',
                 display_name: 'Allowed Card Networks',
-                description: 'Configure card types for Microform or Unified Checkout',
+                description: 'Configure card types for Unified Checkout',
                 type: Types.EnumOfString,
                 default: 'VISA',
                 flags: {
@@ -473,6 +473,30 @@ SecureIntegrationConfiguration:{
                 flags: {
                     mandatory: false
                 }
+            },
+            UnifiedCheckoutExpressPay: {
+                id: 'VisaAcceptance_UnifiedCheckout_ExpressPay',
+                display_name: 'Enable Express Pay',
+                description: 'When enabled, Unified Checkout is split into a Wallet instance and a Non-Wallet (card) instance. When ON, card network logos are suppressed.',
+                type: Types.boolean,
+                default: false,
+                flags: { mandatory: false }
+            },
+            UnifiedCheckoutClientVersion: {
+                id: 'VisaAcceptance_UnifiedCheckout_ClientVersion',
+                display_name: 'Unified Checkout SDK Version (optional)',
+                description: 'Pin the Unified Checkout JS SDK to a specific 1.x version (e.g. 1.6). Leave blank to always use the latest. Must match 1.x.',
+                type: Types.string,
+                default: '',
+                flags: { mandatory: false }
+            },
+            UnifiedCheckoutAllowedCardPrefix: {
+                id: 'VisaAcceptance_UnifiedCheckout_AllowedCardPrefix',
+                display_name: 'Include Card Prefix in UC Response',
+                description: 'When enabled, Unified Checkout includes the card prefix (BIN) in the transient token response. Disabled by default.',
+                type: Types.boolean,
+                default: false,
+                flags: { mandatory: false }
             }
         }
     },
