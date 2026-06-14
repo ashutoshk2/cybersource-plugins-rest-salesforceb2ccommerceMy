@@ -39,7 +39,7 @@ function isTestEndpointAccessAllowed(req) {
     if (System.getInstanceType() === System.PRODUCTION_SYSTEM) {
         return false;
     }
-    if (!Site.current.getCustomPreferenceValue('Cybersource_EnableTestEndpoints')) {
+    if (!Site.current.getCustomPreferenceValue('VisaAcceptance_EnableTestEndpoints')) {
         return false;
     }
     return isAuthorizedTestUser(req);

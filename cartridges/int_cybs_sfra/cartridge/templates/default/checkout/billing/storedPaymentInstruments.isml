@@ -1,5 +1,5 @@
 <isscript>
-    // Gate the pre-checkout TMS refresh behind the Cybersource_NetworkToken preference
+    // Gate the pre-checkout TMS refresh behind the VisaAcceptance_NetworkToken preference
     // (configObject.networkTokenizationEnabled). When disabled, render the saved-card
     // list exactly as before — no .cybs-saved-cards wrapper means the client refresh
     // module finds nothing to do and stays inert.

@@ -140,8 +140,7 @@ server.post('PayerAuthSetup', server.middleware.https, function (req, res, next)
     var card = {
         token: paymentInstrument.creditCardToken,
         ucJwtToken: paymentInstrument.custom.UCToken,
-        securityCode: billingForm.creditCardFields.securityCode.value,
-        googlePayFluidData: paymentInstrument.custom.GooglePayEncryptedData
+        securityCode: billingForm.creditCardFields.securityCode.value
     };
 
     try {
@@ -223,8 +222,7 @@ server.post('PayerAuthEnroll', server.middleware.https, function (req, res, next
         var card = {
             token: paymentInstrument.creditCardToken,
             ucJwtToken: paymentInstrument.custom.UCToken,
-            securityCode: billingForm.creditCardFields.securityCode.value,
-            googlePayFluidData: paymentInstrument.custom.GooglePayEncryptedData,
+            securityCode: billingForm.creditCardFields.securityCode.value
         };
     }
 
@@ -372,8 +370,7 @@ server.post('PayerAuthValidation', server.middleware.https, function (req, res, 
         var card = {
             token: paymentInstrument.creditCardToken,
             ucJwtToken: paymentInstrument.custom.UCToken,
-            securityCode: billingForm.creditCardFields.securityCode.value,
-            googlePayFluidData: paymentInstrument.custom.GooglePayEncryptedData,
+            securityCode: billingForm.creditCardFields.securityCode.value
         };
     }
     var mapper = require('~/cartridge/scripts/util/mapper.js');

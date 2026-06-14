@@ -32,7 +32,7 @@ server.post('Save', server.middleware.https, function (req, res, next) {
         var Transaction = require('dw/system/Transaction');
         var Site = require('dw/system/Site');
         Transaction.wrap(function () {
-            try { Site.getCurrent().setCustomPreferenceValue('Cybersource_DecisionManager', false); } catch(e) {}
+            try { Site.getCurrent().setCustomPreferenceValue('VisaAcceptance_DecisionManager', false); } catch(e) {}
         });
         redirectArgs.push('error', 'no_fraud_product');
         hasError = true;

@@ -125,11 +125,6 @@ function paSetup(billingDetails, referenceInformationCode, cardData, order, paym
         tokenInformation = new cybersourceRestApi.Ptsv2paymentsTokenInformation();
         tokenInformation.transientTokenJwt = cardData.jwttoken;
         request.tokenInformation = tokenInformation;
-    } else if (cardData.googlePayFluidData != null) {
-        processingInformation.paymentSolution = '012';  //googlepay
-        var fluidData = new cybersourceRestApi.Ptsv2paymentsPaymentInformationFluidData();
-        fluidData.value = cardData.googlePayFluidData;
-        paymentInformation.fluidData = fluidData;
     } else {
         card = new cybersourceRestApi.Ptsv2paymentsPaymentInformationCard();
         card.expirationMonth = billingDetails.creditCardFields.expirationMonth.value;
@@ -198,11 +193,6 @@ function paEnroll(billingDetails, shippingAddress, referenceInformationCode, tot
         }
     }
     else {
-        if (paymentInstrument.paymentMethod === 'DW_GOOGLE_PAY') {
-            if (dw.system.Site.getCurrent().getCustomPreferenceValue('Cybersource_GooglePayTransactionType').value === 'sale') {
-                processingInformation.capture = true;
-            }
-        }
         if (paymentInstrument.paymentMethod === 'CREDIT_CARD') {
             if (configObject.cardTransactionType.value === 'sale') {
                 processingInformation.capture = true;
@@ -358,11 +348,6 @@ function paEnroll(billingDetails, shippingAddress, referenceInformationCode, tot
         tokenInformation = new cybersourceRestApi.Ptsv2paymentsTokenInformation();
         tokenInformation.transientTokenJwt = cardData.jwttoken;
         request.tokenInformation = tokenInformation;
-    } else if (cardData.googlePayFluidData != null) {
-        processingInformation.paymentSolution = '012';  //googlepay
-        var fluidData = new cybersourceRestApi.Ptsv2paymentsPaymentInformationFluidData();
-        fluidData.value = cardData.googlePayFluidData;
-        paymentInformation.fluidData = fluidData;
     } else {
         card = new cybersourceRestApi.Ptsv2paymentsPaymentInformationCard();
         card.expirationMonth = billingDetails.creditCardFields.expirationMonth.value;
@@ -469,11 +454,6 @@ function paConsumerAuthenticate(billingDetails, referenceInformationCode, total,
         }
     }
     else {
-        if (paymentInstrument.paymentMethod === 'DW_GOOGLE_PAY') {
-            if (dw.system.Site.getCurrent().getCustomPreferenceValue('Cybersource_GooglePayTransactionType').value === 'sale') {
-                processingInformation.capture = true;
-            }
-        }
         if (paymentInstrument.paymentMethod === 'CREDIT_CARD') {
             if (configObject.cardTransactionType.value === 'sale') {
                 processingInformation.capture = true;
@@ -535,11 +515,6 @@ function paConsumerAuthenticate(billingDetails, referenceInformationCode, total,
         var tokenInformation = new cybersourceRestApi.Ptsv2paymentsTokenInformation(); // eslint-disable-line no-redeclare
         tokenInformation.transientTokenJwt = cardData.jwttoken;
         request.tokenInformation = tokenInformation;
-    } else if (cardData.googlePayFluidData != null) {
-        processingInformation.paymentSolution = '012';  //googlepay
-        var fluidData = new cybersourceRestApi.Ptsv2paymentsPaymentInformationFluidData();
-        fluidData.value = cardData.googlePayFluidData;
-        paymentInformation.fluidData = fluidData;
     } else {
         var card = new cybersourceRestApi.Ptsv2paymentsPaymentInformationCard(); // eslint-disable-line no-redeclare
         card.expirationMonth = billingDetails.creditCardFields.expirationMonth.value;
@@ -599,7 +574,7 @@ function paConsumerAuthenticate(billingDetails, referenceInformationCode, total,
 function get3DSMode() {
     var Site = require('dw/system/Site');
     var currentSite = Site.getCurrent();
-    var threeDSMode = currentSite.getCustomPreferenceValue('Cybersource_PayerAuthEnabled');
+    var threeDSMode = currentSite.getCustomPreferenceValue('VisaAcceptance_PayerAuthEnabled');
     return threeDSMode;
 }
 

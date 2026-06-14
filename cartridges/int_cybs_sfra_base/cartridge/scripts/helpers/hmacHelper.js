@@ -41,16 +41,16 @@ function verifyHMAC(data, signature) {
  
 /**
  * Get HMAC secret from site preferences
- * Reuses the existing Cybersource_MerchantKeySecret for HMAC signing
+ * Reuses the existing VisaAcceptance_MerchantKeySecret for HMAC signing
  * @returns {string} - The HMAC secret
  */
 function getHMACSecret() {
     var currentSite = Site.getCurrent();
     // Reuse the existing CyberSource merchant secret key
-    var secret = currentSite.getCustomPreferenceValue('Cybersource_MerchantKeySecret');
+    var secret = currentSite.getCustomPreferenceValue('VisaAcceptance_MerchantKeySecret');
  
     if (!secret) {
-        throw new Error('CyberSource Merchant Key Secret not configured. Please set Cybersource_MerchantKeySecret in site preferences.');
+        throw new Error('CyberSource Merchant Key Secret not configured. Please set VisaAcceptance_MerchantKeySecret in site preferences.');
     }
  
     return secret;

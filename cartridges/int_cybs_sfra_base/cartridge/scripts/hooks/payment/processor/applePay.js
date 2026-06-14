@@ -26,7 +26,7 @@ exports.authorizeOrderPayment = function (order, response) {
     var helpers = require('~/cartridge/scripts/util/helpers');
     var enableCaptureForApplePay = false;
 
-    if (dw.system.Site.getCurrent().getCustomPreferenceValue('Cybersource_ApplePayTransactionType').value === 'sale') {
+    if (dw.system.Site.getCurrent().getCustomPreferenceValue('VisaAcceptance_ApplePayTransactionType').value === 'sale') {
         enableCaptureForApplePay = true;
     }
 

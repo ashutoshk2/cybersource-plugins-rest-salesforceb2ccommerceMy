@@ -34,7 +34,7 @@ server.post('Refresh', server.middleware.https, csrfProtection.validateAjaxReque
     var CustomerMgr = require('dw/customer/CustomerMgr');
     var tokenRefreshHelper = require('~/cartridge/scripts/helpers/tokenRefreshHelper');
 
-    // Gated by the Cybersource_NetworkToken preference; no-op when disabled.
+    // Gated by the VisaAcceptance_NetworkToken preference; no-op when disabled.
     if (!configObject.networkTokenizationEnabled) {
         res.json({ success: false });
         return next();
@@ -83,7 +83,7 @@ server.get('List', server.middleware.https, userLoggedIn.validateLoggedInAjax, f
     var renderTemplateHelper = require('*/cartridge/scripts/renderTemplateHelper');
     var savedCardExpiry = require('~/cartridge/scripts/helpers/savedCardExpiry');
 
-    // Gated by the Cybersource_NetworkToken preference; no-op when disabled.
+    // Gated by the VisaAcceptance_NetworkToken preference; no-op when disabled.
     if (!configObject.networkTokenizationEnabled) {
         res.json({ success: false });
         return next();

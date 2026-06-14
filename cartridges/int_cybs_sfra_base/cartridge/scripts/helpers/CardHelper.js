@@ -47,7 +47,7 @@ function removeExistingPaymentInstruments(basket) {
 }
 
 /**
- * Cleans up payment instrument custom attributes (UCToken, GooglePayEncryptedData)
+ * Cleans up payment instrument custom attributes (UCToken)
  * Used when failing orders to ensure sensitive data is removed
  * @param {dw.order.PaymentInstrument} paymentInstrument - The payment instrument to clean
  */
@@ -55,10 +55,6 @@ function cleanupPaymentInstrumentCustomAttributes(paymentInstrument) {
     if (paymentInstrument && paymentInstrument.custom) {
         if (paymentInstrument.custom.UCToken) {
             paymentInstrument.custom.UCToken = null;
-        }
-        if (paymentInstrument.custom.GooglePayEncryptedData || paymentInstrument.custom.isGooglePaycardHolderAuthenticated) {
-            paymentInstrument.custom.GooglePayEncryptedData = null;
-            paymentInstrument.custom.isGooglePaycardHolderAuthenticated = null;
         }
     }
 }

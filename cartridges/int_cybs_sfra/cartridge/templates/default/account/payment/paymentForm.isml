@@ -40,11 +40,6 @@
             <div class="col">
                 <a href="${URLUtils.url('PaymentInstruments-List')}" class="btn btn-block btn-outline-primary">${Resource.msg('button.cancel', 'account', null)}</a>
             </div>
-            <div class="col">
-                <button id="uc-save-card-button" type="button" name="save" class="btn btn-save btn-block btn-primary save-payment" disabled>
-                    ${Resource.msg('button.save', 'account', null)}
-                </button>
-            </div>
         </div>
     </form>
 <iselse>

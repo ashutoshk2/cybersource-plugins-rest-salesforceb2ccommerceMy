@@ -18,7 +18,7 @@ function decryptMLEPayload(jweString) {
     
     // Fix: module requires the config as `configObject` (line 13); `config` was undefined and
     // threw ReferenceError on every MLE webhook, breaking decryption before the alias resolved.
-    var alias = configObject.egressMleCertificateAlias || 'Cybersource_MLE_Egress_Private_Key';
+    var alias = configObject.egressMleCertificateAlias || 'VisaAcceptance_MLE_Egress_Private_Key';
     
 
     // Pin the JWE header before handing the payload to dw/crypto/JWE — defense-in-depth

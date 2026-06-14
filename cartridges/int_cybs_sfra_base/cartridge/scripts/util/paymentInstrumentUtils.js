@@ -33,65 +33,7 @@ function UpdatePaymentTransactionCardauthReversal(paymentInstrument, order, resp
     });
 }
 
-/**
- *
- * @param {*} cart cart
- * @param {*} cardInfo *
- * @param {*} email *
- */
-function updatePaymentInstrumentGP(cart, cardInfo, email) {
-    // Retrieve the inputs
-
-    // eslint-disable-next-line consistent-return
-    Transaction.wrap(function () {
-        var instrument = cart.createPaymentInstrument('DW_GOOGLE_PAY', cart.totalGrossPrice);
-        // Validate our payment instrument was previously properly created
-        if (instrument === null || instrument.paymentMethod !== 'DW_GOOGLE_PAY') {
-            throw new Error('Invalid payment instrument for Google Pay Checkout');
-        }
-        if (cardInfo !== null) {
-        var cardType;
-        switch (cardInfo.cardNetwork) {
-            case 'VISA':
-                cardType = 'Visa';
-                break;
-            case 'MASTERCARD':
-                cardType = 'MasterCard';
-                break;
-            case 'AMEX':
-                cardType = 'Amex';
-                break;
-            case 'DISCOVER':
-                cardType = 'Discover';
-                break;
-            default:
-                cardType = '';
-        }
-        // eslint-disable-next-line no-undef
-        session.forms.billing.creditCardFields.cardType.value = cardType;
-        // Populate payment instrument values
-        instrument.setCreditCardType(cardType);
-        instrument.setCreditCardNumber('************' + cardInfo.cardDetails);
-
-        // Populate the billing address
-        var MobilePaymentHelper = require('../mobilepayments/MobilePaymentsAdapter');
-        var billingAddress = cart.billingAddress;
-
-        if (billingAddress == null) {
-            billingAddress = cart.createBillingAddress();
-            billingAddress = MobilePaymentHelper.createLineItemCtnrBillingAddress(billingAddress, cardInfo.billingAddress);
-            if (!billingAddress.success) {
-                return billingAddress;
-            }
-        }
-        }
-        // set the email
-        cart.customerEmail = email;
-    });
-}
-
 module.exports = {
     UpdatePaymentTransactionCardCapture: UpdatePaymentTransactionCardCapture,
-    UpdatePaymentTransactionCardauthReversal: UpdatePaymentTransactionCardauthReversal,
-    updatePaymentInstrumentGP: updatePaymentInstrumentGP
+    UpdatePaymentTransactionCardauthReversal: UpdatePaymentTransactionCardauthReversal
 };

@@ -75,7 +75,7 @@
                 <tr>
                     <td style="padding:16px 14px;width:34%;vertical-align:top;font-weight:600;background:#f6f8fa;border-right:1px solid #d0d7de">Egress MLE Key Alias</td>
                     <td style="padding:16px 14px">
-                        <input type="text" name="egressMleAlias" value="${pdict.config.egressMleAlias}" placeholder="Cybersource_MLE_Egress_Private_Key" spellcheck="false" autocomplete="off" style="width:100%;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:13px;padding:9px 11px;border:1px solid #d0d7de;border-radius:6px;box-sizing:border-box;color:#24292f"/>
+                        <input type="text" name="egressMleAlias" value="${pdict.config.egressMleAlias}" placeholder="VisaAcceptance_MLE_Egress_Private_Key" spellcheck="false" autocomplete="off" style="width:100%;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:13px;padding:9px 11px;border:1px solid #d0d7de;border-radius:6px;box-sizing:border-box;color:#24292f"/>
                         <div style="font-size:12px;color:#656d76;margin-top:8px;line-height:1.5">Must match the alias of your <b>.p12</b> in <b>Private Keys and Certificates</b>. Both the private key (for decryption) and the public certificate (registered with the gateway) are taken from this <b>.p12</b>.</div>
                     </td>
                 </tr>

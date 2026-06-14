@@ -206,7 +206,7 @@ function subscribeProduct(configId) {
     if (configId === 'unifiedCheckout' && !egressPublicKey) {
         // Read the alias from the committed site preference (not the module-cached configObject),
         // so an alias the merchant just changed in the same updateAdvanced request is honored.
-        var egressAlias = site.getCustomPreferenceValue('Cybersource_EgressCertificateAlias') || 'Cybersource_MLE_Egress_Private_Key';
+        var egressAlias = site.getCustomPreferenceValue('VisaAcceptance_EgressCertificateAlias') || 'VisaAcceptance_MLE_Egress_Private_Key';
         var derivedEgressKey = deriveEgressCertificateB64(egressAlias);
         var derivedUploadOk = false;
         if (derivedEgressKey) {
@@ -393,8 +393,8 @@ function getViewData() {
     var site = Site.getCurrent();
     var method = site.getCustomPreferenceValue('VisaAcceptance_Secure_Integration_Method');
     var methodValue = (method && method.value) ? method.value : (method || '');
-    var dmEnabled = site.getCustomPreferenceValue('Cybersource_DecisionManager') || false;
-    var egressMleAlias = site.getCustomPreferenceValue('Cybersource_EgressCertificateAlias') || 'Cybersource_MLE_Egress_Private_Key';
+    var dmEnabled = site.getCustomPreferenceValue('VisaAcceptance_DecisionManager') || false;
+    var egressMleAlias = site.getCustomPreferenceValue('VisaAcceptance_EgressCertificateAlias') || 'VisaAcceptance_MLE_Egress_Private_Key';
     
     var testAction = new URLAction('WebhookNotification-dmNotification', site.ID);
     var fullUrl = URLUtils.https(testAction).toString();
@@ -533,7 +533,7 @@ function updateAdvanced(baseUrl, egressMleAlias, egressPublicKey) {
     // Derive the egress MLE public key from the .p12 keystore entry the merchant is saving,
     // rather than from a pasted string. Fall back to the incoming/previously-stored value so a
     // merchant whose key already works is never regressed if derivation fails.
-    var effectiveAlias = egressMleAlias || 'Cybersource_MLE_Egress_Private_Key';
+    var effectiveAlias = egressMleAlias || 'VisaAcceptance_MLE_Egress_Private_Key';
     var derivedKey = deriveEgressCertificateB64(effectiveAlias);
     var keyToUse = derivedKey || egressPublicKey || '';
 
@@ -550,7 +550,7 @@ function updateAdvanced(baseUrl, egressMleAlias, egressPublicKey) {
     }
 
     Transaction.wrap(function () {
-        try { site.setCustomPreferenceValue('Cybersource_EgressCertificateAlias', effectiveAlias); } catch(e) { /* pref write is best-effort */ }
+        try { site.setCustomPreferenceValue('VisaAcceptance_EgressCertificateAlias', effectiveAlias); } catch(e) { /* pref write is best-effort */ }
         try {
             var globalObj = CustomObjectMgr.getCustomObject(CUSTOM_OBJECT_TYPE, 'globalConfiguration') || CustomObjectMgr.createCustomObject(CUSTOM_OBJECT_TYPE, 'globalConfiguration');
             globalObj.custom.BaseUrl = newBaseUrl;

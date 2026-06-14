@@ -91,12 +91,6 @@ function getConfig(config) {
             route: 'CheckoutShippingServices-SubmitShipping'
         },
         {
-            route: 'CheckoutServices-GetGooglePayToken'
-        },
-        {
-            route: 'CheckoutServices-SubmitPaymentGP'
-        },
-        {
             route: 'CheckoutServices-SubmitPayment'
         }
         ],
@@ -104,7 +98,6 @@ function getConfig(config) {
        
         // DecisionManager
         fmeDmEnabled: config.fmeDmEnabled || customPreferences.DecisionManager.Preferences.DecisionManagerEnabled.getValue(),
-        fmeDmConversionDetailReportLookbackTime: config.ConversionDetailReportLookbackTime || customPreferences.DecisionManager.Preferences.ConversionDetailReportLookbackTime.getValue(),
 
         // Device Fingerprint
         deviceFingerprintEnabled: config.deviceFingerprintEnabled || customPreferences.DeviceFingerprint.Preferences.DeviceFingerprintEnabled.getValue(),
@@ -118,13 +111,6 @@ function getConfig(config) {
         payerAuthenticationEnabled: config.payerAuthenticationEnabled || customPreferences.PayerAuthentication.Preferences.EnablePayerAuthentication.getValue(),
         isSCAEnabled: config.isSCAEnabled || customPreferences.PayerAuthentication.Preferences.IsSCAEnabled.getValue(),
 
-        // GooglePay
-        googlePayEnabled: config.googlePayEnabled || customPreferences.GooglePay.Preferences.EnableGooglePay.getValue(),
-        googlePayMerchantId: config.googlePayMerchantId || customPreferences.GooglePay.Preferences.GooglePayMerchantId.getValue(),
-        enableGooglePayOnMiniCart: config.enableGooglePayOnMiniCart || customPreferences.GooglePay.Preferences.EnableGooglePayOnMiniCart.getValue(),
-        googlePayEnvironment: config.googlePayEnvironment || customPreferences.GooglePay.Preferences.GooglePayEnvironment.getValue(),
-        enableGooglePayOnCart: config.enableGooglePayOnCart || customPreferences.GooglePay.Preferences.EnableGooglePayOnCart.getValue(),
-
         //MLE
         mleEnabled: config.mleEnabled || customPreferences.MLE.Preferences.EnableMLE.getValue(),
         mleCertificateSerialNumber: config.mleCertificateSerialNumber || customPreferences.MLE.Preferences.MLECertificateSerialNumber.getValue(),
@@ -134,7 +120,6 @@ function getConfig(config) {
         //SecureIntegrationConfiguration
         secureIntegrationMethod: secureIntegrationMethod,
         UnifiedCheckoutPaymentAcceptanceLocation: config.unifiedCheckoutPaymentAcceptanceLocation || customPreferences.SecureIntegrationConfiguration.Preferences.UnifiedCheckoutPaymentAcceptanceLocation.getValue(),
-        allowedCardNetworks: config.allowedCardNetworks || customPreferences.SecureIntegrationConfiguration.Preferences.AllowedCardNetworks.getValue(),
         digitalPaymentMethods: config.digitalPaymentMethods || customPreferences.SecureIntegrationConfiguration.Preferences.DigitalPaymentMethods.getValue(),
         eCheckEnabledForUnifiedCheckout: config.eCheckEnabledForUnifiedCheckout || customPreferences.SecureIntegrationConfiguration.Preferences.ECheckEnabledforUnifiedCheckout.getValue(),
         unifiedCheckoutLabel: config.unifiedCheckoutLabel || customPreferences.SecureIntegrationConfiguration.Preferences.CheckoutLabelforUnifiedCheckout.getValue(),
@@ -145,6 +130,11 @@ function getConfig(config) {
         unifiedCheckoutAllowedCardPrefix: typeof config.unifiedCheckoutAllowedCardPrefix === 'boolean' ? config.unifiedCheckoutAllowedCardPrefix : customPreferences.SecureIntegrationConfiguration.Preferences.UnifiedCheckoutAllowedCardPrefix.getValue(),
 
         unifiedCheckoutEnabled: secureIntegrationMethod == 'Unified_Checkout',
+        // None mode = no enum selection (BM dropdown showing the auto-generated blank
+        // "None" entry). The cartridge falls back to SFRA's native card form path with
+        // the cartridge handling auth / DM / Payer Auth / TMS in the back-end. Settings
+        // for this flow live in the VisaAcceptance_SalesforceDefaultAcceptance_Configuration BM group.
+        noneIntegrationEnabled: !secureIntegrationMethod,
     };
 }
 module.exports = getConfig();

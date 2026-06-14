@@ -73,8 +73,8 @@
             </attribute-group>
         </group-definitions>
     </custom-type>
-    <custom-type type-id="CybersourceWebhookStaging">
-        <display-name xml:lang="x-default">Cybersource Webhook Staging</display-name>
+    <custom-type type-id="VisaAcceptanceWebhookStaging">
+        <display-name xml:lang="x-default">VisaAcceptance Webhook Staging</display-name>
         <description xml:lang="x-default">Safety net for UC payment notifications that arrive before their order exists. Keyed by order number; stores the raw webhook payload for later reconciliation by PlaceOrderDirect.</description>
         <staging-mode>no-staging</staging-mode>
         <storage-scope>organization</storage-scope>
@@ -94,8 +94,8 @@
             </attribute-definition>
         </attribute-definitions>
         <group-definitions>
-            <attribute-group group-id="CybersourceWebhookStaging">
-                <display-name xml:lang="x-default">Cybersource Webhook Staging</display-name>
+            <attribute-group group-id="VisaAcceptanceWebhookStaging">
+                <display-name xml:lang="x-default">VisaAcceptance Webhook Staging</display-name>
                 <attribute attribute-id="OrderNo"/>
                 <attribute attribute-id="payload"/>
             </attribute-group>

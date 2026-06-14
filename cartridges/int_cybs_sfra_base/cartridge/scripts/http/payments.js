@@ -70,9 +70,6 @@ function httpAuthorizeWithToken(cardData, customerEmail, referenceInformationCod
             ];
         }
     }
-    if (cardData.gPayToken) {
-        processingInformation.paymentSolution = '012';
-    }
     var amountDetails = new cybersourceRestApi.Ptsv2paymentsOrderInformationAmountDetails();
     amountDetails.totalAmount = total.toString();
     amountDetails.currency = currency.toUpperCase();
@@ -130,11 +127,6 @@ function httpAuthorizeWithToken(cardData, customerEmail, referenceInformationCod
         }
     }
     else {
-        if (order.paymentInstruments[0].paymentMethod === 'DW_GOOGLE_PAY') {
-            if (dw.system.Site.getCurrent().getCustomPreferenceValue('Cybersource_GooglePayTransactionType').value === 'sale') {
-                request.processingInformation.capture = true;
-            }
-        }
         if (order.paymentInstruments[0].paymentMethod === 'CREDIT_CARD') {
             if (configObject.cardTransactionType.value === 'sale') {
                 request.processingInformation.capture = true;
@@ -155,11 +147,6 @@ function httpAuthorizeWithToken(cardData, customerEmail, referenceInformationCod
         var tokenInformation = new cybersourceRestApi.Ptsv2paymentsTokenInformation(); // eslint-disable-line no-redeclare
         tokenInformation.transientTokenJwt = cardData.ucJwtToken;
         request.tokenInformation = tokenInformation;
-    } else if (cardData.gPayToken) {
-        var fluidData = new cybersourceRestApi.Ptsv2paymentsPaymentInformationFluidData();
-        fluidData.value = cardData.gPayToken;
-        paymentInformation.fluidData = fluidData;
-        request.paymentInformation = paymentInformation;
     } else { // no stored token: raw card data (default payment form)
         var card = {}; // eslint-disable-line no-redeclare
         card.expirationMonth = padNumber(cardData.expirationMonth, 2, '0');
@@ -614,62 +601,54 @@ function generateUcCaptureContext(isMiniCart, selectedPaymentInstrumentId) {
         // Target Origins
         requestObj.targetOrigins = ['https://' + request.httpHost];
 
-        // Allowed Card Networks - Include all supported networks
-        // UC/EBC will filter based on MID configuration
-        var allowedCardNetworks = [
-            'VISA',
-            'MASTERCARD',
-            'AMEX',
-            'DISCOVER',
-            'DINERSCLUB',
-            'JCB',
-            'MAESTRO',
-            'CARTESBANCAIRES',
-            'CUP',
-            'ELO',
-            'CARNET',
-            'MADA'
-        ];
-        requestObj.allowedCardNetworks = allowedCardNetworks;
+        // Allowed Card Networks is intentionally NOT sent - it is managed in EBC
+        // and must not be included in ISV Phase 1 (see requestingCC.md).
 
-        // Allowed Payment Types - Pass ALL supported payment types
-        // UC/EBC will filter to only show those enabled for the MID
+        // Allowed Payment Types - split capture-context instances:
+        //  - cart / minicart (isMiniCart): express-pay digital wallets ONLY
+        //  - checkout page (!isMiniCart): wallets + globally-available methods + APMs
+        // Wallets and globally-available methods are always sent; locale/currency-specific
+        // APMs are gated by the basket currency. UC/EBC filters further by MID config.
         var allowedPaymentTypes = [];
-
-        // Card entry (always include unless minicart)
-        if (!isMiniCart) {
-            allowedPaymentTypes.push('PANENTRY');
-        }
-
-        // eCheck if enabled
-        if (!isMiniCart && configObject.eCheckEnabledForUnifiedCheckout) {
-            allowedPaymentTypes.push('CHECK');
-        }
-
-        // Digital Wallets (work globally)
-        allowedPaymentTypes.push('GOOGLEPAY');
-        //allowedPaymentTypes.push('APPLEPAY');
-        //allowedPaymentTypes.push('CLICKTOPAY');
-        //allowedPaymentTypes.push('PAZE');
-
-        // Alternative Payment Methods (APMs) - locale/currency specific
-        // US/USD: PayPal, Venmo handled by EBC (not in allowedPaymentTypes enum)
-        // EUR: iDEAL (NL), Bancontact (BE), Multibanco (PT)
-        // GBP: Tink (GB)
-        // CAD: Afterpay
         var currency = basket && basket.currencyCode ? basket.currencyCode : 'USD';
 
-        // Add APMs based on currency/locale
-        if (currency === 'EUR') {
-            allowedPaymentTypes.push('IDEAL');
-            allowedPaymentTypes.push('BANCONTACT');
-            allowedPaymentTypes.push('MULTIBANCO');
-        }
-        if (currency === 'GBP') {
-            allowedPaymentTypes.push('TINKPAYBYBANK');
-        }
-        if (currency === 'CAD' || currency === 'AUD') {
-            allowedPaymentTypes.push('AFTERPAY');
+        // Express-pay digital wallets - work globally, present on both instances.
+        allowedPaymentTypes.push('APPLEPAY');
+        allowedPaymentTypes.push('GOOGLEPAY');
+        allowedPaymentTypes.push('PAZE');
+        allowedPaymentTypes.push('PAYPAL');
+        allowedPaymentTypes.push('VENMO');
+
+        // Everything below is checkout-only (the full instance). The cart/minicart
+        // express instance stays wallets-only, so none of these are added there.
+        if (!isMiniCart) {
+            // Globally-available non-wallet methods
+            allowedPaymentTypes.push('PANENTRY');
+            allowedPaymentTypes.push('CLICKTOPAY');
+            allowedPaymentTypes.push('CHECK');
+
+            // Alternative Payment Methods (APMs) - locale/currency specific
+            if (currency === 'EUR') {
+                allowedPaymentTypes.push('IDEAL');       // NL
+                allowedPaymentTypes.push('BANCONTACT');  // BE
+                allowedPaymentTypes.push('MULTIBANCO');  // PT
+                allowedPaymentTypes.push('MYBANK');      // IT
+            }
+            if (currency === 'GBP') {
+                allowedPaymentTypes.push('TINKPAYBYBANK'); // GB
+            }
+            if (currency === 'CAD' || currency === 'AUD') {
+                allowedPaymentTypes.push('AFTERPAY');
+            }
+            if (currency === 'PLN') {
+                allowedPaymentTypes.push('PRZELEWY24');   // PL
+            }
+            if (currency === 'PHP') {
+                allowedPaymentTypes.push('DRAGONPAY');    // PH
+            }
+            if (currency === 'JPY') {
+                allowedPaymentTypes.push('KONBINI');      // JP
+            }
         }
 
         requestObj.allowedPaymentTypes = allowedPaymentTypes;
@@ -683,14 +662,24 @@ function generateUcCaptureContext(isMiniCart, selectedPaymentInstrumentId) {
         Logger.info('[payments.js] generateUcCaptureContext: allowedPaymentTypes = {0}, country = {1}, currency = {2}',
             JSON.stringify(allowedPaymentTypes), currentLocale.country, currency);
 
-        // Capture Mandate
-        // UC v1: Only basic capture mandate fields - tokenization (requestSaveCredentials)
-        // and showAcceptedNetworkIcons are now handled by EBC configuration
+        // Capture Mandate (see requestingCC.md 4.2)
         var captureMandate = new cybersourceRestApi.Upv1capturecontextsCaptureMandate();
-        captureMandate.billingType = isMiniCart ? 'FULL' : 'NONE';
-        captureMandate.requestEmail = isMiniCart;
-        captureMandate.requestPhone = isMiniCart;
-        captureMandate.requestShipping = isMiniCart;
+        if (isMiniCart) {
+            // Wallet instance: wallets collect billing/contact/shipping natively, so
+            // request them all and suppress card-network icons (wallet-only instance).
+            captureMandate.billingType = 'FULL';
+            captureMandate.requestEmail = true;
+            captureMandate.requestPhone = true;
+            captureMandate.requestShipping = true;
+            captureMandate.showAcceptedNetworkIcons = false;
+        } else {
+            // Checkout instance: SFRA already collected billing/contact/shipping on the
+            // platform page, so UC only needs partial billing and no contact prompts.
+            captureMandate.billingType = 'PARTIAL';
+            captureMandate.requestEmail = false;
+            captureMandate.requestPhone = false;
+            captureMandate.requestShipping = false;
+        }
         requestObj.captureMandate = captureMandate;
 
         // Check customer registration status for TMS token display
@@ -710,9 +699,9 @@ function generateUcCaptureContext(isMiniCart, selectedPaymentInstrumentId) {
                 autoCheckEnrollment: true
             }
         };
-        // Complete Mandate - UC v1: Transaction type and TMS token configuration
-        // type: AUTH (authorization only), CAPTURE (auth+capture), PREFER_AUTH (prefer auth if supported)
-        // tokenTypes: specifies which token types to create when cardholder opts to save card
+        // Complete Mandate - UC v1: TMS token configuration only.
+        // completeMandate.type (transaction type) is EBC-managed and must NOT be
+        // sent in ISV Phase 1 - only completeMandate.tms is permitted (see requestingCC.md).
         var completeMandate = {};
 
         // Add TMS_TOKEN config for saved cards (registered customers only)
@@ -749,32 +738,33 @@ function generateUcCaptureContext(isMiniCart, selectedPaymentInstrumentId) {
 
 
 
-        // Set transaction type based on BM configuration (Cybersource_CardTransactionType)
-        var configuredTransactionType = (configObject.cardTransactionType || 'auth').toString().toLowerCase();
-        if (configuredTransactionType === 'sale') {
-            completeMandate.type = 'CAPTURE';
-        } else {
-            completeMandate.type = 'AUTH';
+        // Only send completeMandate when there is a tms block to carry (save-cards
+        // enabled for a registered customer). An empty completeMandate is not sent.
+        if (completeMandate.tms) {
+            requestObj.completeMandate = completeMandate;
         }
 
-        requestObj.completeMandate = completeMandate;
-
         // Transient Token Response Options
-        requestObj.transientTokenResponseOptions = { includeCardPrefix: false };
+        // includeCardPrefix is driven by BM toggle VisaAcceptance_UnifiedCheckout_AllowedCardPrefix
+        requestObj.transientTokenResponseOptions = {
+            includeCardPrefix: !!configObject.unifiedCheckoutAllowedCardPrefix
+        };
 
         // Order Information (with addresses and line items)
         requestObj.data = {
             orderInformation: ucPaymentHelper.buildOrderInformation(basket, isMiniCart)
         };
 
-        // Client Reference Information - placeholder for order tracking
-        // TODO: Add code (orderId) and partner info when order creation flow is finalized
-        requestObj.data.clientReferenceInformation = {};
-
-                // Client Reference Information - application tracking for CyberSource
+        // Client Reference Information - application + order tracking for CyberSource.
+        // code is the reserved SFCC order number (see reservedOrderNo above) so the
+        // capture-context, auth, and eventual SFCC order all share one identifier.
         requestObj.data.clientReferenceInformation = {
+            code: reservedOrderNo,
             applicationName: Constants.APPLICATION_NAME,
-            applicationVersion: Constants.APPLICATION_VERSION
+            applicationVersion: Constants.APPLICATION_VERSION,
+            partner: {
+                solutionId: configObject.solutionId || ''
+            }
         };
 
         // Device Information: Capture context API only supports ipAddress in deviceInformation
@@ -797,9 +787,8 @@ function generateUcCaptureContext(isMiniCart, selectedPaymentInstrumentId) {
         }
 
         // Log full capture context request for debugging
-        Logger.info('[payments.js] generateUcCaptureContext FULL REQUEST: allowedPaymentTypes={0}, allowedCardNetworks={1}, paymentConfigurations={2}',
+        Logger.info('[payments.js] generateUcCaptureContext FULL REQUEST: allowedPaymentTypes={0}, paymentConfigurations={1}',
             JSON.stringify(requestObj.allowedPaymentTypes),
-            JSON.stringify(requestObj.allowedCardNetworks),
             JSON.stringify(requestObj.paymentConfigurations));
 
         // Generate Capture Context
@@ -857,18 +846,6 @@ function generateUcCaptureContextSaveCard() {
         // Target Origins
         requestObj.targetOrigins = ['https://' + request.httpHost];
 
-        // Allowed Card Networks
-        var allowedCardNetworks = [];
-        var allowedCNetworks = configObject.allowedCardNetworks;
-        if (empty(allowedCNetworks)) {
-            allowedCardNetworks.push('VISA');
-        } else {
-            for (var i = 0; allowedCNetworks[i] != null; i++) {
-                allowedCardNetworks.push(allowedCNetworks[i].value);
-            }
-        }
-        requestObj.allowedCardNetworks = allowedCardNetworks;
-
         // Allowed Payment Types - PANENTRY for card entry in Save Card flow
         requestObj.allowedPaymentTypes = ['PANENTRY'];
 
@@ -889,9 +866,15 @@ function generateUcCaptureContextSaveCard() {
         captureMandate.requestShipping = false;
         requestObj.captureMandate = captureMandate;
 
-        // Complete Mandate - PREFER_AUTH for zero-dollar authorization (tokenization)
+        // Complete Mandate - TMS tokenization for the save-card flow.
+        // This is a zero-dollar card-on-file setup (no purchase), so Decision Manager
+        // and Payer Authentication are explicitly disabled for this flow:
+        //   decisionManager: false       -> skip Decision Manager
+        //   consumerAuthentication: NONE -> skip 3DS / Payer Auth
+        // completeMandate.type stays EBC-managed and is not sent.
         var completeMandate = {
-            type: 'PREFER_AUTH',
+            decisionManager: false,
+            consumerAuthentication: 'NONE',
             tms: {
                 tokenTypes: ['customer', 'paymentInstrument', 'instrumentIdentifier']
             }
@@ -899,7 +882,10 @@ function generateUcCaptureContextSaveCard() {
         requestObj.completeMandate = completeMandate;
 
         // Transient Token Response Options
-        requestObj.transientTokenResponseOptions = { includeCardPrefix: false };
+        // includeCardPrefix is driven by BM toggle VisaAcceptance_UnifiedCheckout_AllowedCardPrefix
+        requestObj.transientTokenResponseOptions = {
+            includeCardPrefix: !!configObject.unifiedCheckoutAllowedCardPrefix
+        };
 
         // Get site default currency for zero-dollar auth
         var Site = require('dw/system/Site');

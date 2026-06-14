@@ -27,8 +27,17 @@
             <production/>
         </preferences>
     </payment-processor>
-    <payment-processor processor-id="PAYMENTS_APPLEPAY"> 
+    <payment-processor processor-id="PAYMENTS_APPLEPAY">
         <description>Payment processor for Apple pay</description>
+        <preferences>
+            <all-instances/>
+            <development/>
+            <staging/>
+            <production/>
+        </preferences>
+    </payment-processor>
+    <payment-processor processor-id="PAYMENTS_GOOGLEPAY">
+        <description>Payment processor for Google Pay</description>
         <preferences>
             <all-instances/>
             <development/>

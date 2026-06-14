@@ -7,7 +7,7 @@
     </payment-method>
     <payment-method method-id="DW_APPLE_PAY">
         <name xml:lang="x-default">Apple Pay</name>
-        <enabled-flag>false</enabled-flag>
+        <enabled-flag>true</enabled-flag>
         <processor-id>PAYMENTS_APPLEPAY</processor-id>
     </payment-method>
     <payment-method method-id="BANK_TRANSFER">
@@ -39,8 +39,8 @@
     </payment-method>
     <payment-method method-id="DW_GOOGLE_PAY">
         <name xml:lang="x-default">Google Pay</name>
-        <enabled-flag>false</enabled-flag>
-        <processor-id>PAYMENTS_CREDIT</processor-id>
+        <enabled-flag>true</enabled-flag>
+        <processor-id>PAYMENTS_GOOGLEPAY</processor-id>
     </payment-method>
     <!-- START GENAI -->
     <payment-method method-id="ALT_PAYMENT_METHOD">

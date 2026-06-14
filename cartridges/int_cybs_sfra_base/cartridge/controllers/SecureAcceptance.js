@@ -19,11 +19,20 @@ if (configObject.cartridgeEnabled) {
         // Check if generateUcCaptureContext returned an error object
         if (!UcCaptureContext || typeof UcCaptureContext !== 'string' || UcCaptureContext.error) {
             var Logger = require('dw/system/Logger');
-            var errorMsg = UcCaptureContext && UcCaptureContext.errorMessage 
-                ? UcCaptureContext.errorMessage 
+            var errorMsg = UcCaptureContext && UcCaptureContext.errorMessage
+                ? UcCaptureContext.errorMessage
                 : 'Failed to generate capture context';
             Logger.error('[SecureAcceptance.js] handleUCTokenCreation ERROR: {0}', errorMsg);
-            res.json({ error: true, errorMessage: errorMsg });
+            // Do NOT return the raw error to the browser. This action is consumed via a
+            // server-side <isinclude url> (and client AJAX with dataType:'html'), so
+            // res.json() would inline the gateway response verbatim into the storefront.
+            // Render the UC template with a null capture context instead: checkout then
+            // shows a generic message and the minicart shows nothing.
+            secureResponseHelper.secureRender(res, 'unifiedCheckout', {
+                UcCaptureContext: null,
+                isMiniCart: isMiniCart,
+                serverError: true
+            });
             next();
             return;
         }

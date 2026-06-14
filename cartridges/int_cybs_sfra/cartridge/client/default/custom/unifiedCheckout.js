@@ -8,6 +8,88 @@
 'use strict';
 
 /**
+ * Ensure SFRA's jQuery spinner plugin ($.spinner / $.fn.spinner) is available.
+ *
+ * This file is served as a standalone static script (URLUtils.staticURL), NOT through
+ * the webpack main.js bundle. SFRA only registers the spinner plugin inside that bundle
+ * (require('base/components/spinner')). In some contexts — notably the mini-cart Unified
+ * Checkout / Google Pay flow — placeOrderDirect() runs against a global jQuery on which
+ * the plugin was never registered, throwing "TypeError: $.spinner is not a function" and
+ * aborting order placement. Register a SFRA-compatible fallback (identical .veil/.spinner
+ * markup, so the existing CSS applies) only when the real plugin is absent; this stays
+ * inert whenever main.js has already registered it.
+ */
+function ensureSpinnerPlugin() {
+    if (typeof $ === 'undefined' || typeof $.spinner === 'function') {
+        return;
+    }
+    function addSpinner($target) {
+        var $veil = $('<div class="veil"><div class="underlay"></div></div>');
+        $veil.append('<div class="spinner"><div class="dot1"></div><div class="dot2"></div></div>');
+        if ($target.get(0).tagName === 'IMG') {
+            $target.after($veil);
+            $veil.css({ width: $target.width(), height: $target.height() });
+            if ($target.parent().css('position') === 'static') {
+                $target.parent().css('position', 'relative');
+            }
+        } else {
+            $target.append($veil);
+            if ($target.css('position') === 'static') {
+                $target.parent().css('position', 'relative');
+                $target.parent().addClass('veiled');
+            }
+            if ($target.get(0).tagName === 'BODY') {
+                $veil.find('.spinner').css('position', 'fixed');
+            }
+        }
+        $veil.click(function (e) { e.stopPropagation(); });
+    }
+    function removeSpinner($veil) {
+        if ($veil.parent().hasClass('veiled')) {
+            $veil.parent().css('position', '');
+            $veil.parent().removeClass('veiled');
+        }
+        $veil.off('click');
+        $veil.remove();
+    }
+    if (typeof $.fn.spinner !== 'function') {
+        $.fn.spinner = function () {
+            var $element = $(this);
+            return {
+                start: function () { if ($element.length) { addSpinner($element); } },
+                stop: function () { if ($element.length) { removeSpinner($('.veil')); } }
+            };
+        };
+    }
+    $.spinner = function () {
+        return {
+            start: function () { addSpinner($('body')); },
+            stop: function () { removeSpinner($('.veil')); }
+        };
+    };
+}
+
+/**
+ * Always-safe page-level spinner accessor. Use this instead of calling $.spinner()
+ * directly. It lazily registers the SFRA-compatible fallback above AT CALL TIME, which
+ * covers the cases the load-time guard alone cannot: jQuery (or the spinner plugin) not
+ * yet present when this static script first executed, or a second jQuery instance having
+ * replaced the decorated one afterwards. Falls back to a no-op so callers never throw
+ * even if jQuery itself is somehow unavailable.
+ */
+function ucPageSpinner() {
+    ensureSpinnerPlugin();
+    if (typeof $ !== 'undefined' && typeof $.spinner === 'function') {
+        return $.spinner();
+    }
+    return { start: function () {}, stop: function () {} };
+}
+
+// Register eagerly too (no-op if jQuery isn't ready yet) so any other SFRA code on the
+// page that expects $.spinner finds it; ucPageSpinner() re-ensures it at call time.
+ensureSpinnerPlugin();
+
+/**
  * Dangerous element tag names that are stripped during sanitization.
  */
 var DANGEROUS_TAGS = ['script', 'object', 'embed', 'applet', 'base'];
@@ -367,128 +449,6 @@ var unifiedCheckout = {
     },
 
     /**
-     * Add CSS styles for saved card selector
-     */
-    addSavedCardSelectorStyles: function() {
-        if ($('#saved-card-selector-styles').length) return;
-        
-        var styles = 
-            '<style id="saved-card-selector-styles">' +
-            '.saved-card-selector { border: 1px solid #e0e0e0; border-radius: 8px; padding: 15px; background: #fafafa; }' +
-            '.saved-card-title { color: #333; font-weight: 600; margin: 0; }' +
-            '.saved-cards-list { max-height: 300px; overflow-y: auto; }' +
-            '.saved-card-item { display: flex; align-items: center; padding: 12px; border: 2px solid #e0e0e0; border-radius: 6px; margin-bottom: 8px; cursor: pointer; background: #fff; }' +
-            '.saved-card-item:hover { border-color: #007bff; background: #f8f9ff; }' +
-            '.saved-card-item.selected { border-color: #007bff; background: #e7f1ff; }' +
-            '.saved-card-item input[type="radio"] { margin-right: 12px; }' +
-            '.saved-card-icon { width: 50px; margin-right: 12px; font-size: 24px; }' +
-            '.saved-card-details { flex: 1; }' +
-            '.saved-card-type { font-weight: 600; color: #333; }' +
-            '.saved-card-number { color: #666; font-family: monospace; }' +
-            '.saved-card-expiry { color: #888; font-size: 12px; }' +
-            '#uc-widget-wrapper.loading { opacity: 0.5; pointer-events: none; }' +
-            '</style>';
-        
-        $('head').append(styles);
-    },
-
-    /**
-     * Initialize the saved card selector component (legacy - kept for compatibility)
-     * @returns {boolean} - Always returns false now, we use checkAndLoadSavedCards instead
-     */
-    initSavedCardSelector: function() {
-        // This is now handled by checkAndLoadSavedCards()
-        return false;
-    },
-
-    /**
-     * Load saved cards from server (legacy - now handled by checkAndLoadSavedCards)
-     * @deprecated Use checkAndLoadSavedCards instead
-     */
-    loadSavedCards: function() {
-        console.log('[UC] loadSavedCards is deprecated, use checkAndLoadSavedCards');
-        this.checkAndLoadSavedCards();
-    },
-
-    /**
-     * Render saved cards in the selector (legacy - now handled by createSavedCardSelectorUI)
-     * @deprecated Use createSavedCardSelectorUI instead
-     */
-    renderSavedCards: function(cards) {
-        console.log('[UC] renderSavedCards is deprecated, use createSavedCardSelectorUI');
-        this.createSavedCardSelectorUI(cards);
-    },
-
-    /**
-     * Get card icon HTML based on card type
-     * @param {string} cardType - The card type (VISA, MASTERCARD, etc.)
-     * @returns {string} - HTML for the card icon
-     */
-    getCardIcon: function(cardType) {
-        var type = (cardType || '').toUpperCase();
-        var icons = {
-            'VISA': '💳 VISA',
-            'MASTERCARD': '💳 MC',
-            'AMEX': '💳 AMEX',
-            'DISCOVER': '💳 DISC',
-            'JCB': '💳 JCB',
-            'DINERS': '💳 DIN',
-            'DINERSCLUB': '💳 DIN'
-        };
-        return icons[type] || '💳 ' + type;
-    },
-
-    /**
-     * Bind events for saved card selector
-     */
-    bindSavedCardSelectorEvents: function() {
-        var self = this;
-
-        // Card item click - select the card
-        $(document).on('click', '.saved-card-item', function() {
-            var $item = $(this);
-            var paymentInstrumentId = $item.data('pi-id') || $item.data('payment-instrument-id');
-            
-            // Update selection state
-            $('.saved-card-item').removeClass('selected');
-            $item.addClass('selected');
-            $item.find('input[type="radio"]').prop('checked', true);
-            
-            // Store selected card ID
-            self.selectedPaymentInstrumentId = paymentInstrumentId;
-            
-            // Enable the "Continue with Selected Card" button
-            $('#use-selected-card-btn').prop('disabled', false);
-            
-            console.log('[UC] Selected card:', paymentInstrumentId);
-        });
-
-        // "Continue with Selected Card" button click
-        $(document).on('click', '#use-selected-card-btn', function() {
-            if (!self.selectedPaymentInstrumentId) {
-                alert('Please select a card first');
-                return;
-            }
-            
-            console.log('Loading UC with selected card:', self.selectedPaymentInstrumentId);
-            self.loadUCWithSelectedCard(self.selectedPaymentInstrumentId);
-        });
-
-        // "Pay with New Card" button click
-        $(document).on('click', '#use-new-card-btn', function() {
-            console.log('Loading UC for new card entry');
-            self.selectedPaymentInstrumentId = null;
-            self.loadUCForNewCard();
-        });
-
-        // "Back to Saved Cards" button click
-        $(document).on('click', '#back-to-saved-cards-btn', function() {
-            console.log('Going back to saved cards');
-            self.showSavedCardSelector();
-        });
-    },
-
-    /**
      * Load UC widget with a specific saved card
      * @param {string} paymentInstrumentId - TMS payment instrument ID
      */
@@ -675,29 +635,6 @@ var unifiedCheckout = {
                 self.showValidationError('Failed to load payment widget. Please try again.');
             }
         });
-    },
-
-    /**
-     * Show saved card selector and hide UC widget
-     */
-    showSavedCardSelector: function() {
-        var self = this;
-        
-        // Destroy existing UC instance
-        self.destroyExistingUCInstance();
-        
-        // Show saved card selector
-        $('#saved-card-selector').show();
-        $('#back-to-saved-cards').hide();
-        
-        // Hide and clear UC widget
-        $('#uc-widget-wrapper').hide();
-        
-        // Clear selection
-        self.selectedPaymentInstrumentId = null;
-        $('.saved-card-item').removeClass('selected');
-        $('.saved-card-item input[type="radio"]').prop('checked', false);
-        $('#use-selected-card-btn').prop('disabled', true);
     },
 
     /**
@@ -937,127 +874,16 @@ var unifiedCheckout = {
                 return;
             }
 
-            // For non-completeMandate flows (e.g., minicart), continue with existing logic
-            console.log('Processing traditional token flow...');
-
-            // Create payment data object
-            var data = {
-                paymentToken: paymentToken,
-            };
-
-            // console.log('Payment token processed:', paymentToken);
-
-            // Remove the stored payments list to prevent conflicts on submission
-            if ($('.stored-payments-list').length > 0) {
-                console.log('Payment complete, removing stored payments list.');
-                $('.stored-payments-list').remove();
-            }
-            // Store the payment token in hidden field
-            $('#uc-payment-token').val(paymentToken);
-            var decodedJwt = parseJwt(paymentToken);
-            var isGooglePay = false;
-            console.log(decodedJwt);
-            // Check payment type and populate form fields accordingly
-            if (decodedJwt.content.processingInformation && decodedJwt.content.processingInformation.paymentSolution && decodedJwt.content.processingInformation.paymentSolution.value == '012') {
-                // Google Pay
-                console.log('Google Pay payment detected');
-                isGooglePay = true;
-                $('#gPayFluidData').val(decodedJwt.content.paymentInformation.fluidData.value);
-
-                // Add payment method info to data object
-                data.paymentMethod = 'googlepay';
-                data.fluidData = decodedJwt.content.paymentInformation.fluidData.value;
-            }
-            else if (decodedJwt.content.processingInformation && decodedJwt.content.processingInformation.paymentSolution && decodedJwt.content.processingInformation.paymentSolution.value == '001') {
-                //apple pay
-                $('input[name=dwfrm_billing_paymentMethod]').val('DW_APPLE_PAY');
-                $('#cardNumber').val(decodedJwt.content.paymentInformation.tokenizedCard.number.maskedValue);
-                assignCorrectCardType(decodedJwt.content.paymentInformation.tokenizedCard.type.value);
-                $('#expirationMonth').val(decodedJwt.content.paymentInformation.tokenizedCard.expirationMonth.value);
-                $('#expirationYear').val(decodedJwt.content.paymentInformation.tokenizedCard.expirationYear.value);
-            }
-            
-            // Alternate payment method (paymentType present). Checked BEFORE the card
-            // branch because real APM tokens (e.g. iDEAL/Multibanco) also echo the
-            // scheme code into card.type, which would otherwise match the card branch.
-            // The main checkout completeMandate path is handled server-side by
-            // PlaceOrderDirect; this only labels the method for the minicart/
-            // SubmitPayment fallback (no card/bank fields to populate).
-            else if (decodedJwt.content.paymentInformation && decodedJwt.content.paymentInformation.paymentType) {
-                $('#uc-payment-method').val('ALT_PAYMENT_METHOD');
-                $('input[name="dwfrm_billing_creditCardFields_ucpaymentmethod"]').val('ALT_PAYMENT_METHOD');
-                $('input[name=dwfrm_billing_paymentMethod]').val('ALT_PAYMENT_METHOD');
-                console.log('alternate payment method detected');
-            }
-            
-            // Handle regular credit card payments
-            else if (decodedJwt.content.paymentInformation.card) {
-                if (decodedJwt.content.processingInformation &&
-                    decodedJwt.content.processingInformation.paymentSolution &&
-                    decodedJwt.content.processingInformation.paymentSolution.value == '027') {
-                    $('input[name=dwfrm_billing_paymentMethod]').val('CLICK_TO_PAY');
-                } else {
-                    data.paymentMethod = 'creditcard';
-                    // Set save card checkbox based on JWT metadata
-                    var saveCard = decodedJwt.metadata && decodedJwt.metadata.consumerPreference && decodedJwt.metadata.consumerPreference.saveCard !== undefined
-                        ? decodedJwt.metadata.consumerPreference.saveCard
-                        : false;
-                    $('#saveCreditCard, input[name="dwfrm_billing_creditCardFields_saveCard"]').prop('checked', saveCard);
-                }
-
-                $('#cardNumber').val(decodedJwt.content.paymentInformation.card.number.maskedValue);
-                assignCorrectCardType(decodedJwt.content.paymentInformation.card.type.value);
-                $('#expirationMonth').val(decodedJwt.content.paymentInformation.card.expirationMonth.value);
-                $('#expirationYear').val(decodedJwt.content.paymentInformation.card.expirationYear.value);
-            }
-            else if (decodedJwt.content.paymentInformation.bank) {
-                $('#uc-payment-method').val('BANK_TRANSFER');
-                $('input[name=dwfrm_billing_creditCardFields_ucpaymentmethod').val('BANK_TRANSFER');
-                $('input[name=dwfrm_billing_paymentMethod]').val('BANK_TRANSFER');
-                console.log("bank transfer value been updated");
-            }
-
-
-            // Store complete response with conditional data
-            if (completeResult && typeof completeResult === 'object') {
-                var transactionId = completeResult.transactionId || completeResult.id || '';
-                if (transactionId) {
-                    data.transactionId = transactionId;
-                    $('#uc-transaction-id').val(transactionId);
-                    $('input[name=dwfrm_billing_creditCardFields_transactionId]').val(transactionId);
-                }
-            }
-
-            $('#uc-response').val(JSON.stringify(data));
-            $('input[name=dwfrm_billing_creditCardFields_ucpaymenttoken]').val(paymentToken);
-
-
-            // Trigger form submission or next step with conditional data
-            this.triggerPaymentProcessing(data);
-
-            // Trigger appropriate payment flow based on payment type
-
-            // Check if we are in minicart context (no billing form)
-            if ($('#dwfrm_billing').length === 0) {
-                if (isGooglePay) {
-                    console.log('Triggering Google Pay minicart payment flow');
-                    processGooglePay(); // This function already handles the minicart case correctly
-                } else {
-                    console.log('Triggering other minicart payment flow');
-                    processOtherCartAndMinicartPayments();
-                }
-            } else {
-                // Normal checkout page flow
-                if (isGooglePay) {
-                    console.log('Triggering Google Pay payment flow');
-                    processGooglePay();
-                } else {
-                    console.log('Triggering Credit Card payment flow');
-                    var $submitPaymentBtn = $('.submit-payment, .save-payment');
-                    $submitPaymentBtn.prop('disabled', false).removeClass('disabled');
-                    $submitPaymentBtn.click();
-                }
-            }
+            // No completeMandate JWT was returned. Under the completeMandate-only
+            // architecture (UC SDK always runs checkout.complete() for both checkout
+            // and cart/minicart), this should not happen. Fail safe: surface an error
+            // and regenerate the capture context so the shopper can retry, rather than
+            // falling back to the removed legacy SubmitPayment token flow.
+            console.error('handlePaymentComplete: no completeMandate JWT in result; cannot place order.');
+            self.showValidationError('We could not complete your payment. Please try again.');
+            setTimeout(function () {
+                self.regenerateCaptureContextIfNeeded(true);
+            }, 2000);
 
         } catch (error) {
             console.error('Error processing payment:', error);
@@ -1102,7 +928,7 @@ var unifiedCheckout = {
         var csrfToken = $('input[name="csrf_token"]').val() || $('.csrf_token').val();
 
         // Show loading spinner
-        $.spinner().start();
+        ucPageSpinner().start();
 
         // Prepare form data
         var formData = {
@@ -1120,7 +946,7 @@ var unifiedCheckout = {
             dataType: 'json',
             data: formData,
             success: function (data) {
-                $.spinner().stop();
+                ucPageSpinner().stop();
 
                 if (data.error) {
                     console.error('placeOrderDirect: Server returned error:', data.errorMessage);
@@ -1198,7 +1024,7 @@ var unifiedCheckout = {
                 }
             },
             error: function (xhr, status, error) {
-                $.spinner().stop();
+                ucPageSpinner().stop();
                 console.error('placeOrderDirect: AJAX error:', status, error);
 
                 var errorMessage = 'An error occurred while processing your order. Please try again.';
@@ -1569,25 +1395,6 @@ var unifiedCheckout = {
 
         // Log detailed error for debugging
         console.error('Error Details:', error);
-    },
-
-    /**
-     * Trigger payment processing
-     * @param {Object} data - Payment data
-     */
-    triggerPaymentProcessing: function (data) {
-        // Dispatch custom event to notify other components
-        var event = new CustomEvent('ucPaymentComplete', {
-            detail: data,
-            bubbles: true
-        });
-        document.dispatchEvent(event);
-
-        // If there's a submit button, enable it
-        var submitButton = $('.submit-payment, .place-order, .save-payment');
-        if (submitButton.length > 0) {
-            submitButton.prop('disabled', false);
-        }
     },
 
     /**
@@ -2001,7 +1808,7 @@ var unifiedCheckout = {
 
         } catch (error) {
             console.error('Error initializing UC Save Card widget:', error);
-            $.spinner().stop();
+            ucPageSpinner().stop();
             self.showSaveCardError('Failed to initialize payment widget. Please try again.');
         }
     },
@@ -2035,7 +1842,7 @@ var unifiedCheckout = {
 
         try {
             console.log('Processing save card manually...');
-            $.spinner().start();
+            ucPageSpinner().start();
 
             // Disable save button to prevent double-submit
             $('#uc-save-card-button').prop('disabled', true);
@@ -2063,7 +1870,7 @@ var unifiedCheckout = {
 
         } catch (error) {
             console.error('Error processing save card:', error);
-            $.spinner().stop();
+            ucPageSpinner().stop();
             $('#uc-save-card-button').prop('disabled', false);
             self.handleSaveCardError(error);
         }
@@ -2099,7 +1906,7 @@ var unifiedCheckout = {
         submitUrl = self.sanitizeUrl(submitUrl);
         if (!submitUrl) {
             console.error('Invalid save payment URL');
-            $.spinner().stop();
+            ucPageSpinner().stop();
             self.showSaveCardError('Configuration error. Please contact support.');
             return;
         }
@@ -2125,7 +1932,7 @@ var unifiedCheckout = {
                 makeDefaultPayment: $('#makeDefaultPayment').is(':checked')
             },
             success: function(data) {
-                $.spinner().stop();
+                ucPageSpinner().stop();
 
                 if (data.error) {
                     console.error('Save card error:', data.errorMessage);
@@ -2140,7 +1947,7 @@ var unifiedCheckout = {
                 }
             },
             error: function(xhr, status, error) {
-                $.spinner().stop();
+                ucPageSpinner().stop();
                 $('#uc-save-card-button').prop('disabled', false);
                 console.error('Save card AJAX error:', status, error);
                 self.showSaveCardError('Network error. Please try again.');
@@ -2253,219 +2060,6 @@ var unifiedCheckout = {
 
 };
 
-function processGooglePay() {
-    var postdataUrl = $('#submit-payment-gp-url').val();
-    if (!postdataUrl) {
-        postdataUrl = window.googlepayval.sessionCallBack;
-    }
-    var submiturl = window.googlepayval.submitURL;
-    // var GPData = JSON.stringify(paymentData);
-    var csrfInfo = (window.googlepayval && window.googlepayval.csrf) || {};
-    var csrfTokenName = csrfInfo.tokenName || 'csrf_token';
-    var csrfToken = csrfInfo.token || $('input[name="csrf_token"]').val() || $('.csrf_token').val() || '';
-    var paymentForm;
-    if ($('#dwfrm_billing').length > 0) {
-        $('#dwfrm_billing').attr('action', postdataUrl);
-        $('input[name=dwfrm_billing_paymentMethod]').val('DW_GOOGLE_PAY');
-        paymentForm = $('#dwfrm_billing').serialize() + '&UC=true';
-        if (!/(^|&)csrf_token=/.test(paymentForm)) {
-            paymentForm += '&' + encodeURIComponent(csrfTokenName) + '=' + encodeURIComponent(csrfToken);
-        }
-    } else {
-        var ucToken = $('#uc-payment-token').val();
-        var fluidData = $('#gPayFluidData').val();
-        var ucTransactionId = $('#uc-transaction-id').val() || '';
-
-        paymentForm = 'dwfrm_billing_paymentMethod=DW_GOOGLE_PAY'
-            + '&dwfrm_billing_creditCardFields_ucpaymenttoken=' + encodeURIComponent(ucToken)
-            + '&dwfrm_billing_creditCardFields_transactionId=' + encodeURIComponent(ucTransactionId)
-            + '&gPayFluidData=' + encodeURIComponent(fluidData)
-            + '&UC=true'
-            + '&isminicart=true' // Add the minicart flag
-            + '&' + encodeURIComponent(csrfTokenName) + '=' + encodeURIComponent(csrfToken);
-    }
-
-    function loadFormErrors(parentSelector, fieldErrors) { // eslint-disable-line
-        // Display error messages and highlight form fields with errors.
-        $.each(fieldErrors, function (attr) {
-            $('*[name=' + attr + ']', parentSelector)
-                .addClass('is-invalid')
-                .siblings('.invalid-feedback')
-                .text(fieldErrors[attr]);
-        });
-    }
-
-    $.spinner().start();
-    $.ajax({
-        url: postdataUrl, // Use the potentially corrected URL
-        type: 'post',
-        dataType: 'json',
-        data: paymentForm,
-        success: function (data) {
-            $.spinner().stop();
-            if (data.error) {
-                if (data.fieldErrors.length) {
-                    data.fieldErrors.forEach(function (error) {
-                        if (Object.keys(error).length) {
-                            loadFormErrors('.payment-form', error);
-                        }
-                    });
-                }
-                if (data.serverErrors.length) {
-                    data.serverErrors.forEach(function (error) {
-                        $('.error-message').show();
-                        $('.error-message-text').text(error);
-                    });
-                }
-                if (data.cartError) {
-                    window.location.href = data.redirectUrl;
-                }
-            } else {
-                // The submitURL from googlepayval might also be wrong in minicart context.
-                // The response from SubmitPaymentGP should contain the correct redirect URL.
-                if (data.continueUrl) {
-                    window.location.href = data.continueUrl;
-                } else {
-                    window.location.href = submiturl;
-                }
-            }
-        },
-        error: function (err) {
-            $.spinner().stop();
-            if (err.responseJSON.redirectUrl) {
-                window.location.href = err.responseJSON.redirectUrl;
-            }
-        }
-    });
-}
-function processOtherCartAndMinicartPayments() {
-    var postdataUrl = $('#minicart-submit-payment-url').val();
-    var submissionUrl = $('#minicart-place-order-url').val();
-    var ucToken = $('#uc-payment-token').val();
-    var decodedJwt = parseJwt(ucToken);
-
-    // Check for payment solution types
-    var paymentSolutionValue = decodedJwt.content.processingInformation &&
-        decodedJwt.content.processingInformation.paymentSolution &&
-        decodedJwt.content.processingInformation.paymentSolution.value;
-
-    var isClickToPay = paymentSolutionValue == '027';
-    var isApplePay = paymentSolutionValue == '001';
-
-    
-    // Alternate payment method (PPRO online bank transfer, BNPL, PayPal, Venmo, Paze):
-    // identified by a paymentType descriptor. Real APM tokens (iDEAL/Multibanco) ALSO
-    // echo the scheme code into card.type, so detection keys off paymentType presence
-    // (cards/wallets never carry paymentType), NOT card absence. The server records the
-    // specific scheme from the result JWT.
-    var minicartPaymentInfo = decodedJwt.content && decodedJwt.content.paymentInformation;
-    var isAltPayment = !!(minicartPaymentInfo && minicartPaymentInfo.paymentType);
-    
-
-    // Determine payment method
-    var paymentMethod = 'CREDIT_CARD';
-    if (isClickToPay) {
-        paymentMethod = 'CLICK_TO_PAY';
-    } else if (isApplePay) {
-        paymentMethod = 'DW_APPLE_PAY';
-    }
-    
-    if (isAltPayment) {
-        paymentMethod = 'ALT_PAYMENT_METHOD';
-    }
-    
-
-    // Get CSRF token
-    var csrfToken = $('input[name="csrf_token"]').val() || $('.csrf_token').val();
-    var ucTransactionId = $('#uc-transaction-id').val() || '';
-
-    var paymentForm = 'csrf_token=' + csrfToken + '&dwfrm_billing_paymentMethod=' + paymentMethod
-        + '&dwfrm_billing_creditCardFields_ucpaymenttoken=' + encodeURIComponent(ucToken)
-        + '&dwfrm_billing_creditCardFields_transactionId=' + encodeURIComponent(ucTransactionId)
-        + '&UC=true';
-
-    // Handle Apple Pay tokenized card data
-    var tokenizedCardData = decodedJwt.content.paymentInformation.tokenizedCard;
-    if (tokenizedCardData && isApplePay) {
-        // Use the existing function to determine the card type and set the hidden input
-        assignCorrectCardType(tokenizedCardData.type.value);
-
-        paymentForm += '&dwfrm_billing_creditCardFields_cardNumber=' + encodeURIComponent(tokenizedCardData.number.maskedValue);
-        paymentForm += '&dwfrm_billing_creditCardFields_cardType=' + encodeURIComponent($('#cardType').val());
-        paymentForm += '&dwfrm_billing_creditCardFields_expirationMonth=' + encodeURIComponent(tokenizedCardData.expirationMonth.value);
-        paymentForm += '&dwfrm_billing_creditCardFields_expirationYear=' + encodeURIComponent(tokenizedCardData.expirationYear.value);
-    }
-
-    // Handle regular card data (Click to Pay or regular credit card)
-    // Skip for APMs: their card.type holds the scheme code (e.g. IDLPP), not a real PAN.
-    var cardData = decodedJwt.content.paymentInformation.card;
-    if (cardData && !isApplePay && !isAltPayment) { /* GENAI: added !isAltPayment guard */
-        // Use the existing function to determine the card type and set the hidden input
-        assignCorrectCardType(cardData.type.value);
-
-        paymentForm += '&dwfrm_billing_creditCardFields_cardNumber=' + encodeURIComponent(cardData.number.maskedValue);
-        paymentForm += '&dwfrm_billing_creditCardFields_cardType=' + encodeURIComponent($('#cardType').val());
-        paymentForm += '&dwfrm_billing_creditCardFields_expirationMonth=' + encodeURIComponent(cardData.expirationMonth.value);
-        paymentForm += '&dwfrm_billing_creditCardFields_expirationYear=' + encodeURIComponent(cardData.expirationYear.value);
-    }
-
-    $.spinner().start();
-    $.ajax({
-        url: postdataUrl,
-        type: 'post',
-        dataType: 'json',
-        data: paymentForm,
-        success: function (data) {
-            $.spinner().stop();
-            if (data.error) {
-                if (data.fieldErrors && data.fieldErrors.length) {
-                    data.fieldErrors.forEach(function (error) {
-                        if (Object.keys(error).length) {
-                            $('.error-message').show();
-                            $('.error-message-text').text(JSON.stringify(error));
-                        }
-                    });
-                }
-                if (data.serverErrors && data.serverErrors.length) {
-                    data.serverErrors.forEach(function (error) {
-                        $('.error-message').show();
-                        $('.error-message-text').text(error);
-                    });
-                }
-                if (data.cartError) {
-                    window.location.href = data.redirectUrl;
-                } else if (data.redirectUrl) {
-                    $('.error-message').show();
-                    $('.error-message-text').text(data.errorMessage);
-                    window.location.href = data.redirectUrl;
-                } else {
-                    $('.error-message').show();
-                    $('.error-message-text').text(data.errorMessage || 'Payment processing failed');
-                }
-            } else {
-                // Success - the backend returns form, order, customer data
-                console.log('Payment processed successfully (' + paymentMethod + ')', data);
-
-                // Redirect to place order page with the populated basket
-                if (data.continueUrl) {
-                    window.location.href = data.continueUrl;
-                } else {
-                    window.location.href = submissionUrl;
-                }
-            }
-        },
-        error: function (err) {
-            $.spinner().stop();
-            if (err.responseJSON && err.responseJSON.redirectUrl) {
-                window.location.href = err.responseJSON.redirectUrl;
-            } else {
-                $('.error-message').show();
-                $('.error-message-text').text('Payment request failed. Please try again.');
-            }
-        }
-    });
-}
-
 /**
  * *
  * @param {*} token *
@@ -2480,69 +2074,6 @@ function parseJwt(token) {
 
     return JSON.parse(jsonPayload);
 }
-
-/**
- * Assigns the correct alphabetic card type to the #cardType element based on the numeric or string card type code.
- * @param {string} cardType - The card type code from Cybersource (e.g., '001', '002', '003', etc.)
- */
-function assignCorrectCardType(cardType) {
-    var correctCardType = '';
-    switch (cardType) { // eslint-disable-line default-case
-        case '001':
-            correctCardType = 'Visa';
-            break;
-        case '002':
-            correctCardType = 'Master Card';
-            break;
-        case '003':
-            correctCardType = 'Amex';
-            break;
-        case '004':
-            correctCardType = 'Discover';
-            break;
-        case '005':
-            correctCardType = 'DinersClub';
-            break;
-        case '006':
-            correctCardType = 'Carte Blanche';
-            break;
-        case '007':
-            correctCardType = 'JCB';
-            break;
-        case '042':
-            correctCardType = 'Maestro';
-            break;
-        case '062':
-            correctCardType = 'China UnionPay';
-            break;
-        case '036':
-            correctCardType = 'CartesBancaires';
-            break;
-        case '054':
-            correctCardType = 'Elo';
-            break;
-        case '046':
-            correctCardType = 'JCrew';
-            break;
-        case '070':
-            correctCardType = 'EFTPOS';
-            break;
-        case '067':
-            correctCardType = 'Meeza';
-            break;
-        case '060':
-            correctCardType = 'Mada';
-            break;
-        case '058':
-            correctCardType = 'Carnet';
-            break;
-        case '081':
-            correctCardType = 'Jaywan';
-            break;
-    }
-    $('#cardType').val(correctCardType);
-}
-
 
 /**
  * Initialize Unified Checkout if the capture context is present
