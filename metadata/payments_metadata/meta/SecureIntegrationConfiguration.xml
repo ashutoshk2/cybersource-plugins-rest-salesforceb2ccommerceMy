@@ -13,6 +13,10 @@
                         <display xml:lang="x-default">Unified Checkout</display>
                         <value>Unified_Checkout</value>
                     </value-definition>
+                    <value-definition>
+                        <display xml:lang="x-default">Salesforce Default Credit Card Payment Acceptance</display>
+                        <value>Salesforce_Default</value>
+                    </value-definition>
                 </value-definitions>
             </attribute-definition>
             <attribute-definition attribute-id="VisaAcceptance_UnifiedCheckout_ExpressPay">

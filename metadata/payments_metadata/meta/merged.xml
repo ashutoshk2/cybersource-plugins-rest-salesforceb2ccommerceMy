@@ -57,6 +57,43 @@
                 <externally-managed-flag>false</externally-managed-flag>
                 <default-value>false</default-value>
             </attribute-definition>
+                        <attribute-definition attribute-id="VisaAcceptance_P12PrivateKeyAlias">
+                <display-name xml:lang="x-default">P12 Private Key Alias</display-name>
+                <description xml:lang="x-default">Alias of the P12 private key imported in BM Private Keys and Certificates. Used for JWT RS256 signing.</description>
+                <type>string</type>
+                <externally-managed-flag>false</externally-managed-flag>
+            </attribute-definition>
+            <attribute-definition attribute-id="VisaAcceptance_P12SerialNo">
+                <display-name xml:lang="x-default">P12 Serial Number</display-name>
+                <description xml:lang="x-default">Serial Number of the Client certificate (CN=Merchant_ID) from p12 file. Used as the kid claim in the JWT header for RS256 authentication.</description>
+                <type>string</type>
+                <externally-managed-flag>false</externally-managed-flag>
+            </attribute-definition>
+            <attribute-definition attribute-id="VisaAcceptance_MetaKeyEnabled">
+                <display-name xml:lang="x-default">Enable Meta Key</display-name>
+                <description xml:lang="x-default">Enable or disable Meta Key for Cybersource. When enabled, the Meta Key P12 alias and serial number are used instead of the default key.</description>
+                <type>boolean</type>
+                <externally-managed-flag>false</externally-managed-flag>
+                <default-value>false</default-value>
+            </attribute-definition>
+            <attribute-definition attribute-id="VisaAcceptance_MetaKeyP12Alias">
+                <display-name xml:lang="x-default">Meta Key P12 File Alias</display-name>
+                <description xml:lang="x-default">Alias of the Meta Key P12 private key imported in BM Private Keys and Certificates. Used for JWT RS256 signing when Meta Key is enabled.</description>
+                <type>string</type>
+                <externally-managed-flag>false</externally-managed-flag>
+            </attribute-definition>
+            <attribute-definition attribute-id="VisaAcceptance_MetaKeyP12SerialNo">
+                <display-name xml:lang="x-default">Meta Key P12 Serial Number</display-name>
+                <description xml:lang="x-default">Serial Number of the Meta Key client certificate from P12 file. Used as the kid claim in the JWT header when Meta Key is enabled.</description>
+                <type>string</type>
+                <externally-managed-flag>false</externally-managed-flag>
+            </attribute-definition>
+            <attribute-definition attribute-id="VisaAcceptance_MetaKeyMerchantId">
+                <display-name xml:lang="x-default">Meta Key Portfolio Merchant ID</display-name>
+                <description xml:lang="x-default">The portfolio/account merchant ID that owns the Meta Key P12 certificate. Used as the iss (issuer) claim in JWT v2. The transacting MID remains the child merchant configured in Cybersource_MerchantID.</description>
+                <type>string</type>
+                <externally-managed-flag>false</externally-managed-flag>
+            </attribute-definition>
             <attribute-definition attribute-id="VisaAcceptance_UnifiedCheckout_Cart_Minicart">
                 <display-name xml:lang="x-default">Enable Unified Checkout for Cart and Mini Cart</display-name>
                 <description xml:lang="x-default">Enable or Disable Unified Checkout for digital payments on Cart and Mini Cart.</description>
@@ -346,6 +383,10 @@
                         <display xml:lang="x-default">Unified Checkout</display>
                         <value>Unified_Checkout</value>
                     </value-definition>
+                    <value-definition>
+                        <display xml:lang="x-default">Salesforce Default Credit Card Payment Acceptance</display>
+                        <value>Salesforce_Default</value>
+                    </value-definition>
                 </value-definitions>
             </attribute-definition>
             <attribute-definition attribute-id="VisaAcceptance_UnifiedCheckout_DigitalPaymentMethods">
@@ -435,6 +476,12 @@
                 <attribute attribute-id="VisaAcceptance_DeveloperId"/>
                 <attribute attribute-id="VisaAcceptance_CommerceIndicator"/>
                 <attribute attribute-id="VisaAcceptance_EnableTestEndpoints"/>
+                <attribute attribute-id="VisaAcceptance_P12PrivateKeyAlias"/>
+                <attribute attribute-id="VisaAcceptance_P12SerialNo"/>
+                <attribute attribute-id="VisaAcceptance_MetaKeyEnabled"/>
+                <attribute attribute-id="VisaAcceptance_MetaKeyP12Alias"/>
+                <attribute attribute-id="VisaAcceptance_MetaKeyP12SerialNo"/>
+                <attribute attribute-id="VisaAcceptance_MetaKeyMerchantId"/>
             </attribute-group>
             <attribute-group group-id="VisaAcceptance_DeliveryAddressVerification">
                 <display-name xml:lang="x-default">Delivery Address Verification Configuration</display-name>

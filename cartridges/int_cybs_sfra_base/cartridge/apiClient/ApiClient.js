@@ -63,7 +63,7 @@ _exports.prototype.createService = function () {
                         }
                         // Redact secret keys, passwords, tokens
                         else if (lowerKey.indexOf('secret') !== -1 || lowerKey.indexOf('password') !== -1 ||
-                                 lowerKey.indexOf('token') !== -1 || lowerKey === 'pin') {
+                            lowerKey.indexOf('token') !== -1 || lowerKey === 'pin') {
                             filtered[key] = '[REDACTED]';
                         }
                         // Mask authorization signatures
@@ -88,7 +88,7 @@ _exports.prototype.createService = function () {
                 var filtered = text;
 
                 // Mask 13-19 digit card numbers (keep last 4)
-                filtered = filtered.replace(/\b(\d{4}[\s-]?\d{4}[\s-]?\d{4}[\s-]?\d{3,4})\b/g, function(match) {
+                filtered = filtered.replace(/\b(\d{4}[\s-]?\d{4}[\s-]?\d{4}[\s-]?\d{3,4})\b/g, function (match) {
                     var digits = match.replace(/[\s-]/g, '');
                     return '****' + digits.slice(-4);
                 });
@@ -177,21 +177,23 @@ _exports.prototype.buildUrl = function (path, pathParams, queryParams) {
 };
 
 _exports.prototype.generateDigest = function (payload) {
-    //var buffer = Buffer.from(payload, 'utf8');
     var buffer = new Bytes(payload, 'utf8');
-
-    //var hash = crypto.createHash('sha256');
-    var messageDigest = new MessageDigest("SHA-256");
-
-    //hash.update(buffer);
+    var messageDigest = new MessageDigest('SHA-256');
     messageDigest.updateBytes(buffer);
-
-    //var digest = hash.digest('base64');
     var digest = messageDigest.digest();
     var digestBase64 = Encoding.toBase64(digest);
 
-    //return digest;
     return digestBase64;
+}
+
+_exports.prototype.base64UrlEncode = function (input) {
+    var base64;
+    if (typeof input === 'string') {
+        base64 = Encoding.toBase64(new Bytes(input, 'UTF-8'));
+    } else {
+        base64 = Encoding.toBase64(input);
+    }
+    return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
 }
 
 _exports.prototype.getHttpSignature = function (resource, method, merchantKeyId, requestHost, merchantId, merchantSecretKey, payload) {
@@ -248,6 +250,75 @@ _exports.prototype.getHttpSignature = function (resource, method, merchantKeyId,
     return signatureHeader;
 }
 
+
+_exports.prototype.getJWTToken = function (resource, method, merchantId, digest, requestHost) {
+    var Signature = require('dw/crypto/Signature');
+    var KeyRef = require('dw/crypto/KeyRef');
+    var UUIDUtils = require('dw/util/UUIDUtils');
+
+    // Read P12 key ID and alias from BM site preferences
+    // Use Meta Key credentials when Meta Key is enabled
+    var cybsLogger = require('dw/system/Logger').getLogger('CyberSource', 'ApiClient');
+    var p12KeyId;
+    var p12PrivateKeyAlias;
+    if (configObject.metaKeyEnabled) {
+        cybsLogger.info('Meta Key authentication is enabled. Using Meta Key credentials for merchant {0}.', merchantId);
+        var missingFields = [];
+        if (!configObject.metaKeyP12SerialNo) { missingFields.push('metaKeyP12SerialNo'); }
+        if (!configObject.metaKeyP12Alias) { missingFields.push('metaKeyP12Alias'); }
+        if (!configObject.metaKeyMerchantId) { missingFields.push('metaKeyMerchantId'); }
+        if (missingFields.length > 0) {
+            cybsLogger.error('Meta Key is enabled but required fields are missing: {0}. Check Business Manager site preferences.', missingFields.join(', '));
+        }
+        p12KeyId = configObject.metaKeyP12SerialNo;
+        p12PrivateKeyAlias = configObject.metaKeyP12Alias;
+    } else {
+        p12KeyId = configObject.p12KeyId;
+        p12PrivateKeyAlias = configObject.p12PrivateKeyAlias;
+    }
+
+    var currentTimestamp = Math.floor(Date.now() / 1000);
+
+    // JWS Header Claims - only alg, typ, kid per spec
+    var header = {
+        alg: 'RS256',
+        typ: 'JWT',
+        kid: p12KeyId,
+        'v-c-merchant-id': merchantId
+    };
+
+    // JWS Body Claims - JWT v2 (field order matches working reference)
+    var jwtPayload = {};
+    if (digest) {
+        jwtPayload.digest = digest;
+        jwtPayload.digestAlgorithm = 'SHA-256';
+    }
+    jwtPayload.exp = currentTimestamp + 120;
+    jwtPayload.iat = currentTimestamp;
+    // For meta keys, iss must be the portfolio owner (P12 owner), not the transacting child MID
+    jwtPayload.iss = (configObject.metaKeyEnabled && configObject.metaKeyMerchantId) ? configObject.metaKeyMerchantId : merchantId;
+    jwtPayload.jti = UUIDUtils.createUUID();
+    jwtPayload['request-method'] = method;
+    jwtPayload['request-resource-path'] = resource;
+    jwtPayload['request-host'] = requestHost;
+    // jwtPayload['v-c-jwt-version'] = '2';
+    jwtPayload['v-c-merchant-id'] = merchantId;
+
+    // Base64URL encode header and payload (Step 4)
+    var encodedHeader = this.base64UrlEncode(JSON.stringify(header));
+    var encodedPayload = this.base64UrlEncode(JSON.stringify(jwtPayload));
+
+    // Create signing input and sign with private key from SFCC keystore
+    var signingInput = encodedHeader + '.' + encodedPayload;
+
+    // Sign with private key from SFCC keystore (P12 uploaded to BM > Private Keys and Certificates)
+    var keyRef = new KeyRef(p12PrivateKeyAlias);
+    var sig = new Signature();
+    var signatureBytes = sig.signBytes(new Bytes(signingInput, 'UTF-8'), keyRef, 'SHA256withRSA');
+    var encodedSignature = this.base64UrlEncode(signatureBytes);
+
+    return signingInput + '.' + encodedSignature;
+}
 _exports.prototype.normalizeParams = function (params) {
     var newParams = {};
     for (var key in params) {
@@ -264,41 +335,48 @@ _exports.prototype.normalizeParams = function (params) {
 }
 
 _exports.prototype.callApi = function (path, httpMethod, pathParams, queryParams, headerParams, formParams, bodyParam, authNames, contentTypes, accepts, returnType, callback, isMLESupportedByCybsForApi) {
-    var requestHost = this.basePath.substr(
+    // var hostAndPath = this.basePath.substr(this.basePath.indexOf("//") + 2);
+    // var requestHost = hostAndPath.indexOf('/') > -1 ? hostAndPath.substring(0, hostAndPath.indexOf('/')) : hostAndPath;
+
+    // for http signature auth
+     var requestHost = this.basePath.substr(
         this.basePath.indexOf("//") + 2
     );
- 
+
     var method = httpMethod.toLowerCase();
     var merchantId = this.merchantConfig.getMerchantID();
+
+    // for http signature auth
     var merchantKeyId = this.merchantConfig.getMerchantKeyID();
     var merchantSecretKey = this.merchantConfig.getMerchantsecretKey();
+
     var payload = "";
     var Constants = require('../apiClient/constants');
- 
+
     var url = this.buildUrl(path, pathParams, queryParams);
- 
+
     var resource = url.substr(this.basePath.length);
     var contentType = contentTypes.join(';');
     var acceptType = accepts.join(';');
- 
+
     var date = new Date(Date.now()).toUTCString();
     if (method === 'post' || method === 'patch' || method === 'put') {
         if (typeof bodyParam === 'string') {
             bodyParam = JSON.parse(bodyParam);
         }
- 
+
         // UC V1 Sessions API (/uc/v1/sessions) does not support clientReferenceInformation
         // Skip adding partner/solution info for this endpoint per UC V1 API Contract
         var isUcV1SessionsApi = path === '/uc/v1/sessions';
-        
+
         // adding solution id to all post calls (except UC V1 Sessions which doesn't support it)
         if (!isUcV1SessionsApi) {
             if (!bodyParam.clientReferenceInformation) {
                 bodyParam.clientReferenceInformation = {};
             }
-            if(path === '/up/v1/capture-contexts'){
+            if (path === '/up/v1/capture-contexts') {
                 bodyParam.clientReferenceInformation.code = '102';
-            }else{
+            } else {
                 bodyParam.clientReferenceInformation.applicationName = Constants.APPLICATION_NAME;
                 bodyParam.clientReferenceInformation.applicationVersion = Constants.APPLICATION_VERSION;
                 bodyParam.clientReferenceInformation.partner = {
@@ -308,40 +386,46 @@ _exports.prototype.callApi = function (path, httpMethod, pathParams, queryParams
             }
         }
         payload = JSON.stringify(bodyParam);
- 
+
         var isMLEEnabled = configObject.mleEnabled;
- 
+
         if (isMLEEnabled && isMLESupportedByCybsForApi == true) {
             var encryptPayload = require('*/cartridge/scripts/mle/jweEncrypt.js');
             payload = encryptPayload.getJWE(payload);
- 
+
         }
         var signature = this.getHttpSignature(resource, method, merchantKeyId, requestHost, merchantId, merchantSecretKey, payload);
         var digest = this.generateDigest(payload);
         digest = "SHA-256=" + digest;
         headerParams['digest'] = digest;
+        
+        // var jwtToken = this.getJWTToken(resource, method, merchantId, digest, requestHost);
+        // headerParams['Authorization'] = 'Bearer ' + jwtToken;
     } else {
-        var signature = this.getHttpSignature(resource, method, merchantKeyId, requestHost, merchantId, merchantSecretKey);
+                var signature = this.getHttpSignature(resource, method, merchantKeyId, requestHost, merchantId, merchantSecretKey);
+
+        // var jwtToken = this.getJWTToken(resource, method, merchantId, null, requestHost);
+        // headerParams['Authorization'] = 'Bearer ' + jwtToken;
     }
- 
+
     headerParams['v-c-merchant-id'] = merchantId;
     headerParams['date'] = date;
     headerParams['host'] = requestHost;
-    headerParams['signature'] = signature;
-    headerParams['User-Agent'] = "Mozilla/5.0";
+    headerParams['signature'] = signature; // for http signature auth
+    headerParams['User-Agent'] = "Mozilla/5.0"; // for http signature auth
     headerParams['Content-Type'] = contentType;
     headerParams['Accept'] = acceptType;
- 
+
     // Set header parameters
     var normalizedHeaders = this.normalizeParams(headerParams);
- 
+
     // Calling service.
     if (method === 'post' || method === 'patch' || method === 'put') {
         var response = this.createService().call(url, normalizedHeaders, method, payload);
     } else {
         var response = this.createService().call(url, normalizedHeaders, method);
     }
- 
+
     if (response.ok) {
         var responseObj = response.object;
         // These endpoints return JWT strings, not JSON - skip JSON.parse

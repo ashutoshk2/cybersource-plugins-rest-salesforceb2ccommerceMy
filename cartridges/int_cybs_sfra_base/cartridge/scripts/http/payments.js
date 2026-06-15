@@ -856,7 +856,7 @@ function generateUcCaptureContextSaveCard() {
         requestObj.locale = currentLocale.ID;
 
         // Button Type - SAVE_CARD for the "Add Payment" flow
-        requestObj.buttonType = 'SAVE_CARD';
+        requestObj.buttonType = 'ADD_CARD';
 
         // Capture Mandate - billingType FULL so UC widget collects billing address
         var captureMandate = new cybersourceRestApi.Upv1capturecontextsCaptureMandate();

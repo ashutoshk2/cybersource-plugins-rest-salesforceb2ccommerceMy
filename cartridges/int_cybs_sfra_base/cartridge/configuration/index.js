@@ -42,7 +42,7 @@ function getConfig(config) {
     
     return {
         // Api Client config
-        authenticationType: 'http_signature',
+        authenticationType: 'jwt',
         runEnvironment: 'cybersource.environment.SANDBOX',
         enableLog: EnableLog,
         logFilename: LogFileName,
@@ -58,6 +58,15 @@ function getConfig(config) {
         merchantsecretKey: config.merchantSecretKey || customPreferences.Core.Preferences.MerchantKeySecret.getValue(),
         developerId: config.developerId || customPreferences.Core.Preferences.DeveloperId.getValue(),
         CommerceIndicator: config.CommerceIndicator || customPreferences.Core.Preferences.CommerceIndicator.getValue(),
+        p12PrivateKeyAlias: config.p12PrivateKeyAlias || customPreferences.Core.Preferences.P12PrivateKeyAlias.getValue(),
+        p12KeyId: config.p12KeyId || customPreferences.Core.Preferences.P12KeyId.getValue(),
+
+        // Meta Key
+        metaKeyEnabled: config.metaKeyEnabled || customPreferences.Core.Preferences.MetaKeyEnabled.getValue(),
+        metaKeyP12Alias: config.metaKeyP12Alias || customPreferences.Core.Preferences.MetaKeyP12Alias.getValue(),
+        metaKeyP12SerialNo: config.metaKeyP12SerialNo || customPreferences.Core.Preferences.MetaKeyP12SerialNo.getValue(),
+        metaKeyMerchantId: config.metaKeyMerchantId || customPreferences.Core.Preferences.MetaKeyMerchantId.getValue(),
+
 
         // Delivery address verification
         davEnabled: config.davEnabled || customPreferences.DeliveryAddressVerification.Preferences.DAVEnabled.getValue(),
@@ -130,11 +139,12 @@ function getConfig(config) {
         unifiedCheckoutAllowedCardPrefix: typeof config.unifiedCheckoutAllowedCardPrefix === 'boolean' ? config.unifiedCheckoutAllowedCardPrefix : customPreferences.SecureIntegrationConfiguration.Preferences.UnifiedCheckoutAllowedCardPrefix.getValue(),
 
         unifiedCheckoutEnabled: secureIntegrationMethod == 'Unified_Checkout',
-        // None mode = no enum selection (BM dropdown showing the auto-generated blank
-        // "None" entry). The cartridge falls back to SFRA's native card form path with
-        // the cartridge handling auth / DM / Payer Auth / TMS in the back-end. Settings
-        // for this flow live in the VisaAcceptance_SalesforceDefaultAcceptance_Configuration BM group.
-        noneIntegrationEnabled: !secureIntegrationMethod,
+        // None = any selection other than Unified Checkout (the explicit "Salesforce Default
+        // Credit Card Payment Acceptance" enum value, or a blank/legacy preference). The
+        // cartridge falls back to SFRA's native card form path with the cartridge handling
+        // auth / DM / Payer Auth / TMS in the back-end. Settings for this flow live in the
+        // VisaAcceptance_SalesforceDefaultAcceptance_Configuration BM group.
+        noneIntegrationEnabled: secureIntegrationMethod !== 'Unified_Checkout',
     };
 }
 module.exports = getConfig();

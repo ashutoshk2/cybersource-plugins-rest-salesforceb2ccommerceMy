@@ -3,7 +3,8 @@
 var Mac = require('dw/crypto/Mac');
 var Encoding = require('dw/crypto/Encoding');
 var Bytes = require('dw/util/Bytes');
-var Site = require('dw/system/Site');
+var Signature = require('dw/crypto/Signature');
+var KeyRef = require('dw/crypto/KeyRef');
  
 /**
  * Generate HMAC-SHA256 signature for data
@@ -40,20 +41,37 @@ function verifyHMAC(data, signature) {
 }
  
 /**
- * Get HMAC secret from site preferences
- * Reuses the existing VisaAcceptance_MerchantKeySecret for HMAC signing
- * @returns {string} - The HMAC secret
+ * Choose the P12 alias based on Meta Key mode.
+ * @returns {string} - P12 alias
+ */
+function getP12AliasForHMAC() {
+    var configObject = require('../../configuration/index');
+
+    if (configObject.metaKeyEnabled) {
+        if (!configObject.metaKeyP12Alias) {
+            throw new Error('Meta Key is enabled but metaKeyP12Alias is not configured. Please set VisaAcceptance_MetaKeyP12Alias in site preferences.');
+        }
+        return configObject.metaKeyP12Alias;
+    }
+
+    if (!configObject.p12PrivateKeyAlias) {
+        throw new Error('P12 private key alias is not configured. Please set VisaAcceptance_P12PrivateKeyAlias in site preferences.');
+    }
+
+    return configObject.p12PrivateKeyAlias;
+}
+
+/**
+ * Derive deterministic HMAC key material from the configured P12 private key.
+ * @returns {dw.util.Bytes} - HMAC secret bytes
  */
 function getHMACSecret() {
-    var currentSite = Site.getCurrent();
-    // Reuse the existing CyberSource merchant secret key
-    var secret = currentSite.getCustomPreferenceValue('VisaAcceptance_MerchantKeySecret');
- 
-    if (!secret) {
-        throw new Error('CyberSource Merchant Key Secret not configured. Please set VisaAcceptance_MerchantKeySecret in site preferences.');
-    }
- 
-    return secret;
+    var p12Alias = getP12AliasForHMAC();
+    var signature = new Signature();
+    var keyRef = new KeyRef(p12Alias);
+    var derivationContext = new Bytes('cybs-tax-cookie-hmac-v1', 'UTF-8');
+
+    return signature.signBytes(derivationContext, keyRef, 'SHA256withRSA');
 }
  
 module.exports = {

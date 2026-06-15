@@ -95,6 +95,72 @@ module.exports = {
                 flags: {
                     mandatory: false
                 }
+            },
+            /** @type {CustomPreference} */
+            P12PrivateKeyAlias: {
+                id: 'VisaAcceptance_P12PrivateKeyAlias',
+                display_name: 'P12 Private Key Alias',
+                description: 'Alias of the P12 private key imported in BM Private Keys and Certificates. Used for JWT RS256 signing.',
+                type: Types.string,
+                default: undefined,
+                flags: {
+                    mandatory: false
+                }
+            },
+            /** @type {CustomPreference} */
+            P12KeyId: {
+                id: 'VisaAcceptance_P12SerialNo',
+                display_name: 'P12 Serial Number',
+                description: 'Serial Number of the Client certificate (CN=Merchant_ID) from p12 file. Used as the kid claim in the JWT header for RS256 authentication.',
+                type: Types.string,
+                default: undefined,
+                flags: {
+                    mandatory: false
+                }
+            },
+            /** @type {CustomPreference} */
+            MetaKeyEnabled: {
+                id: 'VisaAcceptance_MetaKeyEnabled',
+                display_name: 'Enable Meta Key',
+                description: 'Enable or disable Meta Key for Cybersource. When enabled, the Meta Key P12 alias and serial number are used instead of the default key.',
+                type: Types.boolean,
+                default: false,
+                flags: {
+                    mandatory: false
+                }
+            },
+            /** @type {CustomPreference} */
+            MetaKeyP12Alias: {
+                id: 'VisaAcceptance_MetaKeyP12Alias',
+                display_name: 'Meta Key P12 File Alias',
+                description: 'Alias of the Meta Key P12 private key imported in BM Private Keys and Certificates. Used for JWT RS256 signing when Meta Key is enabled.',
+                type: Types.string,
+                default: undefined,
+                flags: {
+                    mandatory: false
+                }
+            },
+            /** @type {CustomPreference} */
+            MetaKeyP12SerialNo: {
+                id: 'VisaAcceptance_MetaKeyP12SerialNo',
+                display_name: 'Meta Key P12 Serial Number',
+                description: 'Serial Number of the Meta Key client certificate from P12 file. Used as the kid claim in the JWT header when Meta Key is enabled.',
+                type: Types.string,
+                default: undefined,
+                flags: {
+                    mandatory: false
+                }
+            },
+            /** @type {CustomPreference} */
+            MetaKeyMerchantId: {
+                id: 'VisaAcceptance_MetaKeyMerchantId',
+                display_name: 'Meta Key Portfolio Merchant ID',
+                description: 'The portfolio/account merchant ID that owns the Meta Key P12 certificate. Used as the iss (issuer) claim in JWT v2. The transacting merchant ID (v-c-merchant-id) remains the child MID configured in Cybersource_MerchantID.',
+                type: Types.string,
+                default: undefined,
+                flags: {
+                    mandatory: false
+                }
             }
         }
     },
