@@ -2,7 +2,7 @@
 <payment-settings xmlns="http://www.demandware.com/xml/impex/paymentsettings/2009-09-15">
     <payment-method method-id="CLICK_TO_PAY">
         <name xml:lang="x-default">Click to Pay</name>
-        <enabled-flag>false</enabled-flag>
+        <enabled-flag>true</enabled-flag>
         <processor-id>PAYMENTS_CLICK_TO_PAY</processor-id>
     </payment-method>
     <payment-method method-id="DW_APPLE_PAY">
@@ -42,13 +42,21 @@
         <enabled-flag>true</enabled-flag>
         <processor-id>PAYMENTS_GOOGLEPAY</processor-id>
     </payment-method>
-    <!-- START GENAI -->
     <payment-method method-id="ALT_PAYMENT_METHOD">
         <name xml:lang="x-default">Alternate Payment Method</name>
         <enabled-flag>true</enabled-flag>
         <processor-id>ALT_PAYMENT</processor-id>
     </payment-method>
-    <!-- END GENAI -->
+    <payment-method method-id="PAYPAL">
+        <name xml:lang="x-default">PayPal</name>
+        <enabled-flag>true</enabled-flag>
+        <processor-id>PAYMENTS_PAYPAL</processor-id>
+    </payment-method>
+    <payment-method method-id="VENMO">
+        <name xml:lang="x-default">Venmo</name>
+        <enabled-flag>true</enabled-flag>
+        <processor-id>PAYMENTS_VENMO</processor-id>
+    </payment-method>
 
     <payment-card card-type="China UnionPay">
         <name xml:lang="x-default">China UnionPay</name>
@@ -204,3 +212,4 @@
         <security-code-length>3</security-code-length>
     </payment-card>
 </payment-settings>
+ 

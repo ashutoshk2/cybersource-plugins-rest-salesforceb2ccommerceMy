@@ -432,9 +432,20 @@ function detectPaymentMethod(jwtPayload) {
     // wallets never carry paymentType. This is checked BEFORE the card branch because
     // real APM payloads ALSO echo the scheme code into paymentInformation.card.type
     // (e.g. card.type 'IDLPP'/'MLTBT'), which would otherwise be misread as a card.
-    // Routed through one generic ALT_PAYMENT_METHOD; the scheme is recorded from
-    // getApmDescriptor by the alt_payment processor.
-    if (getApmDescriptor(jwtPayload)) {
+    var apm = getApmDescriptor(jwtPayload);
+    if (apm) {
+        // eWallet APMs with dedicated routes: PayPal, Venmo. paymentType.name is
+        // 'eWallet' and method.name is 'payPal' or 'venmo' (case varies). Other
+        // eWallets (e.g. Paze pending real-payload confirmation) fall through to
+        // the generic ALT_PAYMENT_METHOD bucket below.
+        if ((apm.name || '').toLowerCase() === 'ewallet') {
+            var methodLower = (apm.method || '').toLowerCase();
+            if (methodLower === 'paypal') return 'PAYPAL';
+            if (methodLower === 'venmo')  return 'VENMO';
+        }
+        // All other APMs (iDEAL, Multibanco, Bancontact, MyBank, P24, DragonPay,
+        // Tink, Afterpay, Konbini, ...) are routed through one generic processor;
+        // the scheme is recorded from getApmDescriptor by the alt_payment hook.
         return 'ALT_PAYMENT_METHOD';
     }
 
@@ -496,18 +507,29 @@ function getApmDescriptor(jwtPayload) {
 }
 
 
+// Logical method key (returned by detectPaymentMethod) -> processor ID used in
+// the hook name 'app.payment.processor.<id>'. The processor IDs below match
+// the hook entries registered in int_cybs_sfra_base/hooks.json. Authoritative
+// source for routing is the JWT, not the BM PaymentMethod -> PaymentProcessor
+// binding.
+var METHOD_TO_PROCESSOR_ID = {
+    CREDIT_CARD:        'payments_credit',
+    BANK_TRANSFER:      'bank_transfer',
+    DW_APPLE_PAY:       'payments_applepay',
+    DW_GOOGLE_PAY:      'payments_googlepay',
+    CLICK_TO_PAY:       'payments_click_to_pay',
+    PAYPAL:             'payments_paypal',
+    VENMO:              'payments_venmo',
+    ALT_PAYMENT_METHOD: 'alt_payment'
+};
+
 /**
- * Resolve the processor hook key for a given payment method ID.
- * @param {string} paymentMethodId - SFCC payment method ID (e.g. 'DW_APPLE_PAY')
- * @returns {string|null} - Lower-cased processor ID for use in 'app.payment.processor.<id>'
+ * Resolve the processor hook key for a given logical payment method key.
+ * @param {string} paymentMethodKey - Logical key from detectPaymentMethod (e.g. 'CREDIT_CARD', 'PAYPAL')
+ * @returns {string|null} - Lower-cased processor ID for use in 'app.payment.processor.<id>', or null if unmapped
  */
-function getProcessorIdForMethod(paymentMethodId) {
-    var PaymentMgr = require('dw/order/PaymentMgr');
-    var method = PaymentMgr.getPaymentMethod(paymentMethodId);
-    if (!method) return null;
-    var processor = method.getPaymentProcessor();
-    if (!processor) return null;
-    return processor.ID.toLowerCase();
+function getProcessorIdForMethod(paymentMethodKey) {
+    return METHOD_TO_PROCESSOR_ID[paymentMethodKey] || null;
 }
 
 /**

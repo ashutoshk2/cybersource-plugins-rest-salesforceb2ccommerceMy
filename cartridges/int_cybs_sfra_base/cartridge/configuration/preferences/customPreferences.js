@@ -108,17 +108,6 @@ module.exports = {
                 }
             },
             /** @type {CustomPreference} */
-            P12KeyId: {
-                id: 'VisaAcceptance_P12SerialNo',
-                display_name: 'P12 Serial Number',
-                description: 'Serial Number of the Client certificate (CN=Merchant_ID) from p12 file. Used as the kid claim in the JWT header for RS256 authentication.',
-                type: Types.string,
-                default: undefined,
-                flags: {
-                    mandatory: false
-                }
-            },
-            /** @type {CustomPreference} */
             MetaKeyEnabled: {
                 id: 'VisaAcceptance_MetaKeyEnabled',
                 display_name: 'Enable Meta Key',
@@ -134,17 +123,6 @@ module.exports = {
                 id: 'VisaAcceptance_MetaKeyP12Alias',
                 display_name: 'Meta Key P12 File Alias',
                 description: 'Alias of the Meta Key P12 private key imported in BM Private Keys and Certificates. Used for JWT RS256 signing when Meta Key is enabled.',
-                type: Types.string,
-                default: undefined,
-                flags: {
-                    mandatory: false
-                }
-            },
-            /** @type {CustomPreference} */
-            MetaKeyP12SerialNo: {
-                id: 'VisaAcceptance_MetaKeyP12SerialNo',
-                display_name: 'Meta Key P12 Serial Number',
-                description: 'Serial Number of the Meta Key client certificate from P12 file. Used as the kid claim in the JWT header when Meta Key is enabled.',
                 type: Types.string,
                 default: undefined,
                 flags: {
@@ -735,7 +713,9 @@ SecureIntegrationConfiguration:{
             display_name: 'Alias of the Certificate (Egress/Webhooks)',
             description: 'Alias of the Merchant P12 key imported in "Private Keys and Certificates" for response/webhook decryption.',
             type: Types.string,
-            default: 'VisaAcceptance_MLE_Egress_Private_Key',
+            // Default is defined once in the site-preference metadata (default-value);
+            // getValue() reads the preference, so no default is hardcoded here.
+            default: undefined,
             flags: {
                 mandatory: false
             }

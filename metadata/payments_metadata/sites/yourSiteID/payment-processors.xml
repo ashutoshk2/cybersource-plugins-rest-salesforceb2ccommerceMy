@@ -45,6 +45,24 @@
             <production/>
         </preferences>
     </payment-processor>
+    <payment-processor processor-id="PAYMENTS_PAYPAL">
+        <description>Payment processor for PayPal</description>
+        <preferences>
+            <all-instances/>
+            <development/>
+            <staging/>
+            <production/>
+        </preferences>
+    </payment-processor>
+    <payment-processor processor-id="PAYMENTS_VENMO">
+        <description>Payment processor for Venmo</description>
+        <preferences>
+            <all-instances/>
+            <development/>
+            <staging/>
+            <production/>
+        </preferences>
+    </payment-processor>
     <payment-processor processor-id="ALT_PAYMENT">
         <description>Generic processor for Unified Checkout alternate payment methods (PPRO bank transfers, BNPL, PayPal, Venmo, Paze).</description>
         <preferences>

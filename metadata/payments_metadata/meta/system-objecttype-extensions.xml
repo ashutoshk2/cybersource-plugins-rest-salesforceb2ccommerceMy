@@ -15,7 +15,6 @@
                 <externally-managed-flag>false</externally-managed-flag>
                 <min-length>0</min-length>
             </attribute-definition>
-            <!-- START GENAI -->
             <attribute-definition attribute-id="reconciliationId">
                 <display-name xml:lang="x-default">Reconciliation ID</display-name>
                 <type>string</type>
@@ -37,6 +36,47 @@
                 <externally-managed-flag>false</externally-managed-flag>
                 <min-length>0</min-length>
             </attribute-definition>
+                        <attribute-definition attribute-id="clientReferenceCode">
+                <display-name xml:lang="x-default">Client Reference Code</display-name>
+                <type>string</type>
+                <mandatory-flag>false</mandatory-flag>
+                <externally-managed-flag>false</externally-managed-flag>
+                <min-length>0</min-length>
+            </attribute-definition>
+            <attribute-definition attribute-id="processorTransactionId">
+                <display-name xml:lang="x-default">Processor Transaction ID</display-name>
+                <type>string</type>
+                <mandatory-flag>false</mandatory-flag>
+                <externally-managed-flag>false</externally-managed-flag>
+                <min-length>0</min-length>
+            </attribute-definition>
+            <attribute-definition attribute-id="authMethod">
+                <display-name xml:lang="x-default">Auth Method</display-name>
+                <type>string</type>
+                <mandatory-flag>false</mandatory-flag>
+                <externally-managed-flag>false</externally-managed-flag>
+                <min-length>0</min-length>
+            </attribute-definition>
+            <attribute-definition attribute-id="resultTimestamp">
+                <display-name xml:lang="x-default">Result Timestamp (ISO-8601)</display-name>
+                <type>string</type>
+                <mandatory-flag>false</mandatory-flag>
+                <externally-managed-flag>false</externally-managed-flag>
+                <min-length>0</min-length>
+            </attribute-definition>
+            <attribute-definition attribute-id="cybsTransactionStatus">
+                <display-name xml:lang="x-default">Visa Acceptance Transaction Status</display-name>
+                <type>string</type>
+                <mandatory-flag>false</mandatory-flag>
+                <externally-managed-flag>false</externally-managed-flag>
+                <min-length>0</min-length>
+            </attribute-definition>
+            <attribute-definition attribute-id="capturedWebhookTxnIds">
+                <display-name xml:lang="x-default">Captured Webhook Transaction IDs</display-name>
+                <type>set-of-string</type>
+                <mandatory-flag>false</mandatory-flag>
+                <externally-managed-flag>false</externally-managed-flag>
+            </attribute-definition>
             <!-- END GENAI -->
         </custom-attribute-definitions>
         <group-definitions>
@@ -48,7 +88,12 @@
                 <attribute attribute-id="reconciliationId"/>
                 <attribute attribute-id="approvalCode"/>
                 <attribute attribute-id="networkTransactionId"/>
+                <attribute attribute-id="cybsTransactionStatus"/>
                 <!-- END GENAI -->
+                <attribute attribute-id="clientReferenceCode"/>
+                <attribute attribute-id="processorTransactionId"/>
+                <attribute attribute-id="authMethod"/>
+                <attribute attribute-id="resultTimestamp"/>
             </attribute-group>
         </group-definitions>
     </type-extension>
@@ -62,7 +107,7 @@
                 <min-length>0</min-length>
             </attribute-definition>
             <attribute-definition attribute-id="deleteInstrumentId">
-                <display-name xml:lang="x-default">Payment Instrument to be deleted from cybersource</display-name>
+                <display-name xml:lang="x-default">Payment Instrument to be deleted from Visa Acceptance</display-name>
                 <type>set-of-string</type>
                 <mandatory-flag>false</mandatory-flag>
                 <externally-managed-flag>false</externally-managed-flag>

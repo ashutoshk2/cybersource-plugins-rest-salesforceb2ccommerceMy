@@ -811,7 +811,7 @@ var unifiedCheckout = {
             var token = await checkout.mount(mountArgs);
 
             // Show guest save-card info after widget is mounted
-            self.showGuestSaveCardInfo();
+            // self.showGuestSaveCardInfo();
 
             // For checkout page: run completeMandate orchestration (3DS/DM/Auth)
             // For minicart/cart: also run completeMandate orchestration with captured billing/shipping

@@ -59,12 +59,10 @@ function getConfig(config) {
         developerId: config.developerId || customPreferences.Core.Preferences.DeveloperId.getValue(),
         CommerceIndicator: config.CommerceIndicator || customPreferences.Core.Preferences.CommerceIndicator.getValue(),
         p12PrivateKeyAlias: config.p12PrivateKeyAlias || customPreferences.Core.Preferences.P12PrivateKeyAlias.getValue(),
-        p12KeyId: config.p12KeyId || customPreferences.Core.Preferences.P12KeyId.getValue(),
 
         // Meta Key
         metaKeyEnabled: config.metaKeyEnabled || customPreferences.Core.Preferences.MetaKeyEnabled.getValue(),
         metaKeyP12Alias: config.metaKeyP12Alias || customPreferences.Core.Preferences.MetaKeyP12Alias.getValue(),
-        metaKeyP12SerialNo: config.metaKeyP12SerialNo || customPreferences.Core.Preferences.MetaKeyP12SerialNo.getValue(),
         metaKeyMerchantId: config.metaKeyMerchantId || customPreferences.Core.Preferences.MetaKeyMerchantId.getValue(),
 
 

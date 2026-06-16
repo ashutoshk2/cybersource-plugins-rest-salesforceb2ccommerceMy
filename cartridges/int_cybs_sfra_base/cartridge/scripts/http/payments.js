@@ -628,27 +628,15 @@ function generateUcCaptureContext(isMiniCart, selectedPaymentInstrumentId) {
             allowedPaymentTypes.push('CHECK');
 
             // Alternative Payment Methods (APMs) - locale/currency specific
-            if (currency === 'EUR') {
-                allowedPaymentTypes.push('IDEAL');       // NL
-                allowedPaymentTypes.push('BANCONTACT');  // BE
-                allowedPaymentTypes.push('MULTIBANCO');  // PT
-                allowedPaymentTypes.push('MYBANK');      // IT
-            }
-            if (currency === 'GBP') {
-                allowedPaymentTypes.push('TINKPAYBYBANK'); // GB
-            }
-            if (currency === 'CAD' || currency === 'AUD') {
-                allowedPaymentTypes.push('AFTERPAY');
-            }
-            if (currency === 'PLN') {
-                allowedPaymentTypes.push('PRZELEWY24');   // PL
-            }
-            if (currency === 'PHP') {
-                allowedPaymentTypes.push('DRAGONPAY');    // PH
-            }
-            if (currency === 'JPY') {
-                allowedPaymentTypes.push('KONBINI');      // JP
-            }
+            allowedPaymentTypes.push('IDEAL');       // NL
+            allowedPaymentTypes.push('BANCONTACT');  // BE
+            allowedPaymentTypes.push('MULTIBANCO');  // PT
+            allowedPaymentTypes.push('MYBANK');      // IT
+            allowedPaymentTypes.push('TINKPAYBYBANK'); // GB
+            allowedPaymentTypes.push('AFTERPAY');
+            allowedPaymentTypes.push('PRZELEWY24');   // PL
+            allowedPaymentTypes.push('DRAGONPAY');    // PH
+            allowedPaymentTypes.push('KONBINI');      // JP
         }
 
         requestObj.allowedPaymentTypes = allowedPaymentTypes;

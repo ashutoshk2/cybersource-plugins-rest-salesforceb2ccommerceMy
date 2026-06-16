@@ -51,7 +51,7 @@
                 </value-definitions>
             </attribute-definition>
             <attribute-definition attribute-id="VisaAcceptance_EnableTestEndpoints">
-                <display-name xml:lang="x-default">Enable CyberSource Test Endpoints</display-name>
+                <display-name xml:lang="x-default">Enable Visa Acceptance Test Endpoints</display-name>
                 <description xml:lang="x-default">Enable capture and auth reversal test endpoints (ServiceFrameworkTest controller). Must be explicitly enabled per sandbox instance. Disabled by default.</description>
                 <type>boolean</type>
                 <externally-managed-flag>false</externally-managed-flag>
@@ -63,15 +63,9 @@
                 <type>string</type>
                 <externally-managed-flag>false</externally-managed-flag>
             </attribute-definition>
-            <attribute-definition attribute-id="VisaAcceptance_P12SerialNo">
-                <display-name xml:lang="x-default">P12 Serial Number</display-name>
-                <description xml:lang="x-default">Serial Number of the Client certificate (CN=Merchant_ID) from p12 file. Used as the kid claim in the JWT header for RS256 authentication.</description>
-                <type>string</type>
-                <externally-managed-flag>false</externally-managed-flag>
-            </attribute-definition>
             <attribute-definition attribute-id="VisaAcceptance_MetaKeyEnabled">
                 <display-name xml:lang="x-default">Enable Meta Key</display-name>
-                <description xml:lang="x-default">Enable or disable Meta Key for Cybersource. When enabled, the Meta Key P12 alias and serial number are used instead of the default key.</description>
+                <description xml:lang="x-default">Enable or disable Meta Key for Visa Acceptance. When enabled, the Meta Key P12 alias and serial number are used instead of the default key.</description>
                 <type>boolean</type>
                 <externally-managed-flag>false</externally-managed-flag>
                 <default-value>false</default-value>
@@ -82,15 +76,9 @@
                 <type>string</type>
                 <externally-managed-flag>false</externally-managed-flag>
             </attribute-definition>
-            <attribute-definition attribute-id="VisaAcceptance_MetaKeyP12SerialNo">
-                <display-name xml:lang="x-default">Meta Key P12 Serial Number</display-name>
-                <description xml:lang="x-default">Serial Number of the Meta Key client certificate from P12 file. Used as the kid claim in the JWT header when Meta Key is enabled.</description>
-                <type>string</type>
-                <externally-managed-flag>false</externally-managed-flag>
-            </attribute-definition>
             <attribute-definition attribute-id="VisaAcceptance_MetaKeyMerchantId">
                 <display-name xml:lang="x-default">Meta Key Portfolio Merchant ID</display-name>
-                <description xml:lang="x-default">The portfolio/account merchant ID that owns the Meta Key P12 certificate. Used as the iss (issuer) claim in JWT v2. The transacting MID remains the child merchant configured in Cybersource_MerchantID.</description>
+                <description xml:lang="x-default">The portfolio/account merchant ID that owns the Meta Key P12 certificate. Used as the iss (issuer) claim in JWT v2. The transacting MID remains the child merchant configured in VisaAcceptance_MerchantID.</description>
                 <type>string</type>
                 <externally-managed-flag>false</externally-managed-flag>
             </attribute-definition>
@@ -272,8 +260,8 @@
                 <default-value>1</default-value>
             </attribute-definition>
             <attribute-definition attribute-id="VisaAcceptance_NetworkToken">
-                <display-name xml:lang="x-default">Network Token Updates</display-name>
-                <description xml:lang="x-default">Subscribe to Network Token life cycle updates</description>
+                <display-name xml:lang="x-default">Network Token</display-name>
+                <description xml:lang="x-default">Subscribe to Token updates</description>
                 <type>boolean</type>
                 <externally-managed-flag>false</externally-managed-flag>
                 <default-value>false</default-value>
@@ -359,6 +347,12 @@
                 <type>boolean</type>
                 <externally-managed-flag>false</externally-managed-flag>
                 <default-value>false</default-value>
+            </attribute-definition>
+            <attribute-definition attribute-id="VisaAcceptance_EgressCertificateAlias">
+                <display-name xml:lang="x-default">Alias of the Certificate (Egress/Webhooks)</display-name>
+                <description xml:lang="x-default">Alias of the Merchant P12 key imported in "Private Keys and Certificates" for response/webhook decryption.</description>
+                <type>string</type>
+                <externally-managed-flag>false</externally-managed-flag>
             </attribute-definition>
              <attribute-definition attribute-id="VisaAcceptance_CertificateSerialNo">
                 <display-name xml:lang="x-default">Certificate Serial Number</display-name>
@@ -477,10 +471,8 @@
                 <attribute attribute-id="VisaAcceptance_CommerceIndicator"/>
                 <attribute attribute-id="VisaAcceptance_EnableTestEndpoints"/>
                 <attribute attribute-id="VisaAcceptance_P12PrivateKeyAlias"/>
-                <attribute attribute-id="VisaAcceptance_P12SerialNo"/>
                 <attribute attribute-id="VisaAcceptance_MetaKeyEnabled"/>
                 <attribute attribute-id="VisaAcceptance_MetaKeyP12Alias"/>
-                <attribute attribute-id="VisaAcceptance_MetaKeyP12SerialNo"/>
                 <attribute attribute-id="VisaAcceptance_MetaKeyMerchantId"/>
             </attribute-group>
             <attribute-group group-id="VisaAcceptance_DeliveryAddressVerification">
@@ -527,6 +519,7 @@
                 <attribute attribute-id="VisaAcceptance_MLEEnabled"/>
                 <attribute attribute-id="VisaAcceptance_CertificateSerialNo"/>
                 <attribute attribute-id="VisaAcceptance_CertificateAlias"/>
+                <attribute attribute-id="VisaAcceptance_EgressCertificateAlias"/>
             </attribute-group>
             <attribute-group group-id="VisaAcceptance_SecureIntegrationConfiguration">
                 <display-name xml:lang="x-default">Secure Integration Configuration</display-name>

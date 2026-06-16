@@ -79,6 +79,14 @@
         {
             "name": "app.payment.processor.alt_payment",
             "script": "./cartridge/scripts/hooks/payment/processor/alt_payment"
+        },
+        {
+            "name": "app.payment.processor.payments_paypal",
+            "script": "./cartridge/scripts/hooks/payment/processor/payments_paypal"
+        },
+        {
+            "name": "app.payment.processor.payments_venmo",
+            "script": "./cartridge/scripts/hooks/payment/processor/payments_venmo"
         }
 
     ]
