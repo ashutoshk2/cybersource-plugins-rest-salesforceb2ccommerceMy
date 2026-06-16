@@ -280,8 +280,16 @@ server.post('PlaceOrderDirect', server.middleware.https, function (req, res, nex
         return next();
     }
 
-    // Create order from basket
-    var order = COHelpers.createOrder(currentBasket);
+    // Create order from basket using the CyberSource clientReferenceInformation.code
+    // as the SFCC order number. That code is the merchant reference the transaction was
+    // created against and the key the webhooks reconcile on (OrderMgr.getOrder(code)),
+    // so the order number MUST equal it. It is taken from the JWT (authoritative) rather
+    // than session.privacy.ucOrderNo, which a redirect APM (iDEAL/Multibanco) flow may
+    // have dropped.
+    var clientReferenceCode = jwtPayload.details &&
+        jwtPayload.details.clientReferenceInformation &&
+        jwtPayload.details.clientReferenceInformation.code;
+    var order = COHelpers.createOrder(currentBasket, clientReferenceCode);
     if (!order) {
         secureResponseHelper.secureJsonResponse(res, {
             error: true,
@@ -317,9 +325,13 @@ server.post('PlaceOrderDirect', server.middleware.https, function (req, res, nex
                     // Venmo, Paze, ...) carry no card/bank-account data. Record the
                     // scheme descriptor instead of card details.
                     var apmDescriptor = ucPaymentHelper.getApmDescriptor(jwtPayload) || { name: '', method: '' };
-                    var apmDetailsStr = apmDescriptor.method || apmDescriptor.name || 'Alternate Payment';
+                    // Customer-facing scheme name (e.g. 'iDEAL') for the confirmation /
+                    // email payment section. paymentDetails is the reliably-imported
+                    // PaymentTransaction attribute, so it must carry the readable label -
+                    // the optional apm* instrument attributes may be absent in metadata.
+                    var apmDetailsStr = ucPaymentHelper.getApmDisplayName(apmDescriptor);
                     paymentInstrument.paymentTransaction.custom.paymentDetails = apmDetailsStr;
-                    ucPaymentHelper.setInstrumentCustomAttribute(paymentInstrument, 'apmPaymentType', apmDescriptor.name);
+                    ucPaymentHelper.setInstrumentCustomAttribute(paymentInstrument, 'apmPaymentType', apmDetailsStr);
                     ucPaymentHelper.setInstrumentCustomAttribute(paymentInstrument, 'apmMethod', apmDescriptor.method);
                     ucPaymentHelper.setInstrumentCustomAttribute(paymentInstrument, 'apmMandateType', session.privacy.ucResolvedMandateType);
                 } else {
