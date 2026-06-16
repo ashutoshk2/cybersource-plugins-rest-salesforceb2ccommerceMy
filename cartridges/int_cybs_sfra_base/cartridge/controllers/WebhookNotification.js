@@ -144,6 +144,7 @@ function handleDmNotification(req, res, next) {
         }
 
         
+        var reversal = null;
         Transaction.wrap(function () {
             var eventType = payload.eventType || (payload.payload && payload.payload[0] ? payload.payload[0].eventType : null);
             if (eventType === 'risk.casemanagement.decision.accept') {
@@ -159,11 +160,37 @@ function handleDmNotification(req, res, next) {
                     || (details && details.reviewerComments)
                     || (details && Array.isArray(details.notes) && details.notes.length ? details.notes[0].comment : '')
                     || '';
+                // Capture the authorization transaction id (set at auth time) BEFORE failing the
+                // order, so the auth-only hold can be reversed once the transaction commits.
+                var pis = order.getPaymentInstruments().toArray();
+                for (var pIdx = 0; pIdx < pis.length; pIdx++) {
+                    if (pis[pIdx].paymentTransaction && pis[pIdx].paymentTransaction.transactionID) {
+                        reversal = {
+                            requestId: pis[pIdx].paymentTransaction.transactionID,
+                            total: order.totalGrossPrice.value,
+                            currency: order.currencyCode
+                        };
+                        break;
+                    }
+                }
                 OrderMgr.failOrder(order, false);
                 order.cancelDescription = reviewerComment;
                 Logger.info('dmNotification: Order ( ' + orderId + ' ) canceled via case-management REJECT');
             }
         });
+
+        // Reviewed orders are auth-only (capture is deferred until ACCEPT), so a REJECT must
+        // release the authorization hold. The gateway call is made outside the DB transaction and
+        // is best-effort — if the auth was already reversed/expired, log it and still ack the
+        // webhook so CyberSource does not keep retrying.
+        if (reversal) {
+            try {
+                require('~/cartridge/scripts/http/authReversal').httpAuthReversal(reversal.requestId, orderId, reversal.total, reversal.currency);
+                Logger.info('dmNotification: auth reversal requested for rejected order ( ' + orderId + ' ), requestId ' + reversal.requestId);
+            } catch (revErr) {
+                Logger.error('dmNotification: auth reversal failed for rejected order ( ' + orderId + ' ): ' + (revErr && revErr.message ? revErr.message : revErr));
+            }
+        }
         
         
         res.setStatusCode(200);
