@@ -118,12 +118,22 @@ function handleDmNotification(req, res, next) {
 
     try {
         var payload = getDecryptedPayload(req.body);
+        Logger.error(req.body);
         if (!payload) throw new Error('Decrypted payload is empty');
 
         var details = (payload.payload && payload.payload.transactionResult) ? payload.payload.transactionResult.details : 
                       (payload.payload && payload.payload.length ? payload.payload[0].data : payload);
                       
-        var orderId = details && details.clientReferenceInformation ? details.clientReferenceInformation.code : null;
+        // Case-management decision notifications (risk.casemanagement.decision.*) arrive as plain
+        // JSON (no MLE) and nest the data under payload.payload.data, carrying the order number as
+        // `referenceNumber` (the DMOrderStatusUpdate cron uses the equivalent merchantReferenceNumber).
+        if ((!details || !details.clientReferenceInformation) && payload.payload && payload.payload.data) {
+            details = payload.payload.data;
+        }
+        var orderId = (details && details.clientReferenceInformation && details.clientReferenceInformation.code)
+            || (details && details.referenceNumber)
+            || (details && details.merchantReferenceNumber)
+            || null;
         if (!orderId) throw new Error('Missing Order ID');
 
         var order = OrderMgr.getOrder(orderId);
@@ -143,8 +153,11 @@ function handleDmNotification(req, res, next) {
                 Logger.info('dmNotification: Order ( ' + orderId + ' ) successfully placed via case-management ACCEPT');
             } else if (eventType && eventType.indexOf('reject') > -1) {
                 // Replicates DMOrderStatusUpdate.js cron behavior on REJECT.
+                // Case-management decisions carry the reviewer's reason in notes[0].comment
+                // (no reviewerComments field); fall back to it so the cancel reason is captured.
                 var reviewerComment = (details && details.riskInformation && details.riskInformation.reviewerComments)
                     || (details && details.reviewerComments)
+                    || (details && Array.isArray(details.notes) && details.notes.length ? details.notes[0].comment : '')
                     || '';
                 OrderMgr.failOrder(order, false);
                 order.cancelDescription = reviewerComment;
@@ -166,7 +179,10 @@ function handleDmNotification(req, res, next) {
 // DM Notifications
 server.use('dmNotification', handleDmNotification);
 server.use('novusDmNotification', handleDmNotification);
-
+server.use('tokenUpdate', function(req, res, next){
+    res.json({ success: true });
+        return next();
+});
 // APM (Unified Checkout) Notifications
 //
 // Architecture: the UC API *response* (handled inline at checkout) is the
