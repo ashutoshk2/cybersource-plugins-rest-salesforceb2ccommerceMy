@@ -401,13 +401,21 @@ function decodeJwtPayload(token) {
 // Payment Method Detection Functions
 // ============================================================================
 
+// Prefix of the processingInformation.paymentSolution string CyberSource returns for
+// PPRO online bank-transfer APMs on the completeMandate result JWT - e.g.
+// 'BankTransfer Payment Ideal' (iDEAL), 'BankTransfer Payment Multibanco' (Multibanco).
+// These carry no paymentType descriptor, so this prefix is what identifies them. They
+// are NOT card payments even though the scheme code is echoed into card.type.
+var BANK_TRANSFER_PAYMENT_SOLUTION_PREFIX = 'BankTransfer Payment';
+
 /**
  * Detect payment method from completeMandate JWT.
  *
  * Order of checks:
  * 1. paymentInformation.bank present → BANK_TRANSFER (eCheck has no paymentSolution code)
- * 2. processingInformation.paymentSolution code → DW_GOOGLE_PAY / DW_APPLE_PAY / CLICK_TO_PAY
- * 3. Default → CREDIT_CARD
+ * 2. alternate payment method (getApmDescriptor) → ALT_PAYMENT_METHOD
+ * 3. processingInformation.paymentSolution code → DW_GOOGLE_PAY / DW_APPLE_PAY / CLICK_TO_PAY
+ * 4. Default → CREDIT_CARD
  *
  * @param {Object} jwtPayload - Decoded completeMandate JWT payload
  * @returns {string} - Payment method ID
@@ -480,30 +488,70 @@ function detectPaymentMethod(jwtPayload) {
 
 /**
  * Extract the alternate-payment-method descriptor from a completeMandate JWT.
- * Reads details.paymentInformation.paymentType, normalizing the method whether it is
- * a string (e.g. 'IDLPP', 'MLTBT') or an object (e.g. { name: 'tinkPayByBank' },
- * { name: 'AFFIRM' }). Used both to classify a result as ALT_PAYMENT_METHOD and to
- * record which scheme was used on the payment instrument.
+ *
+ * Two cases:
+ * 1. An explicit details.paymentInformation.paymentType descriptor (BNPL, Tink, etc.).
+ *    method is normalized whether it is a string (e.g. 'IDLPP') or an object
+ *    (e.g. { name: 'AFFIRM' }).
+ * 2. PPRO bank transfers (iDEAL, Multibanco, ...): the real result JWT has NO
+ *    paymentType - they are identified by the processingInformation.paymentSolution
+ *    string starting with 'BankTransfer Payment' (e.g. 'BankTransfer Payment Ideal',
+ *    'BankTransfer Payment Multibanco'), and the scheme code ('IDLPP'/'MLTBT') is read
+ *    from paymentInformation.card.type. These are NOT card payments.
  *
  * @param {Object} jwtPayload - Decoded completeMandate JWT payload
- * @returns {Object|null} - { name, method } where both are strings, or null if no
- *                          paymentType descriptor is present
+ * @returns {Object|null} - { name, method } both strings, or null for a card/wallet
  */
 function getApmDescriptor(jwtPayload) {
     var details = jwtPayload && jwtPayload.details;
-    var paymentType = details && details.paymentInformation && details.paymentInformation.paymentType;
-    if (!paymentType) {
-        return null;
+    var paymentInfo = details && details.paymentInformation;
+
+    // Case 1: explicit paymentType descriptor.
+    var paymentType = paymentInfo && paymentInfo.paymentType;
+    if (paymentType) {
+        var name = paymentType.name || '';
+        var method = '';
+        if (paymentType.method) {
+            method = (typeof paymentType.method === 'string') ? paymentType.method : (paymentType.method.name || '');
+        }
+        if (name || method) {
+            return { name: name, method: method };
+        }
     }
-    var name = paymentType.name || '';
-    var method = '';
-    if (paymentType.method) {
-        method = (typeof paymentType.method === 'string') ? paymentType.method : (paymentType.method.name || '');
+
+    // Case 2: PPRO bank transfers (iDEAL, Multibanco, ...) - no paymentType, identified
+    // by the 'BankTransfer Payment ...' paymentSolution string.
+    var processingInfo = details && details.processingInformation;
+    var paymentSolution = processingInfo && processingInfo.paymentSolution;
+    if (typeof paymentSolution === 'string' && paymentSolution.indexOf(BANK_TRANSFER_PAYMENT_SOLUTION_PREFIX) === 0) {
+        var schemeCode = (paymentInfo && paymentInfo.card && paymentInfo.card.type) || '';
+        return { name: paymentSolution, method: schemeCode };
     }
-    if (!name && !method) {
-        return null;
+
+    return null;
+}
+
+/**
+ * Resolve a customer-facing display name for an alternate payment method, used on the
+ * confirmation / email payment section. Maps the scheme code (e.g. 'IDLPP') to a clean
+ * brand name (e.g. 'iDEAL'); falls back to the descriptor name, then the raw code.
+ *
+ * @param {Object} apmDescriptor - { name, method } from getApmDescriptor
+ * @returns {string} - Display name (e.g. 'iDEAL')
+ */
+function getApmDisplayName(apmDescriptor) {
+    var displayNames = {
+        IDLPP: 'iDEAL',
+        MLTBT: 'Multibanco'
+    };
+    if (!apmDescriptor) {
+        return 'Alternate Payment';
     }
-    return { name: name, method: method };
+    var code = (apmDescriptor.method || '').toString().toUpperCase();
+    if (displayNames[code]) {
+        return displayNames[code];
+    }
+    return apmDescriptor.name || apmDescriptor.method || 'Alternate Payment';
 }
 
 
@@ -1445,7 +1493,8 @@ module.exports = {
     detectPaymentMethod: detectPaymentMethod,
     
     getApmDescriptor: getApmDescriptor,
-    
+    getApmDisplayName: getApmDisplayName,
+
     getProcessorIdForMethod: getProcessorIdForMethod,
     extractBankDetails: extractBankDetails,
 

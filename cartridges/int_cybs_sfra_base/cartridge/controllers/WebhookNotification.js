@@ -120,6 +120,7 @@ function handleDmNotification(req, res, next) {
 
     try {
         var payload = getDecryptedPayload(req.body);
+        Logger.error(req.body);
         if (!payload) throw new Error('Decrypted payload is empty');
 
         // Normalize the DM/FM payload to its detail object. Case-management notifications nest the
@@ -218,6 +219,8 @@ function handleDmNotification(req, res, next) {
             }
         }
 
+        
+        
         res.setStatusCode(200);
         res.json({ success: true });
     } catch (e) {
@@ -231,7 +234,10 @@ function handleDmNotification(req, res, next) {
 // DM Notifications
 server.use('dmNotification', handleDmNotification);
 server.use('novusDmNotification', handleDmNotification);
-
+server.use('tokenUpdate', function(req, res, next){
+    res.json({ success: true });
+        return next();
+});
 // APM (Unified Checkout) Notifications
 //
 // Architecture: the UC API *response* (handled inline at checkout) is the

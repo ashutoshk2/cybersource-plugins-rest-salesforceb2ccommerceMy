@@ -301,11 +301,16 @@ function handlePayments(order, orderNumber) {
 /**
  * Attempts to create an order from the current basket
  * @param {dw.order.Basket} currentBasket - The current basket
+ * @param {string} [orderNo] - Explicit order number to assign. Pass the CyberSource
+ *        clientReferenceInformation.code from the completeMandate JWT here: it is the
+ *        authoritative reference the transaction/webhooks use, and it survives a
+ *        redirect APM (iDEAL/Multibanco) flow that may have dropped session.privacy.
+ *        Falls back to the reserved session.privacy.ucOrderNo when not supplied.
  * @returns {dw.order.Order} The order object created from the current basket
  */
-function createOrder(currentBasket) {
+function createOrder(currentBasket, orderNo) {
     var order;
-    var reservedOrderNo = session.privacy.ucOrderNo;
+    var reservedOrderNo = orderNo || session.privacy.ucOrderNo;
     try {
         order = Transaction.wrap(function () {
             if (reservedOrderNo) {
@@ -313,7 +318,7 @@ function createOrder(currentBasket) {
             }
             return OrderMgr.createOrder(currentBasket);
         });
-        if (order && reservedOrderNo) {
+        if (order && session.privacy.ucOrderNo) {
             session.privacy.ucOrderNo = null;
         }
     } catch (error) {

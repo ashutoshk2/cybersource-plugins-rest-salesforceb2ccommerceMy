@@ -208,4 +208,84 @@ server.post(
     }
 );
 
+/**
+ * Renders Test Refund Service Form.
+ */
+// eslint-disable-next-line consistent-return
+server.get(
+    'TestRefundService',
+    userLoggedIn.validateLoggedIn,
+    csrfProtection.generateToken,
+    function (req, res, next) {
+        var URLUtils = require('dw/web/URLUtils');
+        if (!isTestEndpointAccessAllowed(req)) {
+            res.redirect(URLUtils.url('Home-Show'));
+            return next();
+        }
+        // check if service parameter not available, display form
+        if (configObject.cartridgeEnabled) {
+            // eslint-disable-next-line no-undef
+            if (empty(request.httpParameterMap.service.stringValue)) {
+                // eslint-disable-next-line no-undef
+                session.forms.generictestinterfaceform.clearFormElement();
+                var refundServiceForm = server.forms.getForm('generictestinterfaceform');
+                secureResponseHelper.secureRender(res, 'refundServiceForm', {
+                    refundServiceForm: refundServiceForm,
+                    continueUrl: URLUtils.https('ServiceFrameworkTest-RefundService').toString()
+                });
+                return next();
+            }
+        }
+    }
+);
+
+// eslint-disable-next-line consistent-return
+server.post(
+    'RefundService',
+    userLoggedIn.validateLoggedIn,
+    csrfProtection.validateRequest,
+    function (req, res, next) {
+        var URLUtils = require('dw/web/URLUtils');
+        if (!isTestEndpointAccessAllowed(req)) {
+            res.redirect(URLUtils.url('Home-Show'));
+            return next();
+        }
+        if (configObject.cartridgeEnabled) {
+            // eslint-disable-next-line no-undef
+            var requestID = session.forms.generictestinterfaceform.authRequestID.htmlValue;
+            // eslint-disable-next-line no-undef
+            var merchantRefCode = session.forms.generictestinterfaceform.merchantReferenceCode.htmlValue;
+            // eslint-disable-next-line no-undef
+            var paymentTotal = session.forms.generictestinterfaceform.grandtotalamount.value;
+            // eslint-disable-next-line no-undef
+            var currency = session.forms.generictestinterfaceform.currency.value;
+
+            var serviceResponse;
+            var refundReply;
+            var refundReplyTitle;
+            var refundObj = require('~/cartridge/scripts/http/refund.js');
+            serviceResponse = refundObj.httpRefundPayment(requestID, merchantRefCode, paymentTotal, currency);
+
+            refundReplyTitle = 'Refund Service Reply';
+            refundReply = 'RefundReply';
+            // eslint-disable-next-line no-undef
+            session.forms.generictestinterfaceform.clearFormElement();
+            // eslint-disable-next-line no-undef
+            if (!empty(serviceResponse)) {
+                secureResponseHelper.secureRender(res, 'transactionresult', {
+                    serviceReply: refundReply,
+                    response: serviceResponse,
+                    msgHeader: refundReplyTitle
+                });
+                return next();
+            }
+            secureResponseHelper.secureRender(res, 'common/scripterror', {
+                // eslint-disable-next-line no-undef
+                log: !empty(serviceResponse.errorMsg) ? serviceResponse.errorMsg : 'System Exception occured contact administrator'
+            });
+            return next();
+        }
+    }
+);
+
 module.exports = server.exports();

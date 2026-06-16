@@ -82,6 +82,18 @@ function getSelectedPaymentInstruments(selectedPaymentInstruments) {
             results.bankAccountNumber = paymentInstrument.bankAccountNumber;
             results.bankRoutingNumber = paymentInstrument.bankRoutingNumber;
 
+        } else if (paymentInstrument.paymentMethod === 'ALT_PAYMENT_METHOD') {
+            // Alternate payment methods (iDEAL, BNPL, ...) carry no card/bank data;
+            // surface the scheme descriptor recorded on the instrument at order
+            // placement (see CheckoutServices-PlaceOrderDirect) so the confirmation /
+            // checkout payment section can display which method was used.
+            if ('apmPaymentType' in paymentInstrument.custom) {
+                results.apmPaymentType = paymentInstrument.custom.apmPaymentType;
+            }
+            if ('apmMethod' in paymentInstrument.custom) {
+                results.apmMethod = paymentInstrument.custom.apmMethod;
+            }
+            results.paymentDetails = paymentInstrument.paymentTransaction.custom.paymentDetails;
         }
 
         return results;

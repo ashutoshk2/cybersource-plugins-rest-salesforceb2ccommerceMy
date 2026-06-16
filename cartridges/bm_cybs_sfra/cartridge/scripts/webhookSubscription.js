@@ -47,7 +47,11 @@ var WEBHOOK_CONFIGS = {
 function retrieveWebhooks(productId, callback) {
     var queryParams = { organizationId: merchantId, productId: productId };
     apiClient.instance.callApi('/notification-subscriptions/v2/webhooks', 'GET', {}, queryParams, {}, {}, null, [], ['application/json;charset=utf-8'], ['application/json;charset=utf-8'], {}, function(data, error, response) {
-        if (error && response && response.statusCode === 404) {
+        // dw.svc.Result has NO `statusCode` property — accessing it throws a ReferenceError, even
+        // on the success path. The HTTP status is delivered as the numeric `error` arg
+        // (Result.error). A 404 means "no subscriptions for this product yet" — treat it as an
+        // empty list, not an error.
+        if (error === 404) {
             if (callback) callback([], null, response);
         } else {
             if (callback) callback(data, error, response);
@@ -183,7 +187,148 @@ function deleteSubscription(webhookId, callback) {
     apiClient.instance.callApi('/notification-subscriptions/v2/webhooks/{webhookId}', 'DELETE', { webhookId: webhookId }, {}, {}, {}, null, [], ['application/json;charset=utf-8'], ['application/json;charset=utf-8'], {}, callback);
 }
 
-function subscribeProduct(configId) {
+/**
+ * Compare two event-type lists as unordered sets.
+ *
+ * @param {Array} a first event-type list
+ * @param {Array} b second event-type list
+ * @returns {boolean} true when both lists contain exactly the same event types
+ */
+function eventTypesMatch(a, b) {
+    if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) {
+        return false;
+    }
+    for (var i = 0; i < a.length; i++) {
+        var found = false;
+        for (var j = 0; j < b.length; j++) {
+            if (a[i] === b[j]) { found = true; break; }
+        }
+        if (!found) return false;
+    }
+    return true;
+}
+
+/**
+ * Create a webhook subscription, recovering from the CyberSource 400 "Record already exists"
+ * conflict. That 400 occurs when a subscription already exists at CyberSource for this
+ * product/event but is no longer tracked locally (the local custom object was lost, or its
+ * WebhookUrl changed so the activate-existing path in subscribeProduct was skipped). Because a
+ * webhook's HMAC shared secret is only returned at creation time and cannot be recovered, the
+ * orphaned remote subscription is NOT silently adopted (which would leave us unable to validate
+ * inbound signatures) — every webhook matching the SAME product and event is deleted and a fresh
+ * one is created with the security key the caller just generated. The caller maps the returned
+ * webhookId via subscribeProduct's normal activate-and-persist path.
+ *
+ * Conflict detection uses the "already exists" response body together with the HTTP status. Per
+ * ApiClient, the error callback is (errorMessageString, error, response) where `error` is the
+ * dw.svc Result.error (the numeric HTTP status). Never read response.statusCode — dw.svc.Result
+ * has no such property and accessing it throws a ReferenceError.
+ *
+ * @param {Object} subConfig per-call subscription config (name, description, products)
+ * @param {string} webhookUrl target webhook URL
+ * @param {string} productId CyberSource product id to reconcile against (e.g. 'unifiedCheckout', 'decisionManager')
+ * @returns {Object} object of shape { webhookId: string, status: string, error: string }
+ */
+function createSubscriptionWithRecovery(subConfig, webhookUrl, productId) {
+    var result = { webhookId: '', status: '', error: null };
+    var conflict = false;
+
+    createSubscription(subConfig, webhookUrl, function (data, error, response) {
+        if (!error && data && data.webhookId) {
+            result.webhookId = data.webhookId;
+            result.status = data.status || '';
+        } else if (error) {
+            // On error, `data` is the response body text (Result.errorMessage) and `error` is the
+            // numeric HTTP status (Result.error). Never read response.statusCode — dw.svc.Result
+            // has no such property and accessing it throws a ReferenceError.
+            var msg = (typeof data === 'string') ? data : JSON.stringify(data || error);
+            // Require both the 400 status and the distinctive duplicate message so recovery only
+            // runs on a real "already exists".
+            if (error === 400 && /already\s*exist/i.test(msg)) {
+                conflict = true;
+            } else {
+                Logger.error('createSubscription failed for ' + productId + ': ' + msg);
+                result.error = 'API_ERROR';
+            }
+        }
+    });
+
+    if (result.webhookId || result.error) return result;
+    if (!conflict) { result.error = 'API_ERROR'; return result; }
+
+    // A subscription already exists remotely for this product+event but is untracked locally.
+    // retrieveWebhooks is product-scoped (it queries by productId), so every returned entry is
+    // already for this product; select the one(s) whose event types match what we are creating.
+    Logger.warn('createSubscriptionWithRecovery: ' + productId + ' already exists at CyberSource but is untracked locally; deleting the matching product+event subscription and recreating to restore a known security key.');
+    var targetEvents = (subConfig.products && subConfig.products[0] && subConfig.products[0].eventTypes) || [];
+    var idsToDelete = [];
+    retrieveWebhooks(productId, function (listData, listErr) {
+        if (listErr) {
+            Logger.error('createSubscriptionWithRecovery: retrieveWebhooks failed for ' + productId + ': ' + JSON.stringify(listErr));
+            return;
+        }
+        if (!Array.isArray(listData) || !listData.length) return;
+        for (var i = 0; i < listData.length; i++) {
+            var wh = listData[i];
+            if (!wh || !wh.webhookId) continue; // eslint-disable-line no-continue
+            var whEvents = [];
+            if (Array.isArray(wh.products)) {
+                for (var p = 0; p < wh.products.length; p++) {
+                    if (wh.products[p] && wh.products[p].productId === productId && Array.isArray(wh.products[p].eventTypes)) {
+                        whEvents = wh.products[p].eventTypes;
+                        break;
+                    }
+                }
+            }
+            if (eventTypesMatch(whEvents, targetEvents)) idsToDelete.push(wh.webhookId);
+        }
+        // The query is already product-scoped, so a single returned webhook is the conflict even
+        // when the response omits per-product event types — fall back to deleting that one.
+        if (!idsToDelete.length && listData.length === 1 && listData[0].webhookId) {
+            idsToDelete.push(listData[0].webhookId);
+        }
+    });
+
+    if (!idsToDelete.length) {
+        Logger.error('createSubscriptionWithRecovery: could not unambiguously locate the conflicting ' + productId + ' webhook to delete; manual cleanup required in EBC.');
+        result.error = 'ALREADY_EXISTS';
+        return result;
+    }
+
+    // deleteSubscription invokes its callback synchronously (see the module-level contract note);
+    // a named helper keeps the per-id delete out of the loop body (no closure over the loop var).
+    var deletedAny = false;
+    function deleteWebhook(existingId) {
+        var ok = false;
+        deleteSubscription(existingId, function (delData, delError) {
+            if (delError) {
+                Logger.error('createSubscriptionWithRecovery: delete of existing ' + productId + ' webhook ' + existingId + ' failed: ' + JSON.stringify(delError));
+            } else {
+                ok = true;
+            }
+        });
+        return ok;
+    }
+    for (var d = 0; d < idsToDelete.length; d++) {
+        if (deleteWebhook(idsToDelete[d])) deletedAny = true;
+    }
+    if (!deletedAny) { result.error = 'ALREADY_EXISTS'; return result; }
+
+    createSubscription(subConfig, webhookUrl, function (data, error) {
+        if (!error && data && data.webhookId) {
+            result.webhookId = data.webhookId;
+            result.status = data.status || '';
+        } else {
+            // Delete succeeded but recreate failed: the product currently has NO webhook. Surface a
+            // distinct error and warn so the operator knows a re-run is required to restore it.
+            Logger.warn('createSubscriptionWithRecovery: recreate after delete failed for ' + productId + ' — the product now has NO webhook; re-run subscribe to restore it. ' + JSON.stringify(error || data));
+            result.error = 'RECREATE_FAILED_AFTER_DELETE';
+        }
+    });
+    return result;
+}
+
+function subscribeProduct(configId, forceRecreate) {
     var config = WEBHOOK_CONFIGS[configId];
     var site = Site.getCurrent();
 
@@ -239,11 +384,17 @@ function subscribeProduct(configId) {
     // re-subscribe from BM. A transient/non-404 failure still bails out so we never
     // create a duplicate of a subscription that may still exist.
     var staleWebhookDeleted = false;
-    if (existingObj && existingObj.custom.WebhookId && existingObj.custom.WebhookUrl === webhookUrl) {
+    // forceRecreate (host/URL repoint) skips the activate-existing shortcut so we always go
+    // through createSubscriptionWithRecovery, which deletes the same product+event webhook
+    // (even one pointing at a different host) and recreates it for the current storefront.
+    if (!forceRecreate && existingObj && existingObj.custom.WebhookId && existingObj.custom.WebhookUrl === webhookUrl) {
         var alreadyActive = false;
         var activationStatus = 0;
-        activateSubscription(existingObj.custom.WebhookId, function (data, error, response) {
-            activationStatus = (response && response.statusCode) || 0;
+        activateSubscription(existingObj.custom.WebhookId, function (data, error) {
+            // HTTP status arrives as the numeric `error` arg (dw.svc Result.error). Never read
+            // response.statusCode — dw.svc.Result has no such property and accessing it throws.
+            // A 404 here means the stored webhook was deleted in EBC, so the caller recreates.
+            activationStatus = (typeof error === 'number') ? error : 0;
             if (error) Logger.error('activateSubscription failed for existing ' + configId + ' (' + existingObj.custom.WebhookId + '): ' + JSON.stringify(error));
             else alreadyActive = true;
         });
@@ -306,12 +457,16 @@ function subscribeProduct(configId) {
                                 description: config.description,
                                 products: [config.products[j]]
                             };
-                            createSubscription(subConfig, webhookUrl, function (data, error) {
-                                if (error) Logger.error('createSubscription failed for fraudManagement (' + availableProd + '): ' + JSON.stringify(error));
-                                
-                                else if (data && data.webhookId) { webhookId = data.webhookId; createdStatus = data.status || ''; }
-                                
-                            });
+                            // Reconcile against any existing-but-untracked subscription (delete +
+                            // recreate) instead of blindly creating, which CyberSource rejects
+                            // with 400 "Record already exists".
+                            var fraudCreated = createSubscriptionWithRecovery(subConfig, webhookUrl, availableProd);
+                            if (fraudCreated.error) {
+                                specificError = fraudCreated.error;
+                            } else {
+                                webhookId = fraudCreated.webhookId;
+                                createdStatus = fraudCreated.status;
+                            }
                             found = true;
                             break;
                         }
@@ -324,12 +479,16 @@ function subscribeProduct(configId) {
             for (var k = 0; k < productList.length; k++) {
                 if (productList[k].productId === config.products[0].productId) {
                     found = true;
-                    createSubscription(config, webhookUrl, function (data, error) {
-                        if (error) Logger.error('createSubscription failed for ' + configId + ': ' + JSON.stringify(error));
-                        
-                        else if (data && data.webhookId) { webhookId = data.webhookId; createdStatus = data.status || ''; }
-                        
-                    });
+                    // Reconcile against any existing-but-untracked subscription (delete + recreate)
+                    // instead of blindly creating, which CyberSource rejects with 400 "Record
+                    // already exists".
+                    var ucCreated = createSubscriptionWithRecovery(config, webhookUrl, config.products[0].productId);
+                    if (ucCreated.error) {
+                        specificError = ucCreated.error;
+                    } else {
+                        webhookId = ucCreated.webhookId;
+                        createdStatus = ucCreated.status;
+                    }
                     break;
                 }
             }
@@ -344,13 +503,15 @@ function subscribeProduct(configId) {
     if (!webhookId) return { success: false, error: 'API_ERROR' };
 
     
-    // The subscription exists at CyberSource (we have a webhookId). Resolve its real status
-    // and ALWAYS map it in BM so it is tracked and not recreated as a duplicate on re-sync:
-    //  - PENDING_REVIEW: created but awaiting CyberSource review; it cannot be activated yet,
-    //    so record it as-is. It activates once approved and the merchant re-synchronizes.
-    //  - otherwise: activate it as before; a genuine activation failure still bails out.
+    // The subscription exists at CyberSource (we have a webhookId). ALWAYS attempt to activate it
+    // (PUT status=ACTIVE) right after creation, then map it in BM so it is tracked and not
+    // recreated as a duplicate on re-sync:
+    //  - activation succeeds -> ACTIVE.
+    //  - activation is rejected because it is awaiting CyberSource review -> record PENDING_REVIEW
+    //    (it activates once approved and the merchant re-synchronizes).
+    //  - any other activation failure -> bail out with ACTIVATION_ERROR.
     var finalStatus = createdStatus || '';
-    if (finalStatus !== 'PENDING_REVIEW' && finalStatus !== 'ACTIVE') {
+    if (finalStatus !== 'ACTIVE') {
         var activationSucceeded = false;
         activateSubscription(webhookId, function (data, error) {
             if (error) {
@@ -394,6 +555,39 @@ function unsubscribeProduct(configId) {
     });
     Transaction.wrap(function () { CustomObjectMgr.remove(obj); });
     return { success: true };
+}
+
+/**
+ * Extract the lowercase hostname (no scheme, port, or path) from a URL string.
+ *
+ * @param {string} url full URL
+ * @returns {string} hostname, or '' when not parseable
+ */
+function extractHost(url) {
+    if (!url) return '';
+    var s = String(url);
+    var scheme = s.indexOf('://');
+    if (scheme >= 0) s = s.substring(scheme + 3);
+    var slash = s.indexOf('/');
+    if (slash >= 0) s = s.substring(0, slash);
+    var colon = s.indexOf(':');
+    if (colon >= 0) s = s.substring(0, colon);
+    return s.toLowerCase();
+}
+
+/**
+ * Whether a reconciled subscription needs a sync action: it is missing, points at a different
+ * host (sandbox moved), or exists but is not yet ACTIVE (e.g. INACTIVE) so it must be activated.
+ * PENDING_REVIEW is excluded — only CyberSource can advance it (re-syncing after approval picks
+ * it up via the not-ACTIVE check once it leaves review).
+ *
+ * @param {Object} sub reconciled subscription ({ webhookId, status, hostMismatch }) or null
+ * @returns {boolean} true when subscribeProduct should run for this product
+ */
+function subscriptionNeedsAction(sub) {
+    if (!sub) return true;
+    if (sub.hostMismatch) return true;
+    return !!(sub.status && sub.status !== 'ACTIVE' && sub.status !== 'PENDING_REVIEW');
 }
 
 /**
@@ -464,18 +658,24 @@ function getViewData() {
             var liveWebhooks = {};
             var gotDefinitiveResponse = false;
             entry.queryProducts.forEach(function (queryProductId) {
-                retrieveWebhooks(queryProductId, function (apiData, error) {
-                    if (error) {
-                        Logger.error('External webhook discovery failed for ' + entry.key + ' (' + queryProductId + '): ' + JSON.stringify(error));
-                        return;
-                    }
-                    if (!Array.isArray(apiData)) return;
-                    // A successful response (including an empty list / 404) is authoritative.
-                    gotDefinitiveResponse = true;
-                    apiData.forEach(function (webhook) {
-                        liveWebhooks[webhook.webhookId] = webhook;
+                try {
+                    retrieveWebhooks(queryProductId, function (apiData, error) {
+                        if (error) {
+                            Logger.error('External webhook discovery failed for ' + entry.key + ' (' + queryProductId + '): ' + JSON.stringify(error));
+                            return;
+                        }
+                        if (!Array.isArray(apiData)) return;
+                        // A successful response (including an empty list / 404) is authoritative.
+                        gotDefinitiveResponse = true;
+                        apiData.forEach(function (webhook) {
+                            liveWebhooks[webhook.webhookId] = webhook;
+                        });
                     });
-                });
+                } catch (qe) {
+                    // One product's lookup failing (e.g. not provisioned) must not abort discovery
+                    // for the remaining products — otherwise reconciliation never runs.
+                    Logger.error('getViewData: discovery query threw for ' + entry.key + ' (' + queryProductId + '): ' + (qe && qe.message ? qe.message : qe));
+                }
             });
 
             // (a) Reconcile the BM-managed local record against live state. Only act on an
@@ -487,10 +687,22 @@ function getViewData() {
                 if (!liveMatch) {
                     Logger.warn('Local ' + entry.key + ' webhook ' + data.subscriptions[entry.key].webhookId + ' not found at CyberSource (deleted in EBC); showing as inactive.');
                     data.subscriptions[entry.key] = null;
-                } else if (liveMatch.status) {
-                    // Keep the displayed status in sync with CyberSource so a PENDING_REVIEW
-                    // subscription flips to ACTIVE here once it has been approved.
-                    data.subscriptions[entry.key].status = liveMatch.status;
+                } else {
+                    if (liveMatch.status) {
+                        // Keep the displayed status in sync with CyberSource so a PENDING_REVIEW
+                        // subscription flips to ACTIVE here once it has been approved.
+                        data.subscriptions[entry.key].status = liveMatch.status;
+                    }
+                    // Detect a host change (e.g. the sandbox moved): the live webhook points at a
+                    // different host than the current storefront. Flag it so syncWithPreferences
+                    // repoints (delete + recreate) the subscription to this storefront's URL.
+                    var currentHost = extractHost(data.config.activeBaseUrl);
+                    var liveHost = extractHost(liveMatch.webhookUrl);
+                    if (currentHost && liveHost && currentHost !== liveHost) {
+                        data.subscriptions[entry.key].hostMismatch = true;
+                        data.subscriptions[entry.key].liveUrl = liveMatch.webhookUrl;
+                        Logger.warn(entry.key + ' webhook points to host ' + liveHost + ' but storefront host is ' + currentHost + '; will repoint on next sync.');
+                    }
                 }
             }
 
@@ -504,22 +716,28 @@ function getViewData() {
                 if (!isInternal) data.external.push({ productId: entry.key, webhookId: webhookId, url: webhook.webhookUrl });
             });
         });
-    } catch (e) {}
+    } catch (e) { Logger.error('getViewData discovery failed: ' + (e && e.message ? e.message : e)); }
     return data;
-    
+
 }
 
 function syncWithPreferences() {
     var data = getViewData();
     var results = {};
-    if (data.config.dmEnabled && !data.subscriptions.fraudManagement) {
-        results.dm = subscribeProduct('fraudManagement');
-    } else if (!data.config.dmEnabled && data.subscriptions.fraudManagement) {
+    var fraud = data.subscriptions.fraudManagement;
+    var uc = data.subscriptions.unifiedCheckout;
+
+    // Subscribe/repoint/activate when the product is enabled and the subscription is missing,
+    // points at a different host (sandbox moved -> delete+recreate), or is not yet ACTIVE
+    // (e.g. INACTIVE -> activate the existing webhook).
+    if (data.config.dmEnabled && subscriptionNeedsAction(fraud)) {
+        results.dm = subscribeProduct('fraudManagement', !!(fraud && fraud.hostMismatch));
+    } else if (!data.config.dmEnabled && fraud) {
         results.dm = unsubscribeProduct('fraudManagement');
     }
-    if (data.config.secureIntegrationMethod === 'Unified_Checkout' && !data.subscriptions.unifiedCheckout) {
-        results.uc = subscribeProduct('unifiedCheckout');
-    } else if (data.config.secureIntegrationMethod !== 'Unified_Checkout' && data.subscriptions.unifiedCheckout) {
+    if (data.config.secureIntegrationMethod === 'Unified_Checkout' && subscriptionNeedsAction(uc)) {
+        results.uc = subscribeProduct('unifiedCheckout', !!(uc && uc.hostMismatch));
+    } else if (data.config.secureIntegrationMethod !== 'Unified_Checkout' && uc) {
         results.uc = unsubscribeProduct('unifiedCheckout');
     }
     return results;
