@@ -256,26 +256,32 @@ _exports.prototype.getJWTToken = function (resource, method, merchantId, digest,
     var KeyRef = require('dw/crypto/KeyRef');
     var UUIDUtils = require('dw/util/UUIDUtils');
 
-    // Read P12 key ID and alias from BM site preferences
-    // Use Meta Key credentials when Meta Key is enabled
+    // Read the P12 signing alias from BM site preferences.
+    // Use Meta Key credentials when Meta Key is enabled.
     var cybsLogger = require('dw/system/Logger').getLogger('CyberSource', 'ApiClient');
-    var p12KeyId;
+    var certHelper = require('*/cartridge/scripts/helpers/certHelper');
     var p12PrivateKeyAlias;
+    // The MID expected in the signing cert's subject CN. For meta keys this is the
+    // portfolio owner (the JWT iss), not the transacting child MID.
+    var expectedMid;
     if (configObject.metaKeyEnabled) {
         cybsLogger.info('Meta Key authentication is enabled. Using Meta Key credentials for merchant {0}.', merchantId);
         var missingFields = [];
-        if (!configObject.metaKeyP12SerialNo) { missingFields.push('metaKeyP12SerialNo'); }
         if (!configObject.metaKeyP12Alias) { missingFields.push('metaKeyP12Alias'); }
         if (!configObject.metaKeyMerchantId) { missingFields.push('metaKeyMerchantId'); }
         if (missingFields.length > 0) {
             cybsLogger.error('Meta Key is enabled but required fields are missing: {0}. Check Business Manager site preferences.', missingFields.join(', '));
         }
-        p12KeyId = configObject.metaKeyP12SerialNo;
         p12PrivateKeyAlias = configObject.metaKeyP12Alias;
+        expectedMid = configObject.metaKeyMerchantId;
     } else {
-        p12KeyId = configObject.p12KeyId;
         p12PrivateKeyAlias = configObject.p12PrivateKeyAlias;
+        expectedMid = merchantId;
     }
+
+    // Derive the kid (subject DN serialNumber) from the cert bound to the signing alias,
+    // rather than reading it from a separate site preference.
+    var p12KeyId = certHelper.getKidFromAlias(p12PrivateKeyAlias, expectedMid);
 
     var currentTimestamp = Math.floor(Date.now() / 1000);
 
@@ -402,7 +408,7 @@ _exports.prototype.callApi = function (path, httpMethod, pathParams, queryParams
         // var jwtToken = this.getJWTToken(resource, method, merchantId, digest, requestHost);
         // headerParams['Authorization'] = 'Bearer ' + jwtToken;
     } else {
-                var signature = this.getHttpSignature(resource, method, merchantKeyId, requestHost, merchantId, merchantSecretKey);
+        var signature = this.getHttpSignature(resource, method, merchantKeyId, requestHost, merchantId, merchantSecretKey);
 
         // var jwtToken = this.getJWTToken(resource, method, merchantId, null, requestHost);
         // headerParams['Authorization'] = 'Bearer ' + jwtToken;

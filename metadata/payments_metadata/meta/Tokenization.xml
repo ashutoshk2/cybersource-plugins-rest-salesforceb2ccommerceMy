@@ -31,8 +31,8 @@
                 <default-value>1</default-value>
             </attribute-definition>
             <attribute-definition attribute-id="VisaAcceptance_NetworkToken">
-                <display-name xml:lang="x-default">Network Token Updates</display-name>
-                <description xml:lang="x-default">Subscribe to Network Token life cycle updates</description>
+                <display-name xml:lang="x-default">Network Token</display-name>
+                <description xml:lang="x-default">Subscribe to Token updates</description>
                 <type>boolean</type>
                 <externally-managed-flag>false</externally-managed-flag>
                 <default-value>false</default-value>

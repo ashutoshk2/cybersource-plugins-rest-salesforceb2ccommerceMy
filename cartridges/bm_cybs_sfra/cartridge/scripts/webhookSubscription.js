@@ -351,7 +351,7 @@ function subscribeProduct(configId, forceRecreate) {
     if (configId === 'unifiedCheckout' && !egressPublicKey) {
         // Read the alias from the committed site preference (not the module-cached configObject),
         // so an alias the merchant just changed in the same updateAdvanced request is honored.
-        var egressAlias = site.getCustomPreferenceValue('VisaAcceptance_EgressCertificateAlias') || 'VisaAcceptance_MLE_Egress_Private_Key';
+        var egressAlias = site.getCustomPreferenceValue('VisaAcceptance_EgressCertificateAlias');
         var derivedEgressKey = deriveEgressCertificateB64(egressAlias);
         var derivedUploadOk = false;
         if (derivedEgressKey) {
@@ -368,7 +368,7 @@ function subscribeProduct(configId, forceRecreate) {
                 g.custom.EgressPublicKey = egressPublicKey;
             });
         } else {
-            Logger.error('subscribeProduct: UC subscribe blocked — could not derive/register an egress public key from alias "' + egressAlias + '". Verify the RSA .p12 is imported under Private Keys and Certificates.');
+            Logger.error('subscribeProduct: ' + configId + ' subscribe blocked — could not derive/register an egress public key from alias "' + egressAlias + '". Verify the RSA .p12 is imported under Private Keys and Certificates.');
             return { success: false, error: 'EGRESS_KEY_REQUIRED' };
         }
     }
@@ -437,6 +437,13 @@ function subscribeProduct(configId, forceRecreate) {
             specificError = 'API_ERROR';
             return;
         }
+        // Diagnostic: surface exactly which webhook products CyberSource offers this merchant,
+        // so a PRODUCT_NOT_ENABLED outcome (below) is debuggable instead of silent.
+        var availableProductIds = [];
+        for (var ap = 0; ap < productList.length; ap++) {
+            availableProductIds.push(productList[ap].productId);
+        }
+        Logger.info('subscribeProduct: ' + configId + ' available webhook products from CyberSource: [' + availableProductIds.join(', ') + ']');
         var found = false;
         if (configId === 'fraudManagement') {
             for (var i = 0; i < productList.length; i++) {
@@ -485,7 +492,10 @@ function subscribeProduct(configId, forceRecreate) {
                     break;
                 }
             }
-            if (!found) specificError = 'PRODUCT_NOT_ENABLED';
+            if (!found) {
+                Logger.error('subscribeProduct: ' + configId + ' PRODUCT_NOT_ENABLED — required product "' + config.products[0].productId + '" is not among the merchant\'s available webhook products [' + availableProductIds.join(', ') + ']. Ask CyberSource to enable this product for the organization.');
+                specificError = 'PRODUCT_NOT_ENABLED';
+            }
         }
     });
 
@@ -588,8 +598,8 @@ function getViewData() {
     var method = site.getCustomPreferenceValue('VisaAcceptance_Secure_Integration_Method');
     var methodValue = (method && method.value) ? method.value : (method || '');
     var dmEnabled = site.getCustomPreferenceValue('VisaAcceptance_DecisionManager') || false;
-    var egressMleAlias = site.getCustomPreferenceValue('VisaAcceptance_EgressCertificateAlias') || 'VisaAcceptance_MLE_Egress_Private_Key';
-
+    var egressMleAlias = site.getCustomPreferenceValue('VisaAcceptance_EgressCertificateAlias');
+    
     var testAction = new URLAction('WebhookNotification-dmNotification', site.ID);
     var fullUrl = URLUtils.https(testAction).toString();
     var standardBaseUrl = fullUrl.substring(0, fullUrl.indexOf('WebhookNotification-dmNotification')).replace(/\/$/, '');
@@ -749,9 +759,10 @@ function updateAdvanced(baseUrl, egressMleAlias, egressPublicKey) {
 
     
     // Derive the egress MLE public key from the .p12 keystore entry the merchant is saving,
-    // rather than from a pasted string. Fall back to the incoming/previously-stored value so a
-    // merchant whose key already works is never regressed if derivation fails.
-    var effectiveAlias = egressMleAlias || 'VisaAcceptance_MLE_Egress_Private_Key';
+    // rather than from a pasted string. An empty form submission falls back to the currently
+    // stored alias preference (which itself defaults via the site-preference default-value),
+    // so the merchant's working alias is never blanked out and no default is hardcoded here.
+    var effectiveAlias = egressMleAlias || site.getCustomPreferenceValue('VisaAcceptance_EgressCertificateAlias');
     var derivedKey = deriveEgressCertificateB64(effectiveAlias);
     var keyToUse = derivedKey || egressPublicKey || '';
 

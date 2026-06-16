@@ -6,6 +6,7 @@ var Bytes = require('dw/util/Bytes');
 var Transaction = require('dw/system/Transaction');
 var Logger = require('dw/system/Logger');
 var OrderMgr = require('dw/order/OrderMgr');
+var configObject = require('*/cartridge/configuration/index');
 
 
 /**
@@ -15,11 +16,12 @@ function decryptMLEPayload(jweString) {
     if (!jweString) return null;
     var JWE = require('dw/crypto/JWE');
     var KeyRef = require('dw/crypto/KeyRef');
-    
-    // Fix: module requires the config as `configObject` (line 13); `config` was undefined and
-    // threw ReferenceError on every MLE webhook, breaking decryption before the alias resolved.
-    var alias = configObject.egressMleCertificateAlias || 'VisaAcceptance_MLE_Egress_Private_Key';
-    
+
+    // Resolve the egress P12 alias from the cartridge configuration (site preference
+    // VisaAcceptance_EgressCertificateAlias, surfaced as configObject.egressMleCertificateAlias).
+    // The default lives in the site-preference default-value, so no default is hardcoded here.
+    var alias = configObject.egressMleCertificateAlias;
+
 
     // Pin the JWE header before handing the payload to dw/crypto/JWE — defense-in-depth
     // against algorithm-confusion and a clearer error when a misrouted webhook arrives.
@@ -76,9 +78,9 @@ function validateSignature(req, customObjectKey) {
         // re-stringified parsed JSON, which can never byte-match the original payload.
         var regenerated = hmac.digest(new Bytes(ts + '.' + req.body, 'utf8'), secret);
         return regenerated.toString() === Encoding.fromBase64(s).toString();
-    } catch (e) { 
+    } catch (e) {
         Logger.error('Error in validateSignature: ' + e.message);
-        return false; 
+        return false;
     }
 }
 
@@ -121,19 +123,18 @@ function handleDmNotification(req, res, next) {
         Logger.error(req.body);
         if (!payload) throw new Error('Decrypted payload is empty');
 
-        var details = (payload.payload && payload.payload.transactionResult) ? payload.payload.transactionResult.details : 
-                      (payload.payload && payload.payload.length ? payload.payload[0].data : payload);
-                      
-        // Case-management decision notifications (risk.casemanagement.decision.*) arrive as plain
-        // JSON (no MLE) and nest the data under payload.payload.data, carrying the order number as
-        // `referenceNumber` (the DMOrderStatusUpdate cron uses the equivalent merchantReferenceNumber).
-        if ((!details || !details.clientReferenceInformation) && payload.payload && payload.payload.data) {
-            details = payload.payload.data;
-        }
-        var orderId = (details && details.clientReferenceInformation && details.clientReferenceInformation.code)
-            || (details && details.referenceNumber)
-            || (details && details.merchantReferenceNumber)
-            || null;
+        // Normalize the DM/FM payload to its detail object. Case-management notifications nest the
+        // data under payload.payload.data (an object); other shapes use transactionResult.details
+        // or an array entry.
+        var details = (payload.payload && payload.payload.transactionResult) ? payload.payload.transactionResult.details :
+            (payload.payload && payload.payload.length ? payload.payload[0].data :
+                (payload.payload && payload.payload.data ? payload.payload.data : payload));
+
+        // The case-management payload carries the SFCC order number as referenceNumber (the merchant
+        // reference number); other shapes use clientReferenceInformation.code. Prefer the latter, fall
+        // back to referenceNumber so accept/reject and capture all resolve the order.
+        var orderId = (details && details.clientReferenceInformation ? details.clientReferenceInformation.code : null)
+            || (details ? details.referenceNumber : null);
         if (!orderId) throw new Error('Missing Order ID');
 
         var order = OrderMgr.getOrder(orderId);
@@ -143,7 +144,6 @@ function handleDmNotification(req, res, next) {
             return next();
         }
 
-        
         var reversal = null;
         Transaction.wrap(function () {
             var eventType = payload.eventType || (payload.payload && payload.payload[0] ? payload.payload[0].eventType : null);
@@ -179,6 +179,33 @@ function handleDmNotification(req, res, next) {
             }
         });
 
+        // Capture handling: when the merchant captures in EBC, the case-management notification
+        // includes an _embedded.capture link but no captured amount. Fetch the amount via the
+        // transaction-details API and reflect Captured / Partially Captured + AmountPaid + paymentStatus.
+        var capture = details && details._embedded ? details._embedded.capture : null;
+        if (capture) {
+            try {
+                var captureHref = capture._links && capture._links.self ? capture._links.self.href : null;
+                var captureId = captureHref ? captureHref.substring(captureHref.lastIndexOf('/') + 1) : null;
+                if (captureId) {
+                    var dmStatusHelper = require('*/cartridge/scripts/helpers/webhookOrderStatusHelper');
+                    var dmTransactionDetails = require('*/cartridge/scripts/http/transactionDetails');
+                    var captureOutcome = dmStatusHelper.applyTransactionOutcome({
+                        eventType: payload.eventType,
+                        details: details,
+                        transactionId: captureId,
+                        order: order,
+                        fetchCapturedAmount: dmTransactionDetails.getCapturedAmount
+                    });
+                    Logger.info('dmNotification: capture handled for order ( ' + orderId + ' ) captureId=' + captureId + ' -> status=' + captureOutcome.status + ' (applied=' + captureOutcome.applied + ')');
+                } else {
+                    Logger.error('dmNotification: capture present for order ( ' + orderId + ' ) but no capture id in href; cannot fetch amount.');
+                }
+            } catch (captureErr) {
+                Logger.error('dmNotification: capture handling failed for order ( ' + orderId + ' ): ' + captureErr.message);
+            }
+        }
+
         // Reviewed orders are auth-only (capture is deferred until ACCEPT), so a REJECT must
         // release the authorization hold. The gateway call is made outside the DB transaction and
         // is best-effort — if the auth was already reversed/expired, log it and still ack the
@@ -191,6 +218,7 @@ function handleDmNotification(req, res, next) {
                 Logger.error('dmNotification: auth reversal failed for rejected order ( ' + orderId + ' ): ' + (revErr && revErr.message ? revErr.message : revErr));
             }
         }
+
         
         
         res.setStatusCode(200);
@@ -245,7 +273,7 @@ server.use('paymentNotification', function (req, res, next) {
         if (!payload) throw new Error('Decrypted payload is empty');
 
         var details = (payload.payload && payload.payload.transactionResult) ? payload.payload.transactionResult.details :
-                      (payload.payload && payload.payload.length ? payload.payload[0].data : payload);
+            (payload.payload && payload.payload.length ? payload.payload[0].data : payload);
 
         var orderId = details && details.clientReferenceInformation ? details.clientReferenceInformation.code : null;
         if (!orderId) throw new Error('Missing Order ID');
@@ -307,6 +335,21 @@ server.use('paymentNotification', function (req, res, next) {
             var stagingObj = CustomObjectMgr.getCustomObject('CybersourceWebhookStaging', orderId);
             if (stagingObj) CustomObjectMgr.remove(stagingObj);
         });
+
+        // Reflect the transaction's auth/capture status in BM via the shared status helper.
+        try {
+            var ucStatusHelper = require('*/cartridge/scripts/helpers/webhookOrderStatusHelper');
+            var ucTransactionDetails = require('*/cartridge/scripts/http/transactionDetails');
+            ucStatusHelper.applyTransactionOutcome({
+                eventType: payload.eventType || 'uc.orders.transactionresults',
+                details: details,
+                transactionId: details && details.id ? details.id : null,
+                order: order,
+                fetchCapturedAmount: ucTransactionDetails.getCapturedAmount
+            });
+        } catch (statusErr) {
+            Logger.error('paymentNotification: status helper failed for ' + orderId + ': ' + statusErr.message);
+        }
 
         res.setStatusCode(200);
         res.json({ success: true });

@@ -34,6 +34,7 @@ server.post('PlaceOrderDirect', server.middleware.https, function (req, res, nex
     var addressHelpers = require('*/cartridge/scripts/helpers/addressHelpers');
     var payments = require('*/cartridge/scripts/http/payments');
     var ucPaymentHelper = require('~/cartridge/scripts/helpers/ucPaymentHelper');
+    var configObject = require('~/cartridge/configuration/index.js');
 
     var logger = Logger.getLogger('Cybersource', 'PlaceOrderDirect');
 
@@ -229,6 +230,39 @@ server.post('PlaceOrderDirect', server.middleware.https, function (req, res, nex
         return next();
     }
 
+    // Resolve the dw.order.PaymentProcessor up-front so we can fail loudly here
+    // (with the exact missing record name) rather than silently skipping
+    // setPaymentProcessor inside the post-order Transaction.wrap, which would
+    // leave PaymentTransaction.paymentProcessor null and break refund/capture
+    // flows downstream. SFCC has no direct PaymentProcessor lookup, so we go
+    // through the PaymentMethod — but routing is already decided by the static
+    // map above; this lookup only resolves the dw.order.PaymentProcessor object
+    // needed by setPaymentProcessor().
+    var paymentMethod = PaymentMgr.getPaymentMethod(detectedPaymentMethod);
+    if (!paymentMethod) {
+        logger.error(
+            'PlaceOrderDirect: PaymentMethod record "{0}" missing in BM. Create it under Merchant Tools > Site Preferences > Payment Methods.',
+            detectedPaymentMethod
+        );
+        secureResponseHelper.secureJsonResponse(res, {
+            error: true,
+            errorMessage: Resource.msg('error.technical', 'checkout', null)
+        });
+        return next();
+    }
+    var paymentProcessor = paymentMethod.getPaymentProcessor();
+    if (!paymentProcessor) {
+        logger.error(
+            'PlaceOrderDirect: PaymentMethod "{0}" has no PaymentProcessor bound in BM. Bind it to a processor under Merchant Tools > Site Preferences > Payment Methods.',
+            detectedPaymentMethod
+        );
+        secureResponseHelper.secureJsonResponse(res, {
+            error: true,
+            errorMessage: Resource.msg('error.technical', 'checkout', null)
+        });
+        return next();
+    }
+
     var ucPaymentInformation = {
         jwtPayload: jwtPayload,
         transientToken: transientToken,
@@ -311,16 +345,19 @@ server.post('PlaceOrderDirect', server.middleware.https, function (req, res, nex
             var paymentInstruments = order.getPaymentInstruments();
             if (paymentInstruments.length > 0) {
                 var paymentInstrument = paymentInstruments[0];
-                var paymentProcessor = PaymentMgr.getPaymentMethod(paymentInstrument.paymentMethod).paymentProcessor;
 
-                // Set transaction ID and processor
+                // Set transaction ID and processor (paymentProcessor resolved up-front,
+                // guaranteed non-null by the guard at line ~232).
                 paymentInstrument.paymentTransaction.setTransactionID(transactionId);
-                if (paymentProcessor) {
-                    paymentInstrument.paymentTransaction.setPaymentProcessor(paymentProcessor);
-                }
+                paymentInstrument.paymentTransaction.setPaymentProcessor(paymentProcessor);
 
 
-                if (detectedPaymentMethod === 'ALT_PAYMENT_METHOD') {
+                var isApmFlow = (
+                    detectedPaymentMethod === 'ALT_PAYMENT_METHOD' ||
+                    detectedPaymentMethod === 'PAYPAL' ||
+                    detectedPaymentMethod === 'VENMO'
+                );
+                if (isApmFlow) {
                     // Alternate payment methods (PPRO bank transfers, BNPL, PayPal,
                     // Venmo, Paze, ...) carry no card/bank-account data. Record the
                     // scheme descriptor instead of card details.
@@ -364,6 +401,29 @@ server.post('PlaceOrderDirect', server.middleware.https, function (req, res, nex
                         paymentInstrument.paymentTransaction, 'reconciliationId', jwtPayload.details.reconciliationId
                     );
                 }
+
+                // Reconciliation fields per ISV Integration Guide Section 13.
+                var clientRefCode = jwtPayload.details
+                    && jwtPayload.details.clientReferenceInformation
+                    && jwtPayload.details.clientReferenceInformation.code;
+                if (clientRefCode) {
+                    ucPaymentHelper.setTransactionCustomAttribute(
+                        paymentInstrument.paymentTransaction, 'clientReferenceCode', clientRefCode
+                    );
+                }
+                if (processorInfo && processorInfo.transactionId) {
+                    ucPaymentHelper.setTransactionCustomAttribute(
+                        paymentInstrument.paymentTransaction, 'processorTransactionId', processorInfo.transactionId
+                    );
+                }
+                ucPaymentHelper.setTransactionCustomAttribute(
+                    paymentInstrument.paymentTransaction, 'authMethod',
+                    (configObject.authenticationType || '').toUpperCase()
+                );
+                ucPaymentHelper.setTransactionCustomAttribute(
+                    paymentInstrument.paymentTransaction, 'resultTimestamp',
+                    new Date().toISOString()
+                );
 
                 logger.info('PlaceOrderDirect: Payment instrument updated - TransactionID: {0}, PaymentDetails: {1}, PaymentMethod: {2}',
                     transactionId, paymentDetailsStr, paymentInstrument.paymentMethod);
