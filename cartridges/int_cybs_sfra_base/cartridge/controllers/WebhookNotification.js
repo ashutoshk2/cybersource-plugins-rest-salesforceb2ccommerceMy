@@ -152,7 +152,7 @@ function handleDmNotification(req, res, next) {
                 OrderMgr.placeOrder(order);
                 order.setConfirmationStatus(order.CONFIRMATION_STATUS_CONFIRMED);
                 Logger.info('dmNotification: Order ( ' + orderId + ' ) successfully placed via case-management ACCEPT');
-            } else if (eventType && eventType.indexOf('reject') > -1) {
+            } else if (eventType === 'risk.casemanagement.decision.reject') {
                 // Replicates DMOrderStatusUpdate.js cron behavior on REJECT.
                 // Case-management decisions carry the reviewer's reason in notes[0].comment
                 // (no reviewerComments field); fall back to it so the cancel reason is captured.
