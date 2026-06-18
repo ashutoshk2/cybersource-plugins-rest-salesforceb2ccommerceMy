@@ -700,11 +700,11 @@ function generateUcCaptureContext(isMiniCart, selectedPaymentInstrumentId) {
         // If selectedPaymentInstrumentId is provided, use ONLY that card (no other payment methods)
         // If null/undefined, show all payment methods (for entering new card)
         if (!isMiniCart && isRegisteredCustomer && customerProfile && selectedPaymentInstrumentId) {
-            // Pay-with-saved-card flow: present ONLY the selected token. Do NOT create or
-            // associate tokens here - that is for the save-card flow only. (Forcing tokenCreate
-            // during a saved-card payment breaks order placement.)
-            completeMandate.tms = {
-                tokenTypes: ['customer', 'paymentInstrument', 'instrumentIdentifier']
+              // Add TMS token types for saving cards (omit 'customer' when one already exists).
+            // tokenCreate:true is required for UC to honor TMS_TOKEN.customer association below.
+             completeMandate.tms = {
+                // tokenCreate: true,
+                tokenTypes: ucPaymentHelper.buildTmsTokenTypes(existingCustomerId)
             };
 
             // Use only the selected payment instrument
