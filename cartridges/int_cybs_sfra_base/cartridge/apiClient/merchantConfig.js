@@ -49,7 +49,6 @@ function MerchantConfig(result) {
   this.merchantsecretKey = result.merchantsecretKey;
   this.runEnvironment = result.runEnvironment;
   this.solutionId = result.solutionId;
-  this.developerId = result.developerId;
   /* Fallback logic*/
 
   this.defaultPropValues();
@@ -102,9 +101,6 @@ MerchantConfig.prototype.setLogDirectory = function setLogDirectory(logDirectory
 MerchantConfig.prototype.setSolutionId = function setSolutionId(solutionId) {
   this.solutionId = solutionId;
 };
-MerchantConfig.prototype.setDeveloperId = function setDeveloperId(developerId) {
-  this.developerId = developerId;
-};
 
 MerchantConfig.prototype.setURL = function setURL(url) {
   this.url = url;
@@ -148,9 +144,6 @@ MerchantConfig.prototype.getLogDirectory = function getLogDirectory() {
 
 MerchantConfig.prototype.getSolutionId = function getSolutionId() {
   return this.solutionId;
-};
-MerchantConfig.prototype.getDeveloperId = function getDeveloperId() {
-  return this.developerId;
 };
 
 MerchantConfig.prototype.getURL = function getURL() {

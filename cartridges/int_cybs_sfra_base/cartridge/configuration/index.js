@@ -12,12 +12,6 @@ var LogfileMaxSize = '5242880'; // 10 MB In Bytes
 
 // Partner Information
 
-/** DeveloperId
- * Identifier for the developer that helped integrate a partner solution to CyberSource.
- * Send this value in all requests that are sent through the partner solutions built by that developer. CyberSource assigns the ID to the developer.
- * Note When you see a developer ID of 999 in reports, the developer ID that was submitted is incorrect.
- */
-
 /** SolutionId
  * Identifier for the partner that is integrated to CyberSource.
  * Send this value in all requests that are sent through the partner solution. CyberSource assigns the ID to the partner.
@@ -56,7 +50,6 @@ function getConfig(config) {
         merchantID: config.merchantID || customPreferences.Core.Preferences.MerchantID.getValue(),
         merchantKeyId: config.merchantKeyId || customPreferences.Core.Preferences.MerchantKeyId.getValue(),
         merchantsecretKey: config.merchantSecretKey || customPreferences.Core.Preferences.MerchantKeySecret.getValue(),
-        developerId: config.developerId || customPreferences.Core.Preferences.DeveloperId.getValue(),
         CommerceIndicator: config.CommerceIndicator || customPreferences.Core.Preferences.CommerceIndicator.getValue(),
         p12PrivateKeyAlias: config.p12PrivateKeyAlias || customPreferences.Core.Preferences.P12PrivateKeyAlias.getValue(),
 
@@ -134,7 +127,7 @@ function getConfig(config) {
         cardTransactionType: config.cardTransactionType || customPreferences.SecureIntegrationConfiguration.Preferences.CardTransactionType.getValue(),
         unifiedCheckoutExpressPay: typeof config.unifiedCheckoutExpressPay === 'boolean' ? config.unifiedCheckoutExpressPay : customPreferences.SecureIntegrationConfiguration.Preferences.UnifiedCheckoutExpressPay.getValue(),
         unifiedCheckoutClientVersion: config.unifiedCheckoutClientVersion || customPreferences.SecureIntegrationConfiguration.Preferences.UnifiedCheckoutClientVersion.getValue(),
-        unifiedCheckoutAllowedCardPrefix: typeof config.unifiedCheckoutAllowedCardPrefix === 'boolean' ? config.unifiedCheckoutAllowedCardPrefix : customPreferences.SecureIntegrationConfiguration.Preferences.UnifiedCheckoutAllowedCardPrefix.getValue(),
+        unifiedCheckoutAllowedCardPrefix: config.unifiedCheckoutAllowedCardPrefix || customPreferences.SecureIntegrationConfiguration.Preferences.UnifiedCheckoutAllowedCardPrefix.getValue(),
 
         unifiedCheckoutEnabled: secureIntegrationMethod == 'Unified_Checkout',
         // None = any selection other than Unified Checkout (the explicit "Salesforce Default

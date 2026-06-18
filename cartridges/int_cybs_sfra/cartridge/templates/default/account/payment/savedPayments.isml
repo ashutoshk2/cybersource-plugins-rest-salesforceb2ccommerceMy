@@ -11,7 +11,12 @@
             <div class="col-sm-8 col-md-6">
                 <div class="card ${paymentInstrument.isDefault ? 'default-payment' : ''}">
                     <div class="card-header">
-                        <h2 class="pull-left">${paymentInstrument.creditCardHolder}</h2>
+                        <iscomment>
+                            Guard against a missing cardholder name: a saved card without a
+                            holder would otherwise render the literal string "null" here.
+                            Fall back to the masked card number as the tile heading.
+                        </iscomment>
+                        <h2 class="pull-left">${paymentInstrument.creditCardHolder ? paymentInstrument.creditCardHolder : paymentInstrument.maskedCreditCardNumber}</h2>
                         <isif condition="${paymentInstrument.isDefault}">
                             <span class="default-payment-badge pull-right">${Resource.msg('label.payment.default', 'payment', null)}</span>
                         </isif>

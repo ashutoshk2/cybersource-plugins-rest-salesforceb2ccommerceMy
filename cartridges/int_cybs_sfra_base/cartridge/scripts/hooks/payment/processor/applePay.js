@@ -103,7 +103,6 @@ exports.authorizeOrderPayment = function (order, response) {
         clientReferenceInformation: {
             code: order.currentOrderNo,
             partner: {
-                developerId: configObject.developerId,
                 solutionId: configObject.solutionId
             }
         },
