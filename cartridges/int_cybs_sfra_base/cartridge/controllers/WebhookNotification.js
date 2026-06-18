@@ -107,6 +107,99 @@ function getDecryptedPayload(body) {
     return payload;
 }
 
+/**
+ * Locate the order for an APM (payments.payments.updated) webhook. The APM payload carries no
+ * order number — only reconciliationId (the original payment requestId). At checkout the APM order
+ * stores that value on its payment transaction (transactionID and/or custom.reconciliationId), so
+ * we scan the orders still awaiting confirmation — the only ones an APM status update can act on —
+ * and match. Scoped to NOTCONFIRMED + non-failed/cancelled to keep the search bounded, mirroring
+ * the DMOrderStatusUpdate cron.
+ *
+ * @param {string} reconciliationId APM reconciliationId (equals the original payment requestId)
+ * @returns {dw.order.Order} the matching order, or null
+ */
+function findOrderByReconciliationId(reconciliationId) {
+    if (!reconciliationId) return null;
+    var Order = require('dw/order/Order');
+    var orders = OrderMgr.searchOrders(
+        'confirmationStatus = {0} AND status != {1} AND status != {2}',
+        'creationDate desc',
+        Order.CONFIRMATION_STATUS_NOTCONFIRMED, Order.ORDER_STATUS_FAILED, Order.ORDER_STATUS_CANCELLED
+    );
+    try {
+        while (orders.hasNext()) {
+            var order = orders.next();
+            var pis = order.getPaymentInstruments().toArray();
+            for (var i = 0; i < pis.length; i++) {
+                var pt = pis[i].paymentTransaction;
+                if (!pt) continue; // eslint-disable-line no-continue
+                var matchesTxn = pt.transactionID === reconciliationId;
+                var matchesRecon = ('reconciliationId' in pt.custom) && pt.custom.reconciliationId === reconciliationId;
+                if (matchesTxn || matchesRecon) return order;
+            }
+        }
+    } finally {
+        orders.close();
+    }
+    return null;
+}
+
+/**
+ * Handle an Alternative Payment Methods status update (payments.payments.updated) — e.g. a PPRO
+ * bank transfer or eCheck moving from PENDING to COMPLETED. APMs settle immediately (no separate
+ * authorization to reverse), so a terminal success confirms the order and marks it PAID, while a
+ * terminal failure fails it. Matched to the order via reconciliationId. Best-effort: always ack so
+ * CyberSource does not keep retrying a notification we cannot act on.
+ *
+ * @param {Object} payload decoded webhook payload
+ * @param {Object} res response object
+ * @param {Function} next route next()
+ * @returns {void}
+ */
+function handleApmPaymentUpdate(payload, res, next) {
+    var apm = payload.payload || {};
+    var reconciliationId = apm.reconciliationId;
+    var status = apm.status;
+    if (!reconciliationId) {
+        Logger.error('apmNotification: missing reconciliationId; cannot match an order.');
+        res.setStatusCode(200);
+        res.json({ success: false });
+        return next();
+    }
+
+    var order = findOrderByReconciliationId(reconciliationId);
+    if (!order) {
+        // Either already confirmed (out of the NOTCONFIRMED scan) or unknown — nothing to act on.
+        // Ack so CyberSource stops retrying rather than looping on a no-op.
+        Logger.warn('apmNotification: no NOTCONFIRMED order for reconciliationId ' + reconciliationId + ' (status ' + status + '); acknowledging.');
+        res.setStatusCode(200);
+        res.json({ success: true });
+        return next();
+    }
+
+    var orderId = order.orderNo;
+    var SUCCESS = ['COMPLETED', 'SETTLED'];
+    var FAILURE = ['DECLINED', 'FAILED', 'CANCELLED', 'VOIDED'];
+    Transaction.wrap(function () {
+        if (SUCCESS.indexOf(status) > -1) {
+            if (order.getConfirmationStatus() !== order.CONFIRMATION_STATUS_CONFIRMED) {
+                order.setConfirmationStatus(order.CONFIRMATION_STATUS_CONFIRMED);
+            }
+            order.setPaymentStatus(order.PAYMENT_STATUS_PAID);
+            Logger.info('apmNotification: Order ( ' + orderId + ' ) confirmed + marked PAID on APM ' + status + ' (reconciliationId ' + reconciliationId + ').');
+        } else if (FAILURE.indexOf(status) > -1) {
+            OrderMgr.failOrder(order, false);
+            Logger.info('apmNotification: Order ( ' + orderId + ' ) failed on APM ' + status + ' (reconciliationId ' + reconciliationId + ').');
+        } else {
+            Logger.info('apmNotification: Order ( ' + orderId + ' ) APM status ' + status + ' is non-terminal; no order change (reconciliationId ' + reconciliationId + ').');
+        }
+    });
+
+    res.setStatusCode(200);
+    res.json({ success: true });
+    return next();
+}
+
 function handleDmNotification(req, res, next) {
     if (req.httpMethod === 'GET') {
         res.json({ success: true });
@@ -271,6 +364,12 @@ server.use('paymentNotification', function (req, res, next) {
     try {
         var payload = getDecryptedPayload(req.body);
         if (!payload) throw new Error('Decrypted payload is empty');
+
+        // alternativePaymentMethods rides on this same subscription/endpoint; route it by eventType.
+        var apmEventType = payload.eventType || (payload.payload && payload.payload[0] ? payload.payload[0].eventType : null);
+        if (apmEventType === 'payments.payments.updated') {
+            return handleApmPaymentUpdate(payload, res, next);
+        }
 
         var details = (payload.payload && payload.payload.transactionResult) ? payload.payload.transactionResult.details :
             (payload.payload && payload.payload.length ? payload.payload[0].data : payload);

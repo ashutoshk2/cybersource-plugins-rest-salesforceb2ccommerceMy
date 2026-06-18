@@ -40,7 +40,10 @@ var WEBHOOK_CONFIGS = {
         name: 'UC Webhook Events',
         description: 'UC Events Simulation',
         notificationEndpoint: 'WebhookNotification-paymentNotification',
-        products: [{ productId: 'unifiedCheckout', eventTypes: ['uc.orders.transactionresults'] }]
+        products: [
+            { productId: 'unifiedCheckout', eventTypes: ['uc.orders.transactionresults'] },
+            { productId: 'alternativePaymentMethods', eventTypes: ['payments.payments.updated'] }
+        ]
     }
 };
 
