@@ -180,13 +180,22 @@ if (configObject.tokenizationEnabled && configObject.cartridgeEnabled) {
         // Extract card details from JWT and transient token
         var cardDetails = ucPaymentHelper.extractCardDetails(jwtPayload, transientToken, null);
 
-        // Extract billing info from JWT for cardholder name
+        // Resolve the cardholder name. The completeMandate JWT's orderInformation carries
+        // only amountDetails (no billTo), so it almost never yields a name for the
+        // save-card flow; the name the shopper entered lives in the transient token's
+        // transaction details. Try the JWT first (cheap), then fall back to the transient
+        // token via getPaymentDetails (the same source checkout uses for the holder name).
         if (jwtPayload.details && jwtPayload.details.orderInformation && jwtPayload.details.orderInformation.billTo) {
-            var billTo = jwtPayload.details.orderInformation.billTo;
-            var firstName = billTo.firstName || '';
-            var lastName = billTo.lastName || '';
-            if (firstName || lastName) {
-                cardDetails.cardHolderName = (firstName + ' ' + lastName).trim();
+            cardDetails.cardHolderName = ucPaymentHelper.buildCardHolderName(jwtPayload.details.orderInformation.billTo);
+        }
+        if (!cardDetails.cardHolderName && transientToken) {
+            try {
+                var paymentDetails = payments.getPaymentDetails(transientToken);
+                if (paymentDetails && paymentDetails.orderInformation && paymentDetails.orderInformation.billTo) {
+                    cardDetails.cardHolderName = ucPaymentHelper.buildCardHolderName(paymentDetails.orderInformation.billTo);
+                }
+            } catch (nameErr) {
+                logger.warn('SavePaymentDirect: cardholder name lookup from transient token failed: {0}', nameErr.message || nameErr);
             }
         }
 

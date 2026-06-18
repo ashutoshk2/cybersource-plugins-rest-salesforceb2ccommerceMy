@@ -156,7 +156,26 @@ if (configObject.cartridgeEnabled) {
      */
     server.get('CreateUCTokenSaveCard', server.middleware.https, function (req, res, next) {
         var uc = require('~/cartridge/scripts/http/payments');
-        var UcCaptureContext = uc.generateUcCaptureContextSaveCard();
+        var ucPaymentHelper = require('~/cartridge/scripts/helpers/ucPaymentHelper');
+
+        // Resolve the customer's default billing address (preferred, else first) to
+        // prefill the Unified Checkout billing form. Defensive: any failure simply
+        // yields no prefill (billTo stays null) and capture context still generates.
+        var billTo = null;
+        try {
+            var customerObj = session.getCustomer();
+            var addressBook = customerObj && customerObj.addressBook;
+            if (addressBook) {
+                var srcAddress = addressBook.preferredAddress
+                    || (addressBook.addresses && addressBook.addresses.length ? addressBook.addresses[0] : null);
+                var email = (customerObj.profile && customerObj.profile.email) || '';
+                billTo = ucPaymentHelper.buildBillToFromCustomerAddress(srcAddress, email);
+            }
+        } catch (prefillErr) {
+            require('dw/system/Logger').warn('[SecureAcceptance.js] CreateUCTokenSaveCard: address prefill skipped: {0}', prefillErr.message || String(prefillErr));
+        }
+
+        var UcCaptureContext = uc.generateUcCaptureContextSaveCard(billTo);
         
         // Check if generateUcCaptureContextSaveCard returned an error object
         if (!UcCaptureContext || typeof UcCaptureContext !== 'string' || UcCaptureContext.error) {

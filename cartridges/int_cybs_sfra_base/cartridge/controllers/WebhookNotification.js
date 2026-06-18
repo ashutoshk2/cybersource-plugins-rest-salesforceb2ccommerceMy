@@ -213,7 +213,6 @@ function handleDmNotification(req, res, next) {
 
     try {
         var payload = getDecryptedPayload(req.body);
-        Logger.error(req.body);
         if (!payload) throw new Error('Decrypted payload is empty');
 
         // Normalize the DM/FM payload to its detail object. Case-management notifications nest the

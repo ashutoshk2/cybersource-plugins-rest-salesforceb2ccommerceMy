@@ -44,11 +44,24 @@
                 <default-value></default-value>
             </attribute-definition>
             <attribute-definition attribute-id="VisaAcceptance_UnifiedCheckout_AllowedCardPrefix">
-                <display-name xml:lang="x-default">Include Card Prefix in UC Response</display-name>
-                <description xml:lang="x-default">When enabled, Unified Checkout includes the card prefix (BIN) in the transient token response. Disabled by default. Recommended: leave disabled unless your integration requires the BIN.</description>
-                <type>boolean</type>
+                <display-name xml:lang="x-default">Card Prefix (BIN) in UC Response</display-name>
+                <description xml:lang="x-default">Controls the card prefix (BIN) returned in the Unified Checkout transient token response. None: no BIN (default). Six: six-digit BIN. Eight: eight-digit BIN.</description>
+                <type>enum-of-string</type>
                 <externally-managed-flag>false</externally-managed-flag>
-                <default-value>false</default-value>
+                <value-definitions>
+                    <value-definition default="true">
+                        <display xml:lang="x-default">None — no BIN returned</display>
+                        <value>None</value>
+                    </value-definition>
+                    <value-definition>
+                        <display xml:lang="x-default">Six-digit BIN</display>
+                        <value>Six</value>
+                    </value-definition>
+                    <value-definition>
+                        <display xml:lang="x-default">Eight-digit BIN</display>
+                        <value>Eight</value>
+                    </value-definition>
+                </value-definitions>
             </attribute-definition>
             <attribute-definition attribute-id="VisaAcceptance_UnifiedCheckout_NonWalletDisplayMode">
                 <display-name xml:lang="x-default">Non-Wallet UC Display Mode</display-name>

@@ -5,6 +5,22 @@ var configObject = require('../../configuration/index');
 var cybersourceRestApi = require('../../apiClient/index');
 
 /**
+ * Extract { capturedAmount, currency } from a CyberSource transaction/capture response.
+ * @param {Object} data API response object
+ * @returns {Object|null} { capturedAmount: Number, currency: String } or null
+ */
+function extractAmount(data) {
+    var amountDetails = data && data.orderInformation && data.orderInformation.amountDetails;
+    if (amountDetails && amountDetails.totalAmount !== undefined && amountDetails.totalAmount !== null) {
+        return {
+            capturedAmount: Number(amountDetails.totalAmount.toString()),
+            currency: amountDetails.currency || null
+        };
+    }
+    return null;
+}
+
+/**
  * Retrieve a transaction's captured amount via GET /tss/v2/transactions/{id}.
  * The payments.* capture webhook carries only the transaction id, so the real
  * (possibly partial) captured amount must be fetched here.
@@ -27,13 +43,7 @@ function getCapturedAmount(transactionId) {
             return;
         }
         try {
-            var amountDetails = data.orderInformation && data.orderInformation.amountDetails;
-            if (amountDetails && amountDetails.totalAmount !== undefined && amountDetails.totalAmount !== null) {
-                result = {
-                    capturedAmount: Number(amountDetails.totalAmount.toString()),
-                    currency: amountDetails.currency || null
-                };
-            }
+            result = extractAmount(data);
         } catch (e) {
             Logger.error('[transactionDetails.js] parse error for ( {0} ): {1}', transactionId, e.message);
         }

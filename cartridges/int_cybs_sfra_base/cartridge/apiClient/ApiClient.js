@@ -386,8 +386,7 @@ _exports.prototype.callApi = function (path, httpMethod, pathParams, queryParams
                 bodyParam.clientReferenceInformation.applicationName = Constants.APPLICATION_NAME;
                 bodyParam.clientReferenceInformation.applicationVersion = Constants.APPLICATION_VERSION;
                 bodyParam.clientReferenceInformation.partner = {
-                    solutionId: this.merchantConfig.getSolutionId(),
-                    developerId: this.merchantConfig.getDeveloperId()
+                    solutionId: this.merchantConfig.getSolutionId()
                 }
             }
         }

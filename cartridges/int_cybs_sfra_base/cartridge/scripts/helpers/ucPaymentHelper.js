@@ -881,6 +881,45 @@ function buildBillToAddress(basket) {
 }
 
 /**
+ * Build a UC billTo object from a customer Address Book entry.
+ * Used by the My Account save-card flow to prefill the Unified Checkout billing form.
+ * @param {dw.customer.CustomerAddress} customerAddress - source address (preferred or first)
+ * @param {string} email - customer profile email
+ * @returns {Object|null} billTo object, or null when no address
+ */
+function buildBillToFromCustomerAddress(customerAddress, email) {
+    if (!customerAddress) return null;
+
+    return {
+        firstName: customerAddress.firstName || '',
+        lastName: customerAddress.lastName || '',
+        email: email || '',
+        address1: customerAddress.address1 || '',
+        address2: customerAddress.address2 || '',
+        locality: customerAddress.city || '',
+        administrativeArea: customerAddress.stateCode || '',
+        postalCode: customerAddress.postalCode || '',
+        country: customerAddress.countryCode && customerAddress.countryCode.value
+            ? customerAddress.countryCode.value.toUpperCase() : '',
+        phoneNumber: customerAddress.phone || ''
+    };
+}
+
+/**
+ * Build a cardholder display name ("First Last") from a billTo object.
+ * Tolerates a missing/partial billTo so callers can pass any of the UC billTo
+ * sources (completeMandate JWT, transient-token transaction) directly.
+ * @param {Object} billTo - billTo object with firstName/lastName (may be null/partial)
+ * @returns {string} trimmed "First Last", or '' when no name is present
+ */
+function buildCardHolderName(billTo) {
+    if (!billTo) return '';
+    var firstName = billTo.firstName || '';
+    var lastName = billTo.lastName || '';
+    return (firstName + ' ' + lastName).trim();
+}
+
+/**
  * Build shipTo object from basket shipping address
  * @param {dw.order.Basket} basket - Current basket
  * @returns {Object|null} - shipTo object or null
@@ -1065,6 +1104,30 @@ function buildCompleteMandate(configObject, isTokenizationEnabled, isRegisteredC
 }
 
 /**
+ * Build transientTokenResponseOptions for the UC capture context, honoring the
+ * VisaAcceptance_UnifiedCheckout_AllowedCardPrefix preference (BIN return mode):
+ *   'None'  -> includeCardPrefix: false  (no BIN in the transient token)
+ *   'Six'   -> field omitted entirely    (CyberSource defaults to a 6-digit BIN)
+ *   'Eight' -> includeCardPrefix: true   (8-digit BIN)
+ * Any other or legacy value (including a leftover boolean from the old toggle) is
+ * treated as 'None'.
+ * @param {Object} configObject - resolved configuration (configuration/index)
+ * @returns {Object} - transientTokenResponseOptions object for the capture-context request
+ */
+function buildTransientTokenResponseOptions(configObject) {
+    var mode = configObject && configObject.unifiedCheckoutAllowedCardPrefix;
+    if (mode === 'Six') {
+        // Omit includeCardPrefix so CyberSource returns the default 6-digit BIN.
+        return {};
+    }
+    if (mode === 'Eight') {
+        return { includeCardPrefix: true };
+    }
+    // 'None' (default) and any unexpected/legacy value: suppress the BIN.
+    return { includeCardPrefix: false };
+}
+
+/**
  * Build orderInformation object for capture context
  * @param {dw.order.Basket} basket - Current basket
  * @returns {Object} - orderInformation object
@@ -1105,6 +1168,57 @@ function buildOrderInformation(basket) {
 // ============================================================================
 // TMS Token Saving Functions
 // ============================================================================
+
+/**
+ * Resolve the existing CyberSource TMS customer token id stored on the customer's
+ * profile (Profile.custom.customerID). This is the id used to attach newly-saved
+ * cards to a single customer instead of minting a new customer per card.
+ * @param {dw.customer.Customer} customer - customer object
+ * @returns {string|null} the stored customerID, or null when absent / not resolvable
+ */
+function getExistingTmsCustomerId(customer) {
+    if (!customer || typeof customer.getProfile !== 'function') {
+        return null;
+    }
+    var profile = customer.getProfile();
+    if (!profile || !profile.custom || !profile.custom.customerID) {
+        return null;
+    }
+    return profile.custom.customerID;
+}
+
+/**
+ * Build the completeMandate.tms.tokenTypes array for a UC capture context.
+ * When the account already has a TMS customer token, the 'customer' type is
+ * omitted so CyberSource attaches the new instrument under the existing customer
+ * (mirrors the Non-UC actionTokenTypes behavior). When there is no customer yet
+ * (first saved card), 'customer' is requested so CyberSource mints one.
+ * @param {string|null} existingCustomerId - stored Profile.custom.customerID, or null
+ * @returns {string[]} tokenTypes array
+ */
+function buildTmsTokenTypes(existingCustomerId) {
+    if (existingCustomerId) {
+        return ['paymentInstrument', 'instrumentIdentifier'];
+    }
+    return ['customer', 'paymentInstrument', 'instrumentIdentifier'];
+}
+
+/**
+ * Build the serialized wallet token string stored in CustomerPaymentInstrument.creditCardToken.
+ * Format: "<instrumentIdentifierId>-<paymentInstrumentId>-flex[-<customerId>]".
+ * The '-flex-' marker is intentional and shared with Unified Checkout (do not strip it).
+ * @param {string} instrumentIdentifierId - CyberSource instrumentIdentifier id
+ * @param {string} paymentInstrumentId - CyberSource paymentInstrument id
+ * @param {string|null} customerId - TMS customer id to append, or falsy to omit
+ * @returns {string} serialized token
+ */
+function buildSerializedToken(instrumentIdentifierId, paymentInstrumentId, customerId) {
+    var segments = [instrumentIdentifierId, paymentInstrumentId, 'flex'];
+    if (customerId) {
+        segments.push(customerId);
+    }
+    return segments.join('-');
+}
 
 /**
  * Check if user opted to save card in UC completeMandate response
@@ -1262,26 +1376,23 @@ function saveTokenToWallet(jwtPayload, cardDetails, customer) {
 
         var wallet = customerObj.profile.wallet;
 
-        var serializedToken;
-        if (tokenInfo.customer && tokenInfo.customer.id) {
-            serializedToken = [
-                tokenInfo.instrumentIdentifier.id,
-                tokenInfo.paymentInstrument.id,
-                'flex',
-                tokenInfo.customer.id
-            ].join('-');
+        // Prefer the customer id the response echoes; otherwise fall back to the id already
+        // stored on the profile. Subsequent saves omit the 'customer' token type, so the
+        // response may not echo customer.id, but the card still belongs to the stored customer.
+        var responseCustomerId = (tokenInfo.customer && tokenInfo.customer.id) ? tokenInfo.customer.id : null;
+        var effectiveCustomerId = responseCustomerId || profile.custom.customerID || null;
 
+        var serializedToken = buildSerializedToken(
+            tokenInfo.instrumentIdentifier.id,
+            tokenInfo.paymentInstrument.id,
+            effectiveCustomerId
+        );
+
+        // First card on the account: persist the freshly-minted customer id for future saves.
+        if (responseCustomerId && !profile.custom.customerID) {
             Transaction.wrap(function () {
-                if (!profile.custom.customerID) {
-                    profile.custom.customerID = tokenInfo.customer.id;
-                }
+                profile.custom.customerID = responseCustomerId;
             });
-        } else {
-            serializedToken = [
-                tokenInfo.instrumentIdentifier.id,
-                tokenInfo.paymentInstrument.id,
-                'flex'
-            ].join('-');
         }
 
         var upsertResult = upsertCreditCard(wallet, serializedToken, cardDetails, tokenInfo.instrumentIdentifier.id);
@@ -1518,7 +1629,10 @@ module.exports = {
     buildShipToAddress: buildShipToAddress,
     buildLineItems: buildLineItems,
     buildCompleteMandate: buildCompleteMandate,
+    buildTransientTokenResponseOptions: buildTransientTokenResponseOptions,
     buildOrderInformation: buildOrderInformation,
+    buildBillToFromCustomerAddress: buildBillToFromCustomerAddress,
+    buildCardHolderName: buildCardHolderName,
     buildCaptureContextDeviceInformation: buildCaptureContextDeviceInformation,
     buildConsumerAuthenticationInformation: buildConsumerAuthenticationInformation,
     buildDdcBackupDeviceInformation: buildDdcBackupDeviceInformation,
@@ -1533,6 +1647,9 @@ module.exports = {
     formatAmount: formatAmount,
     
     // TMS token saving
+    getExistingTmsCustomerId: getExistingTmsCustomerId,
+    buildTmsTokenTypes: buildTmsTokenTypes,
+    buildSerializedToken: buildSerializedToken,
     didUserRequestSaveCard: didUserRequestSaveCard,
     extractTokenInformation: extractTokenInformation,
     findCreditCardByInstrumentIdentifier: findCreditCardByInstrumentIdentifier,

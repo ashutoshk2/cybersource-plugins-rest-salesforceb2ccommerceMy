@@ -677,6 +677,10 @@ function generateUcCaptureContext(isMiniCart, selectedPaymentInstrumentId) {
             customerProfile && !empty(customerProfile.getEmail()) && !empty(customerProfile.getCustomerNo());
         var isTokenizationEnabled = configObject.tokenizationEnabled;
 
+        // When the account already owns a TMS customer token, reuse it so the saved card
+        // attaches to the existing customer instead of minting a new one (mirrors Non-UC).
+        var existingCustomerId = ucPaymentHelper.getExistingTmsCustomerId(customer);
+
         // Payment Configurations - Initialize with digital wallet configs
         // This is required for Google Pay, Click to Pay, etc. to appear
         requestObj.paymentConfigurations = {
@@ -695,8 +699,10 @@ function generateUcCaptureContext(isMiniCart, selectedPaymentInstrumentId) {
         // Add TMS_TOKEN config for saved cards (registered customers only)
         // If selectedPaymentInstrumentId is provided, use ONLY that card (no other payment methods)
         // If null/undefined, show all payment methods (for entering new card)
-        if (!isMiniCart && isRegisteredCustomer && isTokenizationEnabled && customerProfile && selectedPaymentInstrumentId) {
-            // Add TMS token types for saving cards
+        if (!isMiniCart && isRegisteredCustomer && customerProfile && selectedPaymentInstrumentId) {
+            // Pay-with-saved-card flow: present ONLY the selected token. Do NOT create or
+            // associate tokens here - that is for the save-card flow only. (Forcing tokenCreate
+            // during a saved-card payment breaks order placement.)
             completeMandate.tms = {
                 tokenTypes: ['customer', 'paymentInstrument', 'instrumentIdentifier']
             };
@@ -708,6 +714,7 @@ function generateUcCaptureContext(isMiniCart, selectedPaymentInstrumentId) {
 
             // Add TMS_TOKEN to paymentConfigurations
             requestObj.paymentConfigurations.TMS_TOKEN = tmsConfig;
+            requestObj.captureMandate.showAcceptedNetworkIcons = false;
 
             // IMPORTANT: For saved card flow, show ONLY the TMS_TOKEN payment method
             // This displays only "Pay now VISA •••• 1111" button - no other payment options
@@ -715,12 +722,21 @@ function generateUcCaptureContext(isMiniCart, selectedPaymentInstrumentId) {
 
             Logger.info('[payments.js] generateUcCaptureContext: Using ONLY selected payment instrument: {0}',
                 selectedPaymentInstrumentId);
-        } else if (!isMiniCart && isRegisteredCustomer && isTokenizationEnabled && customerProfile) {
-            // No card selected - enable TMS for saving NEW cards only (no pre-populated card)
-            // Keep all payment types (PANENTRY, GOOGLEPAY, etc.) for new card entry
+        } else if (!isMiniCart && isRegisteredCustomer && customerProfile) {
+            // No card selected - saving a NEW card during checkout. Enable token creation and,
+            // when the account already has a TMS customer, associate the new card with it so all
+            // of the account's cards live under one customer (same handling as the save-card flow).
+            // NOTE: UC currently appears to ignore this association (suspected gateway bug) and
+            // still mints a new customer; the request we send is correct per the capture-context spec.
             completeMandate.tms = {
-                tokenTypes: ['customer', 'paymentInstrument', 'instrumentIdentifier']
+                tokenCreate: true,
+                tokenTypes: ucPaymentHelper.buildTmsTokenTypes(existingCustomerId)
             };
+            if (existingCustomerId) {
+                requestObj.paymentConfigurations.TMS_TOKEN = requestObj.paymentConfigurations.TMS_TOKEN || {};
+                requestObj.paymentConfigurations.TMS_TOKEN.customer = { id: existingCustomerId };
+                Logger.info('[payments.js] generateUcCaptureContext: associating new-card save with existing TMS customer id {0}', existingCustomerId);
+            }
             Logger.info('[payments.js] generateUcCaptureContext: Fresh card entry mode - all payment methods available');
         }
 
@@ -733,10 +749,9 @@ function generateUcCaptureContext(isMiniCart, selectedPaymentInstrumentId) {
         }
 
         // Transient Token Response Options
-        // includeCardPrefix is driven by BM toggle VisaAcceptance_UnifiedCheckout_AllowedCardPrefix
-        requestObj.transientTokenResponseOptions = {
-            includeCardPrefix: !!configObject.unifiedCheckoutAllowedCardPrefix
-        };
+        // BIN return mode is driven by BM dropdown VisaAcceptance_UnifiedCheckout_AllowedCardPrefix
+        // (None -> includeCardPrefix:false, Six -> omitted, Eight -> includeCardPrefix:true).
+        requestObj.transientTokenResponseOptions = ucPaymentHelper.buildTransientTokenResponseOptions(configObject);
 
         // Order Information (with addresses and line items)
         requestObj.data = {
@@ -810,11 +825,14 @@ function generateUcCaptureContext(isMiniCart, selectedPaymentInstrumentId) {
 /**
  * Generate UC Capture Context for Save Card flow (My Account - Add Payment)
  * Uses zero-dollar AUTH to tokenize card without charging
- * UC widget collects billing address (billingType: 'FULL')
- * 
+ * UC widget collects billing address (billingType: 'FULL').
+ * When a billTo object is supplied, it prefills the widget's billing form.
+ *
+ * @param {Object} [billTo] - optional UC billTo object to prefill the billing form
+ *   (shape from ucPaymentHelper.buildBillToFromCustomerAddress); omitted when absent
  * @returns {Object} Capture context JWT or error object
  */
-function generateUcCaptureContextSaveCard() {
+function generateUcCaptureContextSaveCard(billTo) {
     var Logger = require('dw/system/Logger');
     var ucPaymentHelper = require('~/cartridge/scripts/helpers/ucPaymentHelper');
     var webhookActivationHelper = require('~/cartridge/scripts/helpers/webhookActivationHelper');
@@ -823,6 +841,9 @@ function generateUcCaptureContextSaveCard() {
         webhookActivationHelper.activateWebhooks();
         var configObject = require('../../configuration/index');
         var cybersourceRestApi = require('../../apiClient/index');
+
+        // Reuse the account's existing TMS customer token so this saved card attaches to it.
+        var existingCustomerId = ucPaymentHelper.getExistingTmsCustomerId(session.getCustomer());
 
         if (!cybersourceRestApi || !cybersourceRestApi.GenerateUnifiedCheckoutCaptureContextRequest) {
             Logger.error('[payments.js] generateUcCaptureContextSaveCard - ERROR: cybersourceRestApi module not available');
@@ -864,16 +885,30 @@ function generateUcCaptureContextSaveCard() {
             decisionManager: false,
             consumerAuthentication: 'NONE',
             tms: {
-                tokenTypes: ['customer', 'paymentInstrument', 'instrumentIdentifier']
+                // tokenCreate:true is required for UC to honor TMS_TOKEN.customer association below.
+                tokenCreate: true,
+                tokenTypes: ucPaymentHelper.buildTmsTokenTypes(existingCustomerId)
             }
         };
         requestObj.completeMandate = completeMandate;
 
+        // Associate the newly tokenized card with the EXISTING TMS customer so all of an
+        // account's cards live under one customer. Per the authoritative UC v1 capture-context
+        // schema (ucv1api.json): paymentConfigurations.TMS_TOKEN.customer.id = existing customer
+        // token, paired with completeMandate.tms.tokenCreate:true (set above) - UC then creates
+        // the new paymentInstrument/instrumentIdentifier under that customer. When the account has
+        // no customer yet (first card), this is skipped and completeMandate.tms mints the customer.
+        if (existingCustomerId) {
+            requestObj.paymentConfigurations = {
+                TMS_TOKEN: { customer: { id: existingCustomerId } }
+            };
+            Logger.info('[payments.js] generateUcCaptureContextSaveCard: associating save with existing TMS customer id {0}', existingCustomerId);
+        }
+
         // Transient Token Response Options
-        // includeCardPrefix is driven by BM toggle VisaAcceptance_UnifiedCheckout_AllowedCardPrefix
-        requestObj.transientTokenResponseOptions = {
-            includeCardPrefix: !!configObject.unifiedCheckoutAllowedCardPrefix
-        };
+        // BIN return mode is driven by BM dropdown VisaAcceptance_UnifiedCheckout_AllowedCardPrefix
+        // (None -> includeCardPrefix:false, Six -> omitted, Eight -> includeCardPrefix:true).
+        requestObj.transientTokenResponseOptions = ucPaymentHelper.buildTransientTokenResponseOptions(configObject);
 
         // Get site default currency for zero-dollar auth
         var Site = require('dw/system/Site');
@@ -890,11 +925,15 @@ function generateUcCaptureContextSaveCard() {
             clientReferenceInformation: {
                 code: session.sessionID ? session.sessionID.substring(0, 6).toUpperCase() : 'SAVECD',
                 partner: {
-                    developerId: '',
                     solutionId: configObject.solutionId || ''
                 }
             }
         };
+
+        // Prefill the UC billing form from the customer's default address (when available)
+        if (billTo) {
+            requestObj.data.orderInformation.billTo = billTo;
+        }
 
         // Device Information
         requestObj.data.deviceInformation = ucPaymentHelper.buildCaptureContextDeviceInformation();
