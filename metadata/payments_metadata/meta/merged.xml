@@ -362,7 +362,7 @@
             </attribute-definition>
             <attribute-definition attribute-id="VisaAcceptance_Secure_Integration_Method">
                 <display-name xml:lang="x-default">Secure Integration Method</display-name>
-                <description xml:lang="x-default">Selects the integration mode. Unified Checkout (default) renders the UC widget. None disables UC and uses SFRA's native credit-card form, with the cartridge handling authorization, Decision Manager, Payer Auth, and TMS in the back-end. The two modes are mutually exclusive — settings for the active mode are read from the corresponding BM group (Secure Integration Configuration for Unified Checkout, Salesforce Default Acceptance for None).</description>
+                <description xml:lang="x-default">Selects the integration mode: Unified Checkout or Salesforce default card form.</description>
                 <type>enum-of-string</type>
                 <mandatory-flag>false</mandatory-flag>
                 <externally-managed-flag>false</externally-managed-flag>
@@ -432,14 +432,14 @@
             </attribute-definition>
             <attribute-definition attribute-id="VisaAcceptance_UnifiedCheckout_ExpressPay">
                 <display-name xml:lang="x-default">Enable Express Pay</display-name>
-                <description xml:lang="x-default">When enabled, Unified Checkout is split into a Wallet instance (Apple Pay, Google Pay, Paze, PayPal, Venmo) and a Non-Wallet instance (cards, BNPL, bank transfers, eCheck, post-pay). See ISV Integration Guide section 11.</description>
+                <description xml:lang="x-default">Split Unified Checkout into separate wallet and non-wallet instances.</description>
                 <type>boolean</type>
                 <externally-managed-flag>false</externally-managed-flag>
                 <default-value>false</default-value>
             </attribute-definition>
             <attribute-definition attribute-id="VisaAcceptance_UnifiedCheckout_ClientVersion">
                 <display-name xml:lang="x-default">Checkout Version (optional)</display-name>
-                <description xml:lang="x-default">Value must be 1.x (e.g. 1, 1.0, 1.6). Optional — leave blank to always use the latest 1.x release. Only major-minor versions are accepted; patch versions like 1.0.0 are not allowed. Recommended: leave blank.</description>
+                <description xml:lang="x-default">Unified Checkout 1.x version. Leave blank for the latest release.</description>
                 <type>string</type>
                 <mandatory-flag>false</mandatory-flag>
                 <externally-managed-flag>false</externally-managed-flag>
@@ -448,7 +448,7 @@
             </attribute-definition>
             <attribute-definition attribute-id="VisaAcceptance_UnifiedCheckout_AllowedCardPrefix">
                 <display-name xml:lang="x-default">Card Prefix (BIN) in UC Response</display-name>
-                <description xml:lang="x-default">Controls the card prefix (BIN) returned in the Unified Checkout transient token response. None: no BIN (default). Six: six-digit BIN. Eight: eight-digit BIN.</description>
+                <description xml:lang="x-default">Card prefix (BIN) length returned in the UC token response.</description>
                 <type>enum-of-string</type>
                 <externally-managed-flag>false</externally-managed-flag>
                 <value-definitions>
