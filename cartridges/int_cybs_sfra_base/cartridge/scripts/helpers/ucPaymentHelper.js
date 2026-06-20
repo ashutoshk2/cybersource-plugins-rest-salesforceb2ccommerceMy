@@ -415,12 +415,16 @@ var BANK_TRANSFER_PAYMENT_SOLUTION_PREFIX = 'BankTransfer Payment';
  * 1. paymentInformation.bank present → BANK_TRANSFER (eCheck has no paymentSolution code)
  * 2. alternate payment method (getApmDescriptor) → ALT_PAYMENT_METHOD
  * 3. processingInformation.paymentSolution code → DW_GOOGLE_PAY / DW_APPLE_PAY / CLICK_TO_PAY
- * 4. Default → CREDIT_CARD
+ * 4. transient-token metadata.paymentType (non-card) → ALT_PAYMENT_METHOD
+ *    (covers APMs whose result JWT is bare, e.g. Tink Pay by Bank)
+ * 5. Default → CREDIT_CARD
  *
  * @param {Object} jwtPayload - Decoded completeMandate JWT payload
+ * @param {string} [transientToken] - Transient token JWT from the SDK; used as a
+ *        last-resort signal when the result JWT carries no payment-type information.
  * @returns {string} - Payment method ID
  */
-function detectPaymentMethod(jwtPayload) {
+function detectPaymentMethod(jwtPayload, transientToken) {
     var details = jwtPayload && jwtPayload.details;
     var paymentInfo = details && details.paymentInformation;
 
@@ -435,9 +439,11 @@ function detectPaymentMethod(jwtPayload) {
 
     // Alternate payment methods carry details.paymentInformation.paymentType.
     // Validated against real payloads: iDEAL {name:'ppro',type:'bank transfer',
-    // method:'IDLPP'}, Multibanco {method:'MLTBT'}, Tink {method:{name:'tinkPayByBank'},
-    // name:'bankTransfer'}, AFFIRM {name:'INVOICE',method:{name:'AFFIRM'}}. Cards and
-    // wallets never carry paymentType. This is checked BEFORE the card branch because
+    // method:'IDLPP'}, Multibanco {method:'MLTBT'}, AFFIRM {name:'INVOICE',
+    // method:{name:'AFFIRM'}}. (Tink Pay by Bank is the exception: its result JWT
+    // carries NO paymentInformation at all - it is caught by the transient-token
+    // fallback near the end of this function.) Cards and wallets never carry
+    // paymentType. This is checked BEFORE the card branch because
     // real APM payloads ALSO echo the scheme code into paymentInformation.card.type
     // (e.g. card.type 'IDLPP'/'MLTBT'), which would otherwise be misread as a card.
     var apm = getApmDescriptor(jwtPayload);
@@ -480,7 +486,21 @@ function detectPaymentMethod(jwtPayload) {
     if (paymentSolution) {
         return 'ALT_PAYMENT_METHOD';
     }
-    
+
+    // Bare result JWT: some alternate payment methods (e.g. Tink Pay by Bank) return a
+    // completeMandate result JWT with no paymentInformation/processingInformation at
+    // all - the only payment-type signal is in the transient token's
+    // metadata.paymentType (e.g. 'TINKPAYBYBANK'). Reaching here means no card data and
+    // no paymentSolution were present, so a non-card transient paymentType is an APM,
+    // not a card. Real cards carry card data or a 'CARD' paymentType and never reach
+    // this point, so the card flow is unaffected.
+    if (transientToken) {
+        var transientPayload = decodeJwtPayload(transientToken);
+        var transientType = transientPayload && transientPayload.metadata && transientPayload.metadata.paymentType;
+        if (transientType && transientType.toString().toUpperCase() !== 'CARD') {
+            return 'ALT_PAYMENT_METHOD';
+        }
+    }
 
     return 'CREDIT_CARD';
 }
@@ -498,11 +518,17 @@ function detectPaymentMethod(jwtPayload) {
  *    string starting with 'BankTransfer Payment' (e.g. 'BankTransfer Payment Ideal',
  *    'BankTransfer Payment Multibanco'), and the scheme code ('IDLPP'/'MLTBT') is read
  *    from paymentInformation.card.type. These are NOT card payments.
+ * 3. Bare result JWT (e.g. Tink Pay by Bank): the result JWT has no payment data, so
+ *    the scheme is taken from the transient token - metadata.paymentType (e.g.
+ *    'TINKPAYBYBANK') as the method, and content.paymentInformation.paymentType.name
+ *    as the descriptor name.
  *
  * @param {Object} jwtPayload - Decoded completeMandate JWT payload
+ * @param {string} [transientToken] - Transient token JWT from the SDK; used for Case 3
+ *        when the result JWT carries no payment-type information.
  * @returns {Object|null} - { name, method } both strings, or null for a card/wallet
  */
-function getApmDescriptor(jwtPayload) {
+function getApmDescriptor(jwtPayload, transientToken) {
     var details = jwtPayload && jwtPayload.details;
     var paymentInfo = details && details.paymentInformation;
 
@@ -528,6 +554,20 @@ function getApmDescriptor(jwtPayload) {
         return { name: paymentSolution, method: schemeCode };
     }
 
+    // Case 3: bare result JWT (e.g. Tink Pay by Bank). The scheme lives in the
+    // transient token: metadata.paymentType is the specific code (e.g. 'TINKPAYBYBANK'),
+    // content.paymentInformation.paymentType.name is the category label (e.g. 'INVOICE').
+    if (transientToken) {
+        var transientPayload = decodeJwtPayload(transientToken);
+        var transientMethod = (transientPayload && transientPayload.metadata && transientPayload.metadata.paymentType) || '';
+        if (transientMethod && transientMethod.toString().toUpperCase() !== 'CARD') {
+            var contentPaymentInfo = transientPayload.content && transientPayload.content.paymentInformation;
+            var contentPaymentType = contentPaymentInfo && contentPaymentInfo.paymentType && contentPaymentInfo.paymentType.name;
+            var transientName = (contentPaymentType && (contentPaymentType.value || contentPaymentType)) || '';
+            return { name: transientName || transientMethod, method: transientMethod };
+        }
+    }
+
     return null;
 }
 
@@ -542,7 +582,8 @@ function getApmDescriptor(jwtPayload) {
 function getApmDisplayName(apmDescriptor) {
     var displayNames = {
         IDLPP: 'iDEAL',
-        MLTBT: 'Multibanco'
+        MLTBT: 'Multibanco',
+        TINKPAYBYBANK: 'Pay by Bank'
     };
     if (!apmDescriptor) {
         return 'Alternate Payment';

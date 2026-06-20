@@ -198,8 +198,9 @@ server.post('PlaceOrderDirect', server.middleware.https, function (req, res, nex
         return next();
     }
 
-    // Detect payment type from completeMandate JWT
-    var detectedPaymentMethod = ucPaymentHelper.detectPaymentMethod(jwtPayload);
+    // Detect payment type from completeMandate JWT (transient token is the fallback
+    // signal for APMs whose result JWT is bare, e.g. Tink Pay by Bank).
+    var detectedPaymentMethod = ucPaymentHelper.detectPaymentMethod(jwtPayload, transientToken);
     var isDigitalWallet = detectedPaymentMethod === 'DW_GOOGLE_PAY' || detectedPaymentMethod === 'DW_APPLE_PAY';
 
     // Bank transfer Handle needs routing/account from getPaymentDetails. Reuse the
@@ -361,7 +362,7 @@ server.post('PlaceOrderDirect', server.middleware.https, function (req, res, nex
                     // Alternate payment methods (PPRO bank transfers, BNPL, PayPal,
                     // Venmo, Paze, ...) carry no card/bank-account data. Record the
                     // scheme descriptor instead of card details.
-                    var apmDescriptor = ucPaymentHelper.getApmDescriptor(jwtPayload) || { name: '', method: '' };
+                    var apmDescriptor = ucPaymentHelper.getApmDescriptor(jwtPayload, transientToken) || { name: '', method: '' };
                     // Customer-facing scheme name (e.g. 'iDEAL') for the confirmation /
                     // email payment section. paymentDetails is the reliably-imported
                     // PaymentTransaction attribute, so it must carry the readable label -
