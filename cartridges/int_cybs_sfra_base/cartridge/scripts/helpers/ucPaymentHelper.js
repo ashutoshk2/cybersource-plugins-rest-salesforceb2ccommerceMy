@@ -408,20 +408,61 @@ function decodeJwtPayload(token) {
 // are NOT card payments even though the scheme code is echoed into card.type.
 var BANK_TRANSFER_PAYMENT_SOLUTION_PREFIX = 'BankTransfer Payment';
 
+
+var UC_PAYMENT_TYPE_TO_METHOD = {
+    CHECK:         'BANK_TRANSFER',
+    PAYPAL:        'PAYPAL',
+    VENMO:         'VENMO',
+    IDEAL:         'ALT_PAYMENT_METHOD',
+    BANCONTACT:    'ALT_PAYMENT_METHOD',
+    MULTIBANCO:    'ALT_PAYMENT_METHOD',
+    MYBANK:        'ALT_PAYMENT_METHOD',
+    TINKPAYBYBANK: 'ALT_PAYMENT_METHOD',
+    AFTERPAY:      'ALT_PAYMENT_METHOD',
+    PRZELEWY24:    'ALT_PAYMENT_METHOD',
+    DRAGONPAY:     'ALT_PAYMENT_METHOD',
+    KONBINI:       'ALT_PAYMENT_METHOD'
+};
+
+/**
+ * Resolve the SFCC payment method for an owned UC payment type (alternate payment
+ * methods, eCheck, PayPal, Venmo) from the transient token's metadata.paymentType.
+ *
+ * Returns null - so the caller defers to the result-JWT detection - when there is no
+ * transient token, no paymentType, or the paymentType is not one we own (card / Google
+ * Pay / Apple Pay / Click to Pay / PAN entry / Paze: different owners, unchanged).
+ *
+ * @param {string} transientToken - Transient token JWT from the SDK
+ * @returns {string|null} - Logical payment method, or null to defer to result-JWT logic
+ */
+function resolveMethodFromTransient(transientToken) {
+    if (!transientToken) {
+        return null;
+    }
+    var payload = decodeJwtPayload(transientToken);
+    var paymentType = payload && payload.metadata && payload.metadata.paymentType;
+    if (!paymentType) {
+        return null;
+    }
+    return UC_PAYMENT_TYPE_TO_METHOD[paymentType.toString().toUpperCase()] || null;
+}
+
 /**
  * Detect payment method from completeMandate JWT.
  *
  * Order of checks:
  * 1. paymentInformation.bank present → BANK_TRANSFER (eCheck has no paymentSolution code)
- * 2. alternate payment method (getApmDescriptor) → ALT_PAYMENT_METHOD
- * 3. processingInformation.paymentSolution code → DW_GOOGLE_PAY / DW_APPLE_PAY / CLICK_TO_PAY
- * 4. transient-token metadata.paymentType (non-card) → ALT_PAYMENT_METHOD
- *    (covers APMs whose result JWT is bare, e.g. Tink Pay by Bank)
+ * 2. transient-token metadata.paymentType → owned methods (alternate payment methods,
+ *    eCheck, PayPal, Venmo) via UC_PAYMENT_TYPE_TO_METHOD. The single, uniform signal for
+ *    everything owned here; returns null (defer) for card / wallet / Click to Pay.
+ * 3. alternate payment method (getApmDescriptor, result JWT) → ALT_PAYMENT_METHOD —
+ *    fallback when the transient token is absent.
+ * 4. processingInformation.paymentSolution code → DW_GOOGLE_PAY / DW_APPLE_PAY / CLICK_TO_PAY
  * 5. Default → CREDIT_CARD
  *
  * @param {Object} jwtPayload - Decoded completeMandate JWT payload
- * @param {string} [transientToken] - Transient token JWT from the SDK; used as a
- *        last-resort signal when the result JWT carries no payment-type information.
+ * @param {string} [transientToken] - Transient token JWT from the SDK; the primary signal
+ *        for the alternate payment methods / eCheck / PayPal / Venmo.
  * @returns {string} - Payment method ID
  */
 function detectPaymentMethod(jwtPayload, transientToken) {
@@ -438,14 +479,19 @@ function detectPaymentMethod(jwtPayload, transientToken) {
     }
 
     // Alternate payment methods carry details.paymentInformation.paymentType.
+    var altMethod = resolveMethodFromTransient(transientToken);
+    if (altMethod) {
+        return altMethod;
+    }
+
+    // Fallback (transient token absent / unmapped): the result JWT's
+    // details.paymentInformation.paymentType. Owned APMs normally resolve from the
+    // transient token in step 2 above; this only runs when that signal is missing.
     // Validated against real payloads: iDEAL {name:'ppro',type:'bank transfer',
     // method:'IDLPP'}, Multibanco {method:'MLTBT'}, AFFIRM {name:'INVOICE',
-    // method:{name:'AFFIRM'}}. (Tink Pay by Bank is the exception: its result JWT
-    // carries NO paymentInformation at all - it is caught by the transient-token
-    // fallback near the end of this function.) Cards and wallets never carry
-    // paymentType. This is checked BEFORE the card branch because
-    // real APM payloads ALSO echo the scheme code into paymentInformation.card.type
-    // (e.g. card.type 'IDLPP'/'MLTBT'), which would otherwise be misread as a card.
+    // method:{name:'AFFIRM'}}. Cards and wallets never carry paymentType. This is
+    // checked BEFORE the card branch because real APM payloads ALSO echo the scheme code
+    // into paymentInformation.card.type (e.g. 'IDLPP'/'MLTBT'), misread as a card otherwise.
     var apm = getApmDescriptor(jwtPayload);
     if (apm) {
         // eWallet APMs with dedicated routes: PayPal, Venmo. paymentType.name is
@@ -482,24 +528,8 @@ function detectPaymentMethod(jwtPayload, transientToken) {
     }
 
     // Resilience fallback: an unknown non-card paymentSolution with no card -> APM
-    // (e.g. PayPal/Venmo/Paze whose exact paymentSolution codes are unconfirmed).
     if (paymentSolution) {
         return 'ALT_PAYMENT_METHOD';
-    }
-
-    // Bare result JWT: some alternate payment methods (e.g. Tink Pay by Bank) return a
-    // completeMandate result JWT with no paymentInformation/processingInformation at
-    // all - the only payment-type signal is in the transient token's
-    // metadata.paymentType (e.g. 'TINKPAYBYBANK'). Reaching here means no card data and
-    // no paymentSolution were present, so a non-card transient paymentType is an APM,
-    // not a card. Real cards carry card data or a 'CARD' paymentType and never reach
-    // this point, so the card flow is unaffected.
-    if (transientToken) {
-        var transientPayload = decodeJwtPayload(transientToken);
-        var transientType = transientPayload && transientPayload.metadata && transientPayload.metadata.paymentType;
-        if (transientType && transientType.toString().toUpperCase() !== 'CARD') {
-            return 'ALT_PAYMENT_METHOD';
-        }
     }
 
     return 'CREDIT_CARD';

@@ -382,7 +382,7 @@ server.use('paymentNotification', function (req, res, next) {
             var retryCount = parseInt(payload.retryNumber || (req.httpHeaders.containsKey('v-c-retry-count') ? req.httpHeaders.get('v-c-retry-count') : 0), 10) || 0;
 
             Transaction.wrap(function () {
-                var stagingObj = CustomObjectMgr.getCustomObject('CybersourceWebhookStaging', orderId) || CustomObjectMgr.createCustomObject('CybersourceWebhookStaging', orderId);
+                var stagingObj = CustomObjectMgr.getCustomObject('VisaAcceptanceWebhookStaging', orderId) || CustomObjectMgr.createCustomObject('VisaAcceptanceWebhookStaging', orderId);
 
                 if (retryCount >= 2) {
                     Logger.error('paymentNotification: CRITICAL - FINAL RETRY FAILED. Failed to create order ' + orderId + ' after all webhook retries. This is definitively an orphaned authorization.');
@@ -430,7 +430,7 @@ server.use('paymentNotification', function (req, res, next) {
                 Logger.info('paymentNotification: Promoted order ' + orderId + ' to CONFIRMED via webhook safety net (response handler must have missed it).');
             }
 
-            var stagingObj = CustomObjectMgr.getCustomObject('CybersourceWebhookStaging', orderId);
+            var stagingObj = CustomObjectMgr.getCustomObject('VisaAcceptanceWebhookStaging', orderId);
             if (stagingObj) CustomObjectMgr.remove(stagingObj);
         });
 

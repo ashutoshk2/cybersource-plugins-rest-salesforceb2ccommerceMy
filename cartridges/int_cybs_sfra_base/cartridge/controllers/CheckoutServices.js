@@ -427,7 +427,7 @@ server.post('PlaceOrderDirect', server.middleware.https, function (req, res, nex
                 );
 
                 logger.info('PlaceOrderDirect: Payment instrument updated - TransactionID: {0}, PaymentDetails: {1}, PaymentMethod: {2}',
-                    transactionId, paymentDetailsStr, paymentInstrument.paymentMethod);
+                    transactionId, paymentInstrument.paymentTransaction.custom.paymentDetails, paymentInstrument.paymentMethod);
             }
         });
     } catch (e) {
@@ -467,7 +467,7 @@ server.post('PlaceOrderDirect', server.middleware.https, function (req, res, nex
     // Check for staged webhook payloads that arrived before order creation
     try {
         var CustomObjectMgr = require('dw/object/CustomObjectMgr');
-        var stagingObj = CustomObjectMgr.getCustomObject('CybersourceWebhookStaging', order.orderNo);
+        var stagingObj = CustomObjectMgr.getCustomObject('VisaAcceptanceWebhookStaging', order.orderNo);
         if (stagingObj) {
             var stagedPayload = JSON.parse(stagingObj.custom.payload);
             var webhookDetails = (stagedPayload.payload && stagedPayload.payload.transactionResult) ? stagedPayload.payload.transactionResult.details : (stagedPayload.payload ? stagedPayload.payload[0].data : stagedPayload);

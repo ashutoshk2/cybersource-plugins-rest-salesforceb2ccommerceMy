@@ -259,41 +259,43 @@ function createSubscriptionWithRecovery(subConfig, webhookUrl, productId) {
     if (result.webhookId || result.error) return result;
     if (!conflict) { result.error = 'API_ERROR'; return result; }
 
-    // A subscription already exists remotely for this product+event but is untracked locally.
-    // retrieveWebhooks is product-scoped (it queries by productId), so every returned entry is
-    // already for this product; select the one(s) whose event types match what we are creating.
-    Logger.warn('createSubscriptionWithRecovery: ' + productId + ' already exists at CyberSource but is untracked locally; deleting the matching product+event subscription and recreating to restore a known security key.');
-    var targetEvents = (subConfig.products && subConfig.products[0] && subConfig.products[0].eventTypes) || [];
+    // A subscription already exists remotely for one of this config's products but is untracked
+    // locally. A config can bundle several products in one webhook (UC bundles unifiedCheckout +
+    // alternativePaymentMethods) and the conflict can be on ANY of them, so reconcile across ALL
+    // products - e.g. a pre-existing alternativePaymentMethods webhook must be found/deleted too,
+    // not just a unifiedCheckout one. Dedup ids since one webhook can cover several products.
+    Logger.warn('createSubscriptionWithRecovery: ' + productId + ' (or a bundled product) already exists at CyberSource but is untracked locally; deleting matching subscription(s) and recreating to restore a known security key.');
     var idsToDelete = [];
-    retrieveWebhooks(productId, function (listData, listErr) {
-        if (listErr) {
-            Logger.error('createSubscriptionWithRecovery: retrieveWebhooks failed for ' + productId + ': ' + JSON.stringify(listErr));
-            return;
-        }
-        if (!Array.isArray(listData) || !listData.length) return;
-        for (var i = 0; i < listData.length; i++) {
-            var wh = listData[i];
-            if (!wh || !wh.webhookId) continue; // eslint-disable-line no-continue
-            var whEvents = [];
-            if (Array.isArray(wh.products)) {
-                for (var p = 0; p < wh.products.length; p++) {
-                    if (wh.products[p] && wh.products[p].productId === productId && Array.isArray(wh.products[p].eventTypes)) {
-                        whEvents = wh.products[p].eventTypes;
-                        break;
+    function collectConflicts(prod) {
+        var targetEvents = prod.eventTypes || [];
+        retrieveWebhooks(prod.productId, function (listData, listErr) {
+            if (listErr) {
+                Logger.error('createSubscriptionWithRecovery: retrieveWebhooks failed for ' + prod.productId + ': ' + JSON.stringify(listErr));
+                return;
+            }
+            if (!Array.isArray(listData) || !listData.length) return;
+            for (var i = 0; i < listData.length; i++) {
+                var wh = listData[i];
+                if (!wh || !wh.webhookId || idsToDelete.indexOf(wh.webhookId) !== -1) continue; // eslint-disable-line no-continue
+                var whEvents = [];
+                if (Array.isArray(wh.products)) {
+                    for (var p = 0; p < wh.products.length; p++) {
+                        if (wh.products[p] && wh.products[p].productId === prod.productId && Array.isArray(wh.products[p].eventTypes)) {
+                            whEvents = wh.products[p].eventTypes;
+                            break;
+                        }
                     }
                 }
+                // Match on event types, or fall back to a lone product-scoped webhook whose
+                // per-product event types the response omitted.
+                if (eventTypesMatch(whEvents, targetEvents) || listData.length === 1) idsToDelete.push(wh.webhookId);
             }
-            if (eventTypesMatch(whEvents, targetEvents)) idsToDelete.push(wh.webhookId);
-        }
-        // The query is already product-scoped, so a single returned webhook is the conflict even
-        // when the response omits per-product event types — fall back to deleting that one.
-        if (!idsToDelete.length && listData.length === 1 && listData[0].webhookId) {
-            idsToDelete.push(listData[0].webhookId);
-        }
-    });
+        });
+    }
+    for (var pc = 0; pc < (subConfig.products || []).length; pc++) collectConflicts(subConfig.products[pc]);
 
     if (!idsToDelete.length) {
-        Logger.error('createSubscriptionWithRecovery: could not unambiguously locate the conflicting ' + productId + ' webhook to delete; manual cleanup required in EBC.');
+        Logger.error('createSubscriptionWithRecovery: could not unambiguously locate the conflicting webhook(s) for ' + productId + ' or its bundled products to delete; manual cleanup required in EBC.');
         result.error = 'ALREADY_EXISTS';
         return result;
     }
