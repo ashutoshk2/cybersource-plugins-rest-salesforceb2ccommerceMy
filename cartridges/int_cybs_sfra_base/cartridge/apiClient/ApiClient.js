@@ -267,12 +267,13 @@ _exports.prototype.getJWTToken = function (resource, method, merchantId, digest,
     if (configObject.metaKeyEnabled) {
         cybsLogger.info('Meta Key authentication is enabled. Using Meta Key credentials for merchant {0}.', merchantId);
         var missingFields = [];
-        if (!configObject.metaKeyP12Alias) { missingFields.push('metaKeyP12Alias'); }
+        if (!configObject.p12PrivateKeyAlias) { missingFields.push('p12PrivateKeyAlias'); }
         if (!configObject.metaKeyMerchantId) { missingFields.push('metaKeyMerchantId'); }
         if (missingFields.length > 0) {
             cybsLogger.error('Meta Key is enabled but required fields are missing: {0}. Check Business Manager site preferences.', missingFields.join(', '));
         }
-        p12PrivateKeyAlias = configObject.metaKeyP12Alias;
+        // Meta Key reuses the standard P12 signing alias; only the issuer MID differs.
+        p12PrivateKeyAlias = configObject.p12PrivateKeyAlias;
         expectedMid = configObject.metaKeyMerchantId;
     } else {
         p12PrivateKeyAlias = configObject.p12PrivateKeyAlias;

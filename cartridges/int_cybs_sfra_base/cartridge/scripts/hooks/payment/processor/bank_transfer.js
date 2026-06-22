@@ -66,9 +66,6 @@ function Handle(basket, paymentInformation) {
                 paymentInstrument.setBankAccountHolder(bank.accountHolder);
             }
 
-            if (paymentInformation && paymentInformation.transientToken) {
-                paymentInstrument.custom.UCToken = paymentInformation.transientToken;
-            }
         });
 
         return {

@@ -64,7 +64,6 @@ function handleOrderPlacement(params) {
 
     if (fraudDetectionStatus.status === 'fail') {
         Transaction.wrap(function () {
-            CardHelper.cleanupPaymentInstrumentCustomAttributes(paymentInstrument);
             OrderMgr.failOrder(order, true);
         });
 
@@ -139,7 +138,6 @@ server.post('PayerAuthSetup', server.middleware.https, function (req, res, next)
     var billingForm = server.forms.getForm('billing');
     var card = {
         token: paymentInstrument.creditCardToken,
-        ucJwtToken: paymentInstrument.custom.UCToken,
         securityCode: billingForm.creditCardFields.securityCode.value
     };
 
@@ -165,7 +163,6 @@ server.post('PayerAuthSetup', server.middleware.https, function (req, res, next)
     } catch (e) {
         // Fail the order and clean up
         Transaction.wrap(function () {
-            CardHelper.cleanupPaymentInstrumentCustomAttributes(paymentInstrument);
             OrderMgr.failOrder(order, true);
         });
 
@@ -221,7 +218,6 @@ server.post('PayerAuthEnroll', server.middleware.https, function (req, res, next
         var currencyCode = order.currencyCode;
         var card = {
             token: paymentInstrument.creditCardToken,
-            ucJwtToken: paymentInstrument.custom.UCToken,
             securityCode: billingForm.creditCardFields.securityCode.value
         };
     }
@@ -283,7 +279,6 @@ server.post('PayerAuthEnroll', server.middleware.https, function (req, res, next
             authReversal.httpAuthReversal(enrollResponse.id, enrollResponse.clientReferenceInformation.code, totalAmount, currencyCode);
             redirect = true;
             Transaction.wrap(function () {
-                CardHelper.cleanupPaymentInstrumentCustomAttributes(paymentInstrument);
                 OrderMgr.failOrder(order);
             });
         }
@@ -300,8 +295,6 @@ server.post('PayerAuthEnroll', server.middleware.https, function (req, res, next
         else {
             redirect = true;
             Transaction.wrap(function () {
-                // Clean up UCToken on enrollment failure
-                CardHelper.cleanupPaymentInstrumentCustomAttributes(paymentInstrument);
                 OrderMgr.failOrder(order);
             });
         }
@@ -322,8 +315,6 @@ server.post('PayerAuthEnroll', server.middleware.https, function (req, res, next
             });
         } else {
             Transaction.wrap(function () {
-                // Clean up UCToken on exception
-                CardHelper.cleanupPaymentInstrumentCustomAttributes(paymentInstrument);
                 OrderMgr.failOrder(order);
             });
             redirect = true;
@@ -369,7 +360,6 @@ server.post('PayerAuthValidation', server.middleware.https, function (req, res, 
         var currencyCode = order.currencyCode;
         var card = {
             token: paymentInstrument.creditCardToken,
-            ucJwtToken: paymentInstrument.custom.UCToken,
             securityCode: billingForm.creditCardFields.securityCode.value
         };
     }
@@ -405,7 +395,6 @@ server.post('PayerAuthValidation', server.middleware.https, function (req, res, 
         authReversal.httpAuthReversal(authenticateResponse.id, authenticateResponse.clientReferenceInformation.code, totalAmount, currencyCode);
         redirect = true;
         Transaction.wrap(function () {
-            CardHelper.cleanupPaymentInstrumentCustomAttributes(paymentInstrument);
             OrderMgr.failOrder(order);
         });
     }
@@ -424,8 +413,6 @@ server.post('PayerAuthValidation', server.middleware.https, function (req, res, 
     else {
         redirect = true;
         Transaction.wrap(function () {
-            // Clean up UCToken before failing order (placeOrder won't be called)
-            CardHelper.cleanupPaymentInstrumentCustomAttributes(paymentInstrument);
             // Fail the order
             OrderMgr.failOrder(order);
         });

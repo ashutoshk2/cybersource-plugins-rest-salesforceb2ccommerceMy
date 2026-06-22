@@ -40,9 +40,6 @@ function Handle(basket, paymentInformation) {
                 basket.totalGrossPrice
             );
 
-            if (paymentInformation && paymentInformation.transientToken) {
-                paymentInstrument.custom.UCToken = paymentInformation.transientToken;
-            }
         });
 
         return {

@@ -168,7 +168,7 @@ server.post('PlaceOrderDirect', server.middleware.https, function (req, res, nex
             logger.error('PlaceOrderDirect: Error getting payment details from transient token: {0}', e.message || e);
         }
     }
-        // Validate order
+    // Validate order
     var validationOrderStatus = hooksHelper('app.validate.order', 'validateOrder', currentBasket, require('*/cartridge/scripts/hooks/validateOrder').validateOrder);
     if (validationOrderStatus.error) {
         secureResponseHelper.secureJsonResponse(res, {
@@ -381,25 +381,14 @@ server.post('PlaceOrderDirect', server.middleware.https, function (req, res, nex
                     paymentInstrument.paymentTransaction.custom.paymentDetails = paymentDetailsStr;
                 }
 
-
-                // Store transient token for potential refunds/captures
-                if (transientToken) {
-                    paymentInstrument.custom.UCToken = transientToken;
-                }
-
+                // Store optional processor info (if custom attributes exist)
                 // Store optional processor info (if custom attributes exist)
                 if (processorInfo) {
-                    ucPaymentHelper.setTransactionCustomAttribute(
-                        paymentInstrument.paymentTransaction, 'approvalCode', processorInfo.approvalCode
-                    );
-                    ucPaymentHelper.setTransactionCustomAttribute(
-                        paymentInstrument.paymentTransaction, 'networkTransactionId', processorInfo.networkTransactionId
-                    );
+                    paymentInstrument.paymentTransaction.custom.approvalCode = processorInfo.approvalCode;
+                    paymentInstrument.paymentTransaction.custom.networkTransactionId = processorInfo.networkTransactionId;
                 }
                 if (jwtPayload.details && jwtPayload.details.reconciliationId) {
-                    ucPaymentHelper.setTransactionCustomAttribute(
-                        paymentInstrument.paymentTransaction, 'reconciliationId', jwtPayload.details.reconciliationId
-                    );
+                    paymentInstrument.paymentTransaction.custom.reconciliationId = jwtPayload.details.reconciliationId;
                 }
 
                 // Reconciliation fields per ISV Integration Guide Section 13.
@@ -407,23 +396,14 @@ server.post('PlaceOrderDirect', server.middleware.https, function (req, res, nex
                     && jwtPayload.details.clientReferenceInformation
                     && jwtPayload.details.clientReferenceInformation.code;
                 if (clientRefCode) {
-                    ucPaymentHelper.setTransactionCustomAttribute(
-                        paymentInstrument.paymentTransaction, 'clientReferenceCode', clientRefCode
-                    );
+                    paymentInstrument.paymentTransaction.custom.clientReferenceCode = clientRefCode;
                 }
                 if (processorInfo && processorInfo.transactionId) {
-                    ucPaymentHelper.setTransactionCustomAttribute(
-                        paymentInstrument.paymentTransaction, 'processorTransactionId', processorInfo.transactionId
-                    );
+                    paymentInstrument.paymentTransaction.custom.processorTransactionId = processorInfo.transactionId;
                 }
-                ucPaymentHelper.setTransactionCustomAttribute(
-                    paymentInstrument.paymentTransaction, 'authMethod',
-                    (configObject.authenticationType || '').toUpperCase()
-                );
-                ucPaymentHelper.setTransactionCustomAttribute(
-                    paymentInstrument.paymentTransaction, 'resultTimestamp',
-                    new Date().toISOString()
-                );
+                paymentInstrument.paymentTransaction.custom.authMethod = (configObject.authenticationType || '').toUpperCase();
+                paymentInstrument.paymentTransaction.resultTimestamp = new Date().toISOString();
+
 
                 logger.info('PlaceOrderDirect: Payment instrument updated - TransactionID: {0}, PaymentDetails: {1}, PaymentMethod: {2}',
                     transactionId, paymentDetailsStr, paymentInstrument.paymentMethod);
@@ -475,10 +455,10 @@ server.post('PlaceOrderDirect', server.middleware.https, function (req, res, nex
                 if (webhookDetails.status === 'COMPLETED' || webhookDetails.status === 'SETTLED' || webhookDetails.status === 'AUTHORIZED') {
                     order.setConfirmationStatus(order.CONFIRMATION_STATUS_CONFIRMED);
 
-                // PENDING / SETTLE_INITIATED cover asynchronous alternate payment
-                // methods that have not fully settled yet (e.g. iDEAL/Multibanco
-                // PENDING, Tink SETTLE_INITIATED); treated the same as
-                // AUTHORIZED_PENDING_REVIEW.
+                    // PENDING / SETTLE_INITIATED cover asynchronous alternate payment
+                    // methods that have not fully settled yet (e.g. iDEAL/Multibanco
+                    // PENDING, Tink SETTLE_INITIATED); treated the same as
+                    // AUTHORIZED_PENDING_REVIEW.
                 } else if (webhookDetails.status === 'AUTHORIZED_PENDING_REVIEW' || webhookDetails.status === 'PENDING' || webhookDetails.status === 'SETTLE_INITIATED') {
 
                     order.setConfirmationStatus(order.CONFIRMATION_STATUS_NOTCONFIRMED);

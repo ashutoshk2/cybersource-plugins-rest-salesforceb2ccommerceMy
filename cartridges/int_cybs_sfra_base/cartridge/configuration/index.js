@@ -55,7 +55,6 @@ function getConfig(config) {
 
         // Meta Key
         metaKeyEnabled: config.metaKeyEnabled || customPreferences.Core.Preferences.MetaKeyEnabled.getValue(),
-        metaKeyP12Alias: config.metaKeyP12Alias || customPreferences.Core.Preferences.MetaKeyP12Alias.getValue(),
         metaKeyMerchantId: config.metaKeyMerchantId || customPreferences.Core.Preferences.MetaKeyMerchantId.getValue(),
 
 

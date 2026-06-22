@@ -9,15 +9,24 @@ var Transaction = require('dw/system/Transaction');
  * @param {Object} order Order detail
  * @param {Object} responseObject response object
  */
-function UpdatePaymentTransactionCardCapture(paymentInstrument, order, responseObject) {
-    Transaction.wrap(function () {
-        if (responseObject.status === 'PENDING') {
-            // eslint-disable-next-line no-param-reassign
-            paymentInstrument.paymentTransaction.custom.AmountPaid = Number(responseObject.orderInformation.amountDetails.totalAmount.toString());
-            // eslint-disable-next-line no-param-reassign
-            order.paymentStatus = 2;
-        }
-    });
+function UpdatePaymentTransactionCardCapture(paymentInstrument, order, responseObject, capturedAmount, currency) {
+    if (!responseObject || responseObject.status !== 'PENDING') {
+        return;
+    }
+    // Delegate to the shared capture core so the BM capture form and the DM/FM webhook flow stay
+    // synchronized: accumulate AmountPaid (never overwrite), track remaining-to-capture, record the
+    // capture transaction id (idempotent), set Captured/Partially Captured + paymentStatus, and note.
+    // Prefer the KNOWN captured amount/currency passed by the caller (what was requested); fall back
+    // to the response only if not provided, since the capture response may omit amountDetails.
+    var amountDetails = responseObject.orderInformation && responseObject.orderInformation.amountDetails;
+    var amount = (capturedAmount !== undefined && capturedAmount !== null && capturedAmount !== '')
+        ? Number(capturedAmount.toString())
+        : ((amountDetails && amountDetails.totalAmount !== undefined && amountDetails.totalAmount !== null)
+            ? Number(amountDetails.totalAmount.toString())
+            : 0);
+    var captureCurrency = currency || (amountDetails ? amountDetails.currency : null);
+    var statusHelper = require('*/cartridge/scripts/helpers/webhookOrderStatusHelper');
+    statusHelper.applyCapturedAmount(order, paymentInstrument.paymentTransaction, responseObject.id, amount, captureCurrency);
 }
 /**
  *

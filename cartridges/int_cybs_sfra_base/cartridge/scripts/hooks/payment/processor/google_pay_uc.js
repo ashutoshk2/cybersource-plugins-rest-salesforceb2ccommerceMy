@@ -36,9 +36,6 @@ function Handle(basket, paymentInformation) {
                 paymentInstrument.setCreditCardHolder(basket.billingAddress.fullName);
             }
 
-            if (paymentInformation && paymentInformation.transientToken) {
-                paymentInstrument.custom.UCToken = paymentInformation.transientToken;
-            }
 
             var cardDetails = ucPaymentHelper.extractCardDetails(
                 paymentInformation && paymentInformation.jwtPayload,

@@ -54,7 +54,10 @@ function httpCapturePayment(requestId, referenceInformationCode, total, currency
                 var CardHelper = require('~/cartridge/scripts/helpers/CardHelper');
                 var paymentInstrument = CardHelper.getNonGCPaymemtInstument(order);
                 var PaymentInstrumentUtils = require('~/cartridge/scripts/util/paymentInstrumentUtils');
-                PaymentInstrumentUtils.UpdatePaymentTransactionCardCapture(paymentInstrument, order, result);
+                // Pass the KNOWN captured amount/currency (what we requested) so the update never
+                // depends on the capture response echoing orderInformation.amountDetails.totalAmount,
+                // which CyberSource does not reliably populate.
+                PaymentInstrumentUtils.UpdatePaymentTransactionCardCapture(paymentInstrument, order, result, total, currency);
             } catch (e) {
                 Logger.error('[capture.js] Error in httpCapturePayment request ( {0} )', e.message);
                 return { error: true, errorMsg: e.message };
