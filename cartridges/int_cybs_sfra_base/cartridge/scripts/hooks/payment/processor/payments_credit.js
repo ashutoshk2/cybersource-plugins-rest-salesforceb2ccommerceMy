@@ -162,9 +162,6 @@ function handleUCCreditCard(basket, paymentInformation) {
                 paymentInstrument.setCreditCardHolder(basket.billingAddress.fullName);
             }
 
-            if (paymentInformation.transientToken) {
-                paymentInstrument.custom.UCToken = paymentInformation.transientToken;
-            }
 
             var cardDetails = ucPaymentHelper.extractCardDetails(
                 paymentInformation.jwtPayload,
@@ -249,9 +246,6 @@ function Handle(basket, paymentInformation) {
             paymentInstrument.setCreditCardExpirationMonth(expirationMonth);
             paymentInstrument.setCreditCardExpirationYear(expirationYear);
 
-            if (configObject.unifiedCheckoutEnabled) {
-                paymentInstrument.custom.UCToken = paymentForm.creditCardFields.ucpaymenttoken.value;
-            }
             // Handle tokenization for registered users who choose to save card
 
             if (basket.customer.registered && configObject.tokenizationEnabled && paymentForm.creditCardFields.saveCard.checked) {
@@ -306,7 +300,6 @@ function Authorize(orderNumber, paymentInstrument, paymentProcessor) {
     var mapper = require('~/cartridge/scripts/util/mapper.js');
     var card = {
         token: paymentInstrument.creditCardToken,
-        ucJwtToken: paymentInstrument.custom.UCToken,
         creditcardnumber: paymentInstrument.creditCardNumber,
         securityCode: paymentForm.creditCardFields.securityCode.htmlValue,
         expirationMonth: paymentInstrument.creditCardExpirationMonth,
@@ -354,7 +347,6 @@ function Authorize(orderNumber, paymentInstrument, paymentProcessor) {
             paymentInstrument.paymentTransaction.setPaymentProcessor(paymentProcessor);
             paymentInstrument.paymentTransaction.custom.paymentDetails = paymentInstrument.creditCardNumber + ', ' + paymentInstrument.creditCardType;
 
-            delete paymentInstrument.custom.UCToken;
         });
     } catch (e) {
         error = true;
@@ -378,7 +370,6 @@ function Authorize(orderNumber, paymentInstrument, paymentProcessor) {
                             paymentInstrument.paymentTransaction.setPaymentProcessor(paymentProcessor);
                             paymentInstrument.paymentTransaction.custom.paymentDetails = paymentInstrument.creditCardNumber + ', ' + paymentInstrument.creditCardType;
 
-                            paymentInstrument.custom.UCToken = null;
                         });
                     }
                     errorData.message = cybersourceResponseData.errorInformation.message; // Store original for debugging

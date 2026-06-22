@@ -71,9 +71,15 @@
                 <externally-managed-flag>false</externally-managed-flag>
                 <min-length>0</min-length>
             </attribute-definition>
-            <attribute-definition attribute-id="capturedWebhookTxnIds">
-                <display-name xml:lang="x-default">Captured Webhook Transaction IDs</display-name>
-                <type>set-of-string</type>
+            <attribute-definition attribute-id="captureTransactionIds">
+                <display-name xml:lang="x-default">Capture Transaction IDs</display-name>
+                <type>text</type>
+                <mandatory-flag>false</mandatory-flag>
+                <externally-managed-flag>false</externally-managed-flag>
+            </attribute-definition>
+            <attribute-definition attribute-id="remainingToCapture">
+                <display-name xml:lang="x-default">Remaining To Capture</display-name>
+                <type>double</type>
                 <mandatory-flag>false</mandatory-flag>
                 <externally-managed-flag>false</externally-managed-flag>
             </attribute-definition>
@@ -102,6 +108,8 @@
             <attribute-group group-id="Custom">
                 <display-name xml:lang="x-default">Custom</display-name>
                 <attribute attribute-id="AmountPaid"/>
+                <attribute attribute-id="remainingToCapture"/>
+                <attribute attribute-id="captureTransactionIds"/>
                 <attribute attribute-id="paymentDetails"/>
                 <!-- START GENAI -->
                 <attribute attribute-id="reconciliationId"/>
@@ -160,12 +168,6 @@
             <attribute-definition attribute-id="fluidData">
                 <display-name xml:lang="x-default">fluidData</display-name>
                 <type>text</type>
-                <mandatory-flag>false</mandatory-flag>
-                <externally-managed-flag>false</externally-managed-flag>
-            </attribute-definition>
-            <attribute-definition attribute-id="UCToken">
-                <display-name xml:lang="x-default">UCToken</display-name>
-                <type>string</type>
                 <mandatory-flag>false</mandatory-flag>
                 <externally-managed-flag>false</externally-managed-flag>
             </attribute-definition>

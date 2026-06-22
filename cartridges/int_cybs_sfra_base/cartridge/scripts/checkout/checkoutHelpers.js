@@ -144,16 +144,7 @@ function savePaymentInstrumentToWallet(billingData, currentBasket, customer) {
  */
 function placeOrder(order, fraudDetectionStatus) {
     var result = { error: false };
-    Transaction.wrap(function () {
-        // Clean up UCToken from all payment instruments
-        var paymentInstruments = order.getPaymentInstruments();
-        if (paymentInstruments && paymentInstruments.length > 0) {
-            for (var i = 0; i < paymentInstruments.length; i++) {
-                var paymentInstrument = paymentInstruments[i];
-                CardHelper.cleanupPaymentInstrumentCustomAttributes(paymentInstrument);
-            }
-        }
-    });
+
     try {
         Transaction.begin();
         if (fraudDetectionStatus.status === 'review') {

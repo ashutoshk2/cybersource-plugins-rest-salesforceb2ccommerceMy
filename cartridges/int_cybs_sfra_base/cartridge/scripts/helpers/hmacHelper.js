@@ -43,19 +43,13 @@ function verifyHMAC(data, signature) {
 }
 
 /**
- * Choose the P12 alias based on Meta Key mode.
+ * Resolve the P12 alias used for signing (shared by standard and Meta Key flows).
  * @returns {string} - P12 alias
  */
 function getP12AliasForHMAC() {
     var configObject = require('../../configuration/index');
 
-    if (configObject.metaKeyEnabled) {
-        if (!configObject.metaKeyP12Alias) {
-            throw new Error('Meta Key is enabled but metaKeyP12Alias is not configured. Please set VisaAcceptance_MetaKeyP12Alias in site preferences.');
-        }
-        return configObject.metaKeyP12Alias;
-    }
-
+    // Both standard and Meta Key flows sign with the same P12 alias.
     if (!configObject.p12PrivateKeyAlias) {
         throw new Error('P12 private key alias is not configured. Please set VisaAcceptance_P12PrivateKeyAlias in site preferences.');
     }

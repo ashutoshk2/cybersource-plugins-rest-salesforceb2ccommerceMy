@@ -108,17 +108,6 @@ module.exports = {
                 }
             },
             /** @type {CustomPreference} */
-            MetaKeyP12Alias: {
-                id: 'VisaAcceptance_MetaKeyP12Alias',
-                display_name: 'Meta Key P12 File Alias',
-                description: 'Alias of the Meta Key P12 private key imported in BM Private Keys and Certificates. Used for JWT RS256 signing when Meta Key is enabled.',
-                type: Types.string,
-                default: undefined,
-                flags: {
-                    mandatory: false
-                }
-            },
-            /** @type {CustomPreference} */
             MetaKeyMerchantId: {
                 id: 'VisaAcceptance_MetaKeyMerchantId',
                 display_name: 'Meta Key Portfolio Merchant ID',

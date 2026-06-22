@@ -40,10 +40,6 @@ function Handle(basket, paymentInformation) {
                 PAYPAL,
                 basket.totalGrossPrice
             );
-
-            if (paymentInformation && paymentInformation.transientToken) {
-                paymentInstrument.custom.UCToken = paymentInformation.transientToken;
-            }
         });
 
         return {

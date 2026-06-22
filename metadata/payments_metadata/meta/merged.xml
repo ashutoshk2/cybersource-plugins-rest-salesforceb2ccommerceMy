@@ -64,12 +64,6 @@
                 <externally-managed-flag>false</externally-managed-flag>
                 <default-value>false</default-value>
             </attribute-definition>
-            <attribute-definition attribute-id="VisaAcceptance_MetaKeyP12Alias">
-                <display-name xml:lang="x-default">Meta Key P12 File Alias</display-name>
-                <description xml:lang="x-default">Alias of the Meta Key P12 private key imported in BM Private Keys and Certificates. Used for JWT RS256 signing when Meta Key is enabled.</description>
-                <type>string</type>
-                <externally-managed-flag>false</externally-managed-flag>
-            </attribute-definition>
             <attribute-definition attribute-id="VisaAcceptance_MetaKeyMerchantId">
                 <display-name xml:lang="x-default">Meta Key Portfolio Merchant ID</display-name>
                 <description xml:lang="x-default">The portfolio/account merchant ID that owns the Meta Key P12 certificate. Used as the iss (issuer) claim in JWT v2. The transacting MID remains the child merchant configured in VisaAcceptance_MerchantID.</description>
@@ -478,7 +472,6 @@
                 <attribute attribute-id="VisaAcceptance_EnableTestEndpoints"/>
                 <attribute attribute-id="VisaAcceptance_P12PrivateKeyAlias"/>
                 <attribute attribute-id="VisaAcceptance_MetaKeyEnabled"/>
-                <attribute attribute-id="VisaAcceptance_MetaKeyP12Alias"/>
                 <attribute attribute-id="VisaAcceptance_MetaKeyMerchantId"/>
             </attribute-group>
             <attribute-group group-id="VisaAcceptance_DeliveryAddressVerification">
