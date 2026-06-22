@@ -72,4 +72,13 @@
             <production/>
         </preferences>
     </payment-processor>
+    <payment-processor processor-id="PAYMENTS_PAZE">
+        <description>Payment processor for Paze (card-backed digital wallet)</description>
+        <preferences>
+            <all-instances/>
+            <development/>
+            <staging/>
+            <production/>
+        </preferences>
+    </payment-processor>
 </payment-processors>

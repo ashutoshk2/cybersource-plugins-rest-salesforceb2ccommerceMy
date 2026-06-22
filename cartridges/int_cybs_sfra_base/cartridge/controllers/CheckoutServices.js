@@ -201,7 +201,7 @@ server.post('PlaceOrderDirect', server.middleware.https, function (req, res, nex
     // Detect payment type from completeMandate JWT (transient token is the fallback
     // signal for APMs whose result JWT is bare, e.g. Tink Pay by Bank).
     var detectedPaymentMethod = ucPaymentHelper.detectPaymentMethod(jwtPayload, transientToken);
-    var isDigitalWallet = detectedPaymentMethod === 'DW_GOOGLE_PAY' || detectedPaymentMethod === 'DW_APPLE_PAY';
+    var isDigitalWallet = detectedPaymentMethod === 'DW_GOOGLE_PAY' || detectedPaymentMethod === 'DW_APPLE_PAY' || detectedPaymentMethod === 'DW_PAZE';;
 
     // Bank transfer Handle needs routing/account from getPaymentDetails. Reuse the
     // response fetched above for addresses; fetch here only if not already done.

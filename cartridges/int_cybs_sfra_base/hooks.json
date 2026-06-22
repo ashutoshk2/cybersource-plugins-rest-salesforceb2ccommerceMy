@@ -87,6 +87,10 @@
         {
             "name": "app.payment.processor.payments_venmo",
             "script": "./cartridge/scripts/hooks/payment/processor/payments_venmo"
+        },
+        {
+            "name": "app.payment.processor.payments_paze",
+            "script": "./cartridge/scripts/hooks/payment/processor/payments_paze"
         }
 
     ]

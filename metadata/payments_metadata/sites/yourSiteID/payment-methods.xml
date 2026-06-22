@@ -42,6 +42,12 @@
         <enabled-flag>true</enabled-flag>
         <processor-id>PAYMENTS_GOOGLEPAY</processor-id>
     </payment-method>
+    <payment-method method-id="DW_PAZE">
+        <name xml:lang="x-default">Paze</name>
+        <enabled-flag>true</enabled-flag>
+        <processor-id>PAYMENTS_PAZE</processor-id>
+    </payment-method>
+ 
     <payment-method method-id="ALT_PAYMENT_METHOD">
         <name xml:lang="x-default">Alternate Payment Method</name>
         <enabled-flag>true</enabled-flag>

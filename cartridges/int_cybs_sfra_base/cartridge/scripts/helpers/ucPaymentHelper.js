@@ -167,7 +167,7 @@ function populateBasketAddressesFromPaymentDetails(basket, paymentDetails, Trans
         if (orderInfo.shipTo && !shipment.shippingAddress) {
             var shippingAddress = shipment.createShippingAddress();
             var shipTo = orderInfo.shipTo;
-            
+
             if (shipTo.firstName) shippingAddress.setFirstName(shipTo.firstName);
             if (shipTo.lastName) shippingAddress.setLastName(shipTo.lastName);
             if (shipTo.address1) shippingAddress.setAddress1(shipTo.address1);
@@ -177,7 +177,7 @@ function populateBasketAddressesFromPaymentDetails(basket, paymentDetails, Trans
             if (shipTo.country) shippingAddress.setCountryCode(shipTo.country);
             if (shipTo.administrativeArea) shippingAddress.setStateCode(shipTo.administrativeArea);
             if (shipTo.phoneNumber) shippingAddress.setPhone(shipTo.phoneNumber);
-            
+
             logger.info('populateBasketAddressesFromPaymentDetails: Shipping address populated');
         }
 
@@ -185,7 +185,7 @@ function populateBasketAddressesFromPaymentDetails(basket, paymentDetails, Trans
         if (orderInfo.billTo && !basket.billingAddress) {
             var billingAddress = basket.createBillingAddress();
             var billTo = orderInfo.billTo;
-            
+
             if (billTo.firstName) billingAddress.setFirstName(billTo.firstName);
             if (billTo.lastName) billingAddress.setLastName(billTo.lastName);
             if (billTo.address1) billingAddress.setAddress1(billTo.address1);
@@ -195,11 +195,11 @@ function populateBasketAddressesFromPaymentDetails(basket, paymentDetails, Trans
             if (billTo.country) billingAddress.setCountryCode(billTo.country);
             if (billTo.administrativeArea) billingAddress.setStateCode(billTo.administrativeArea);
             if (billTo.phoneNumber) billingAddress.setPhone(billTo.phoneNumber);
-            
+
             if (billTo.email && !basket.customerEmail) {
                 basket.setCustomerEmail(billTo.email);
             }
-            
+
             logger.info('populateBasketAddressesFromPaymentDetails: Billing address populated');
         }
 
@@ -326,7 +326,7 @@ function applyAmountDetailsFromPaymentDetails(basket, paymentDetails, Transactio
  */
 function mapCardType(cardTypeCode) {
     if (!cardTypeCode) return '';
-    
+
     var cardTypeMap = {
         '001': 'Visa',
         '002': 'Master Card',
@@ -346,11 +346,11 @@ function mapCardType(cardTypeCode) {
         '058': 'Carnet',
         '081': 'Jaywan'
     };
-    
+
     if (cardTypeMap[cardTypeCode]) {
         return cardTypeMap[cardTypeCode];
     }
-    
+
     var upperCode = cardTypeCode.toString().toUpperCase();
     var nameMap = {
         'VISA': 'Visa',
@@ -365,7 +365,7 @@ function mapCardType(cardTypeCode) {
         'MAESTRO': 'Maestro',
         'UNIONPAY': 'China UnionPay'
     };
-    
+
     return nameMap[upperCode] || cardTypeCode;
 }
 
@@ -410,18 +410,24 @@ var BANK_TRANSFER_PAYMENT_SOLUTION_PREFIX = 'BankTransfer Payment';
 
 
 var UC_PAYMENT_TYPE_TO_METHOD = {
-    CHECK:         'BANK_TRANSFER',
-    PAYPAL:        'PAYPAL',
-    VENMO:         'VENMO',
-    IDEAL:         'ALT_PAYMENT_METHOD',
-    BANCONTACT:    'ALT_PAYMENT_METHOD',
-    MULTIBANCO:    'ALT_PAYMENT_METHOD',
-    MYBANK:        'ALT_PAYMENT_METHOD',
+    PANENTRY: 'CREDIT_CARD',
+    CHECK: 'BANK_TRANSFER',
+    PAYPAL: 'PAYPAL',
+    VENMO: 'VENMO',
+    PAZE: 'DW_PAZE',
+    IDEAL: 'ALT_PAYMENT_METHOD',
+    BANCONTACT: 'ALT_PAYMENT_METHOD',
+    MULTIBANCO: 'ALT_PAYMENT_METHOD',
+    MYBANK: 'ALT_PAYMENT_METHOD',
     TINKPAYBYBANK: 'ALT_PAYMENT_METHOD',
-    AFTERPAY:      'ALT_PAYMENT_METHOD',
-    PRZELEWY24:    'ALT_PAYMENT_METHOD',
-    DRAGONPAY:     'ALT_PAYMENT_METHOD',
-    KONBINI:       'ALT_PAYMENT_METHOD'
+    PRZELEWY24: 'ALT_PAYMENT_METHOD',
+    P24: 'ALT_PAYMENT_METHOD',
+    DRAGONPAY: 'ALT_PAYMENT_METHOD',
+    KONBINI: 'ALT_PAYMENT_METHOD',
+    // Wallet safety-net (primary path is the auth-JWT paymentSolution code).
+    APPLEPAY: 'DW_APPLE_PAY',
+    GOOGLEPAY: 'DW_GOOGLE_PAY',
+    CLICKTOPAY: 'CLICK_TO_PAY'
 };
 
 /**
@@ -501,7 +507,7 @@ function detectPaymentMethod(jwtPayload, transientToken) {
         if ((apm.name || '').toLowerCase() === 'ewallet') {
             var methodLower = (apm.method || '').toLowerCase();
             if (methodLower === 'paypal') return 'PAYPAL';
-            if (methodLower === 'venmo')  return 'VENMO';
+            if (methodLower === 'venmo') return 'VENMO';
         }
         // All other APMs (iDEAL, Multibanco, Bancontact, MyBank, P24, DragonPay,
         // Tink, Afterpay, Konbini, ...) are routed through one generic processor;
@@ -521,7 +527,7 @@ function detectPaymentMethod(jwtPayload, transientToken) {
         return 'CLICK_TO_PAY';
     }
 
-    
+
     // Card present (PAN entry / tokenized saved card / wallet-backed card).
     if (paymentInfo && (paymentInfo.card || paymentInfo.tokenizedCard)) {
         return 'CREDIT_CARD';
@@ -611,9 +617,22 @@ function getApmDescriptor(jwtPayload, transientToken) {
  */
 function getApmDisplayName(apmDescriptor) {
     var displayNames = {
+        // Legacy JWT scheme codes (fallback path).
         IDLPP: 'iDEAL',
         MLTBT: 'Multibanco',
-        TINKPAYBYBANK: 'Pay by Bank'
+        // UC transient-token metadata.paymentType vocabulary (primary path).
+        IDEAL: 'iDEAL',
+        BANCONTACT: 'Bancontact',
+        MULTIBANCO: 'Multibanco',
+        MYBANK: 'MyBank',
+        TINKPAYBYBANK: 'Tink Pay By Bank',
+        PRZELEWY24: 'Przelewy24',
+        P24: 'Przelewy24',
+        DRAGONPAY: 'DragonPay',
+        KONBINI: 'Konbini',
+        PAZE: 'Paze',
+        PAYPAL: 'PayPal',
+        VENMO: 'Venmo'
     };
     if (!apmDescriptor) {
         return 'Alternate Payment';
@@ -632,13 +651,13 @@ function getApmDisplayName(apmDescriptor) {
 // source for routing is the JWT, not the BM PaymentMethod -> PaymentProcessor
 // binding.
 var METHOD_TO_PROCESSOR_ID = {
-    CREDIT_CARD:        'payments_credit',
-    BANK_TRANSFER:      'bank_transfer',
-    DW_APPLE_PAY:       'payments_applepay',
-    DW_GOOGLE_PAY:      'payments_googlepay',
-    CLICK_TO_PAY:       'payments_click_to_pay',
-    PAYPAL:             'payments_paypal',
-    VENMO:              'payments_venmo',
+    CREDIT_CARD: 'payments_credit',
+    BANK_TRANSFER: 'bank_transfer',
+    DW_APPLE_PAY: 'payments_applepay',
+    DW_GOOGLE_PAY: 'payments_googlepay',
+    CLICK_TO_PAY: 'payments_click_to_pay',
+    PAYPAL: 'payments_paypal',
+    VENMO: 'payments_venmo',
     ALT_PAYMENT_METHOD: 'alt_payment'
 };
 
@@ -705,14 +724,14 @@ function extractCardDetails(jwtPayload, transientToken, billingAddress) {
     // Get card type from completeMandate JWT
     if (jwtPayload.details && jwtPayload.details.paymentInformation) {
         var paymentInfoJwt = jwtPayload.details.paymentInformation;
-        
+
         if (paymentInfoJwt.card && paymentInfoJwt.card.type) {
             cardDetails.cardTypeCode = paymentInfoJwt.card.type;
         }
         if (!cardDetails.cardTypeCode && paymentInfoJwt.tokenizedCard && paymentInfoJwt.tokenizedCard.type) {
             cardDetails.cardTypeCode = paymentInfoJwt.tokenizedCard.type;
         }
-        
+
         if (paymentInfoJwt.tokenizedCard) {
             cardDetails.expirationMonth = paymentInfoJwt.tokenizedCard.expirationMonth || '';
             cardDetails.expirationYear = paymentInfoJwt.tokenizedCard.expirationYear || '';
@@ -737,7 +756,7 @@ function extractCardDetails(jwtPayload, transientToken, billingAddress) {
                 var cardNum = transientPaymentInfo.card.number;
                 cardDetails.maskedNumber = cardNum.maskedValue || cardNum || '';
             }
-            
+
             if (!cardDetails.expirationMonth || !cardDetails.expirationYear) {
                 if (transientPaymentInfo.card) {
                     var expMonth = transientPaymentInfo.card.expirationMonth;
@@ -752,7 +771,7 @@ function extractCardDetails(jwtPayload, transientToken, billingAddress) {
                     cardDetails.expirationYear = cardDetails.expirationYear || (tokExpYear ? tokExpYear.value || tokExpYear : '');
                 }
             }
-            
+
             if (!cardDetails.cardTypeCode && transientPaymentInfo.card && transientPaymentInfo.card.type) {
                 cardDetails.cardTypeCode = transientPaymentInfo.card.type.value || transientPaymentInfo.card.type || '';
             }
@@ -890,7 +909,7 @@ function isValidAuthorizationStatus(status) {
         'CAPTURED',
         'PARTIAL_CAPTURED',
         'PENDING',
-        
+
         // Alternate payment method (PPRO / BNPL) non-decline outcomes. Validated
         // against real payloads: iDEAL/Multibanco -> PENDING, Tink -> SETTLE_INITIATED,
         // AFFIRM -> AUTHORIZED / PENDING / COMPLETED. PENDING and SETTLE_INITIATED
@@ -900,7 +919,7 @@ function isValidAuthorizationStatus(status) {
         'COMPLETED',
         'SETTLED',
         'SETTLE_INITIATED'
-        
+
     ];
     return validStatuses.indexOf(status) !== -1;
 }
@@ -1022,9 +1041,9 @@ function buildShipToAddress(basket) {
  */
 function getCurrencyDecimalPlaces(currencyCode) {
     if (!currencyCode) return 2;
-    
+
     var Currency = require('dw/util/Currency');
-    
+
     try {
         var currency = Currency.getCurrency(currencyCode);
         if (currency) {
@@ -1033,7 +1052,7 @@ function getCurrencyDecimalPlaces(currencyCode) {
     } catch (e) {
         logger.warn('getCurrencyDecimalPlaces: Error getting currency {0} - {1}', currencyCode, e.message);
     }
-    
+
     // Default fallback if currency not found in BM
     return 2;
 }
@@ -1047,11 +1066,11 @@ function getCurrencyDecimalPlaces(currencyCode) {
  */
 function formatAmount(amount, currencyCode) {
     var decimals = getCurrencyDecimalPlaces(currencyCode);
-    
+
     if (amount === null || amount === undefined) {
         return decimals === 0 ? '0' : Number(0).toFixed(decimals);
     }
-    
+
     return decimals === 0 ? String(Math.round(Number(amount))) : Number(amount).toFixed(decimals);
 }
 
@@ -1499,7 +1518,7 @@ function saveTokenToWallet(jwtPayload, cardDetails, customer) {
 function setDefaultShippingMethod(basket, TransactionObj) {
     var ShippingMgr = require('dw/order/ShippingMgr');
     var shipment = basket.getDefaultShipment();
-    
+
     if (!shipment.shippingMethod) {
         var defaultMethod = ShippingMgr.getDefaultShippingMethod();
         if (defaultMethod) {
@@ -1583,7 +1602,7 @@ function isSCARequired() {
  */
 function getSCAErrorMessage() {
     var Resource = require('dw/web/Resource');
-    return Resource.msg('error.sca.required', 'error', 
+    return Resource.msg('error.sca.required', 'error',
         'Your card issuer requires an extra security check to approve this payment. Please try again and follow the verification steps.');
 }
 
@@ -1610,7 +1629,7 @@ function getSCAErrorMessage() {
  */
 function buildDdcBackupDeviceInformation(configObject, browserData) {
     var secureResponseHelper = require('~/cartridge/scripts/helpers/secureResponseHelper');
-    
+
     // Check if payer authentication is enabled
     var payerAuthSetting = (configObject.payerAuthenticationEnabled || '').toString().toUpperCase();
     if (payerAuthSetting !== 'YES' && payerAuthSetting !== 'DATA_ONLY_YES' && payerAuthSetting !== 'DATA_ONLY_NO') {
@@ -1667,13 +1686,13 @@ module.exports = {
 
     // Card type mapping
     mapCardType: mapCardType,
-    
+
     // JWT decoding
     decodeJwtPayload: decodeJwtPayload,
-    
+
     // Payment method detection
     detectPaymentMethod: detectPaymentMethod,
-    
+
     getApmDescriptor: getApmDescriptor,
     getApmDisplayName: getApmDisplayName,
 
@@ -1684,17 +1703,17 @@ module.exports = {
     extractCardDetails: extractCardDetails,
     buildPaymentDetailsString: buildPaymentDetailsString,
     updatePaymentInstrumentCardDetails: updatePaymentInstrumentCardDetails,
-    
+
     // Transaction custom attributes
     setTransactionCustomAttribute: setTransactionCustomAttribute,
-    
+
     setInstrumentCustomAttribute: setInstrumentCustomAttribute,
-    
-    
+
+
     // Authorization status
     isValidAuthorizationStatus: isValidAuthorizationStatus,
     getAuthorizationErrorMessage: getAuthorizationErrorMessage,
-    
+
     // Capture context builders
     buildBillToAddress: buildBillToAddress,
     buildShipToAddress: buildShipToAddress,
@@ -1707,16 +1726,16 @@ module.exports = {
     buildCaptureContextDeviceInformation: buildCaptureContextDeviceInformation,
     buildConsumerAuthenticationInformation: buildConsumerAuthenticationInformation,
     buildDdcBackupDeviceInformation: buildDdcBackupDeviceInformation,
-    
+
     // SCA (Strong Customer Authentication) handling
     setSCARequiredFlag: setSCARequiredFlag,
     isSCARequired: isSCARequired,
     getSCAErrorMessage: getSCAErrorMessage,
-    
+
     // Currency formatting
     getCurrencyDecimalPlaces: getCurrencyDecimalPlaces,
     formatAmount: formatAmount,
-    
+
     // TMS token saving
     getExistingTmsCustomerId: getExistingTmsCustomerId,
     buildTmsTokenTypes: buildTmsTokenTypes,
@@ -1726,7 +1745,7 @@ module.exports = {
     findCreditCardByInstrumentIdentifier: findCreditCardByInstrumentIdentifier,
     upsertCreditCard: upsertCreditCard,
     saveTokenToWallet: saveTokenToWallet,
-    
+
     // Shipping method
     setDefaultShippingMethod: setDefaultShippingMethod
 };
