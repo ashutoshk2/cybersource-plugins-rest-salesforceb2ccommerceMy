@@ -308,7 +308,7 @@ _exports.prototype.getJWTToken = function (resource, method, merchantId, digest,
     jwtPayload['request-method'] = method;
     jwtPayload['request-resource-path'] = resource;
     jwtPayload['request-host'] = requestHost;
-    // jwtPayload['v-c-jwt-version'] = '2';
+    jwtPayload['v-c-jwt-version'] = '2';
     jwtPayload['v-c-merchant-id'] = merchantId;
 
     // Base64URL encode header and payload (Step 4)
@@ -326,6 +326,54 @@ _exports.prototype.getJWTToken = function (resource, method, merchantId, digest,
 
     return signingInput + '.' + encodedSignature;
 }
+
+/**
+ * Applies HTTP Signature authentication headers to the request.
+ * This is the historical default behavior of the cartridge.
+ *
+ * @param {Object} headerParams - header map to mutate
+ * @param {Object} opts - {resource, method, requestHost, merchantId, merchantKeyId,
+ *                          merchantSecretKey, payload, isBodyMethod, rawDigest, date}
+ */
+_exports.prototype.applyHttpSignatureHeaders = function (headerParams, opts) {
+    var Constants = require('../apiClient/constants');
+    var signature;
+    if (opts.isBodyMethod) {
+        signature = this.getHttpSignature(opts.resource, opts.method, opts.merchantKeyId, opts.requestHost, opts.merchantId, opts.merchantSecretKey, opts.payload);
+        // Digest header carries the "SHA-256=" prefix for HTTP signature.
+        headerParams['digest'] = Constants.SIGNATURE_ALGORITHAM + opts.rawDigest;
+    } else {
+        signature = this.getHttpSignature(opts.resource, opts.method, opts.merchantKeyId, opts.requestHost, opts.merchantId, opts.merchantSecretKey);
+    }
+    headerParams['date'] = opts.date;
+    headerParams['host'] = opts.requestHost;
+    headerParams['signature'] = signature;
+    headerParams['User-Agent'] = Constants.USER_AGENT_VALUE;
+};
+
+/**
+ * Applies JWT (token) authentication headers to the request.
+ * The JWT carries host / method / resource / digest as claims, so the
+ * HTTP-signature-only headers (signature, host, date, User-Agent) are NOT sent.
+ *
+ * NOTE: the exact JWT wire format (the "Bearer " prefix and the digest claim shape)
+ * should be verified against a live CyberSource JWT call. The raw (unprefixed) base64
+ * digest is passed to getJWTToken so the digest claim is not double-prefixed with
+ * "SHA-256=" against its separate digestAlgorithm claim.
+ *
+ * @param {Object} headerParams - header map to mutate
+ * @param {Object} opts - {resource, method, requestHost, merchantId, isBodyMethod, rawDigest}
+ */
+_exports.prototype.applyJwtHeaders = function (headerParams, opts) {
+    var jwtToken;
+    if (opts.isBodyMethod) {
+        jwtToken = this.getJWTToken(opts.resource, opts.method, opts.merchantId, opts.rawDigest, opts.requestHost);
+    } else {
+        jwtToken = this.getJWTToken(opts.resource, opts.method, opts.merchantId, null, opts.requestHost);
+    }
+    headerParams['Authorization'] = 'Bearer ' + jwtToken;
+};
+
 _exports.prototype.normalizeParams = function (params) {
     var newParams = {};
     for (var key in params) {
@@ -342,32 +390,29 @@ _exports.prototype.normalizeParams = function (params) {
 }
 
 _exports.prototype.callApi = function (path, httpMethod, pathParams, queryParams, headerParams, formParams, bodyParam, authNames, contentTypes, accepts, returnType, callback, isMLESupportedByCybsForApi) {
-    // var hostAndPath = this.basePath.substr(this.basePath.indexOf("//") + 2);
-    // var requestHost = hostAndPath.indexOf('/') > -1 ? hostAndPath.substring(0, hostAndPath.indexOf('/')) : hostAndPath;
+    var Constants = require('../apiClient/constants');
 
-    // for http signature auth
-     var requestHost = this.basePath.substr(
-        this.basePath.indexOf("//") + 2
-    );
+    // requestHost is the API host. basePath is the credential URL with no path component,
+    // so the remainder after "//" is the host for both auth mechanisms.
+    var requestHost = this.basePath.substr(this.basePath.indexOf("//") + 2);
 
     var method = httpMethod.toLowerCase();
     var merchantId = this.merchantConfig.getMerchantID();
 
-    // for http signature auth
-    var merchantKeyId = this.merchantConfig.getMerchantKeyID();
-    var merchantSecretKey = this.merchantConfig.getMerchantsecretKey();
-
-    var payload = "";
-    var Constants = require('../apiClient/constants');
+    // Selected auth mechanism from the Core BM preference. Defaults to HTTP signature.
+    var authType = (this.merchantConfig.getAuthenticationType() || Constants.HTTP).toLowerCase();
 
     var url = this.buildUrl(path, pathParams, queryParams);
-
     var resource = url.substr(this.basePath.length);
     var contentType = contentTypes.join(';');
     var acceptType = accepts.join(';');
-
     var date = new Date(Date.now()).toUTCString();
-    if (method === 'post' || method === 'patch' || method === 'put') {
+
+    var payload = "";
+    var rawDigest = null;
+    var isBodyMethod = (method === 'post' || method === 'patch' || method === 'put');
+
+    if (isBodyMethod) {
         if (typeof bodyParam === 'string') {
             bodyParam = JSON.parse(bodyParam);
         }
@@ -400,25 +445,39 @@ _exports.prototype.callApi = function (path, httpMethod, pathParams, queryParams
             payload = encryptPayload.getJWE(payload);
 
         }
-        var signature = this.getHttpSignature(resource, method, merchantKeyId, requestHost, merchantId, merchantSecretKey, payload);
-        var digest = this.generateDigest(payload);
-        digest = "SHA-256=" + digest;
-        headerParams['digest'] = digest;
-        
-        // var jwtToken = this.getJWTToken(resource, method, merchantId, digest, requestHost);
-        // headerParams['Authorization'] = 'Bearer ' + jwtToken;
-    } else {
-        var signature = this.getHttpSignature(resource, method, merchantKeyId, requestHost, merchantId, merchantSecretKey);
-
-        // var jwtToken = this.getJWTToken(resource, method, merchantId, null, requestHost);
-        // headerParams['Authorization'] = 'Bearer ' + jwtToken;
+        // Unprefixed base64 SHA-256 digest of the (possibly MLE-encrypted) payload.
+        // HTTP signature adds the "SHA-256=" prefix for its digest header; JWT uses the
+        // raw value in its digest claim.
+        rawDigest = this.generateDigest(payload);
     }
 
+    // Apply auth headers for the selected mechanism (HTTP signature vs JWT).
+    if (authType === Constants.JWT) {
+        this.applyJwtHeaders(headerParams, {
+            resource: resource,
+            method: method,
+            requestHost: requestHost,
+            merchantId: merchantId,
+            isBodyMethod: isBodyMethod,
+            rawDigest: rawDigest
+        });
+    } else {
+        this.applyHttpSignatureHeaders(headerParams, {
+            resource: resource,
+            method: method,
+            requestHost: requestHost,
+            merchantId: merchantId,
+            merchantKeyId: this.merchantConfig.getMerchantKeyID(),
+            merchantSecretKey: this.merchantConfig.getMerchantsecretKey(),
+            payload: payload,
+            isBodyMethod: isBodyMethod,
+            rawDigest: rawDigest,
+            date: date
+        });
+    }
+
+    // Common headers for both mechanisms.
     headerParams['v-c-merchant-id'] = merchantId;
-    headerParams['date'] = date;
-    headerParams['host'] = requestHost;
-    headerParams['signature'] = signature; // for http signature auth
-    headerParams['User-Agent'] = "Mozilla/5.0"; // for http signature auth
     headerParams['Content-Type'] = contentType;
     headerParams['Accept'] = acceptType;
 
@@ -426,7 +485,7 @@ _exports.prototype.callApi = function (path, httpMethod, pathParams, queryParams
     var normalizedHeaders = this.normalizeParams(headerParams);
 
     // Calling service.
-    if (method === 'post' || method === 'patch' || method === 'put') {
+    if (isBodyMethod) {
         var response = this.createService().call(url, normalizedHeaders, method, payload);
     } else {
         var response = this.createService().call(url, normalizedHeaders, method);

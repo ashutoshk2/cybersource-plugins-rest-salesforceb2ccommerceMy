@@ -403,7 +403,7 @@ server.post('PlaceOrderDirect', server.middleware.https, function (req, res, nex
                     paymentInstrument.paymentTransaction.custom.processorTransactionId = processorInfo.transactionId;
                 }
                 paymentInstrument.paymentTransaction.custom.authMethod = (configObject.authenticationType || '').toUpperCase();
-                paymentInstrument.paymentTransaction.resultTimestamp = new Date().toISOString();
+                paymentInstrument.paymentTransaction.custom.resultTimestamp = new Date().toISOString();
 
 
                 logger.info('PlaceOrderDirect: Payment instrument updated - TransactionID: {0}, PaymentDetails: {1}, PaymentMethod: {2}',
@@ -486,10 +486,11 @@ server.post('PlaceOrderDirect', server.middleware.https, function (req, res, nex
     }
 
 
-    // Save TMS token to customer wallet if user opted to save card
+    // Save TMS token to customer wallet only when the consumer explicitly opted in
+    // (transient token metadata.consumerPreference.saveCard === true).
     // Extract card details first (needed for wallet entry) - pass billing address for cardholder name
     var cardDetailsForWallet = ucPaymentHelper.extractCardDetails(jwtPayload, transientToken, order.billingAddress);
-    var tokenSaved = ucPaymentHelper.saveTokenToWallet(jwtPayload, cardDetailsForWallet, session.getCustomer());
+    var tokenSaved = ucPaymentHelper.saveTokenToWallet(jwtPayload, cardDetailsForWallet, session.getCustomer(), transientToken);
     if (tokenSaved) {
         logger.info('PlaceOrderDirect: TMS token saved to customer wallet');
     }

@@ -14,7 +14,13 @@ var ApiException = require('./ApiException');
 
 function MerchantConfig(result) {
   /*Common Parameters*/
-  this.authenticationType = result.authenticationType;
+  // Preference values from dw getCustomPreferenceValue are Java-backed (typeof "object"),
+  // not native JS strings. Coerce to a native string so the `typeof === "string"` checks
+  // in defaultPropValues behave (mirrors the .toString() handling of merchantID/secretKey).
+  // null/undefined is preserved so the mandatory AUTHENTICATION_REQ check still fires.
+  this.authenticationType = (result.authenticationType === null || result.authenticationType === undefined)
+    ? result.authenticationType
+    : String(result.authenticationType);
   this.url;
   this.requestHost;
   this.requestJsonPath = result.requestJsonPath;
@@ -34,6 +40,8 @@ function MerchantConfig(result) {
   this.keyPass = result.keyPass;
   this.keyType;
   this.keyFilename = result.keyFileName;
+  // P12 private key alias used by JWT (RS256) signing. See ApiClient.getJWTToken / certHelper.
+  this.p12PrivateKeyAlias = result.p12PrivateKeyAlias;
   this.enableLog = result.enableLog;
   this.useHttpClient;
   /* proxy Parameters*/
@@ -320,27 +328,12 @@ MerchantConfig.prototype.defaultPropValues = function defaultPropValues() {
         this.merchantsecretKey = this.merchantsecretKey.toString();
       }
     } else if (this.authenticationType.toLowerCase() === Constants.JWT) {
-      if (this.keyAlias === null || this.keyAlias === "" || this.keyAlias === undefined) {
-        this.keyAlias = this.merchantID;
-        logger.warn(Constants.KEY_ALIAS_NULL_EMPTY);
-      } else if (this.keyAlias !== this.merchantID) {
-        this.keyAlias = this.merchantID;
-        logger.warn(Constants.INCORRECT_KEY_ALIAS);
-      }
-
-      if (this.keyPass === null || this.keyPass === "" || this.keyPass === undefined) {
-        this.keyPass = this.merchantID;
-        logger.warn(Constants.KEY_PASS_EMPTY);
-      }
-
-      if (this.keysDirectory === null || this.keysDirectory === "" || this.keysDirectory === undefined) {
-        this.keysDirectory = Constants.DEFAULT_KEYS_DIRECTORY;
-        logger.warn(Constants.KEY_DIRECTORY_EMPTY);
-      }
-
-      if (this.keyFilename === null || this.keyFilename === "" || this.keyFilename === undefined) {
-        this.keyFilename = this.merchantID;
-        logger.warn(Constants.KEY_FILE_EMPTY);
+      // JWT (token) auth signs with the P12 private key alias from BM site preferences
+      // (see ApiClient.getJWTToken / certHelper). The legacy file-based key model
+      // (keyAlias/keyPass/keysDirectory/keyFilename) is no longer used. Meta Key specifics
+      // (metaKeyMerchantId) are validated/logged in getJWTToken when Meta Key is enabled.
+      if (this.p12PrivateKeyAlias === null || this.p12PrivateKeyAlias === "" || this.p12PrivateKeyAlias === undefined) {
+        ApiException.ApiException(Constants.P12_PRIVATE_KEY_ALIAS_REQ, logger);
       }
     } else {
       ApiException.ApiException(Constants.AUTH_ERROR, logger);

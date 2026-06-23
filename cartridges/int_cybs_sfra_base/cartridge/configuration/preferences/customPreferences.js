@@ -86,6 +86,17 @@ module.exports = {
                 }
             },
             /** @type {CustomPreference} */
+            AuthenticationType: {
+                id: 'VisaAcceptance_AuthenticationType',
+                display_name: 'Authentication Mechanism',
+                description: 'Authentication mechanism used for Cybersource REST API calls. HTTP Signature uses the REST KeyId/Secret Key; JWT uses the P12 private key alias for RS256 signing. Defaults to HTTP Signature when unset.',
+                type: Types.EnumOfString,
+                default: 'http_signature',
+                flags: {
+                    mandatory: false
+                }
+            },
+            /** @type {CustomPreference} */
             P12PrivateKeyAlias: {
                 id: 'VisaAcceptance_P12PrivateKeyAlias',
                 display_name: 'P12 Private Key Alias',

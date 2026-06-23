@@ -891,7 +891,7 @@ var unifiedCheckout = {
         }
     },
 
-    /**
+     /**
      * Place order directly using completeMandate authorization result
      * This bypasses the traditional SubmitPayment -> PlaceOrder flow since authorization
      * was already performed by the UC SDK
@@ -911,9 +911,12 @@ var unifiedCheckout = {
         var placeOrderUrl = $('#place-order-direct-url').val();
         
         if (!placeOrderUrl) {
-            // Fallback: construct URL from CheckoutServices
-            placeOrderUrl = window.location.origin + '/on/demandware.store/Sites-RefArch-Site/en_US/CheckoutServices-PlaceOrderDirect';
-            console.warn('placeOrderDirect: Using fallback URL. Consider adding #place-order-direct-url hidden field.');
+            // #place-order-direct-url is rendered server-side in unifiedCheckout.isml via
+            // URLUtils. If it is missing we cannot safely build a site/locale-correct
+            // endpoint on the client, so fail loudly rather than POST to a hardcoded URL.
+            console.error('placeOrderDirect: missing #place-order-direct-url hidden field');
+            self.showValidationError('Unable to process payment. Please refresh and try again.');
+            return;
         }
 
         // Sanitize URL
@@ -951,45 +954,24 @@ var unifiedCheckout = {
                 if (data.error) {
                     console.error('placeOrderDirect: Server returned error:', data.errorMessage);
 
-                    // If SCA is required, redirect to checkout with payerAuthError param for consistent error display
-                    if (data.scaRequired) {
-                        var checkoutUrl = '';
-                        // Try to get the checkout page URL from a hidden field or fallback
-                        var $checkoutStageUrl = $('#checkout-stage-url');
-                        if ($checkoutStageUrl.length > 0) {
-                            checkoutUrl = $checkoutStageUrl.val();
-                        } else {
-                            // Fallback: try to build the URL (update as needed for your site path)
-                            checkoutUrl = '/on/demandware.store/Sites-RefArch-Site/en_US/Checkout-Begin?stage=payment';
-                        }
-                        // Encode error message for URL
-                        var errorMsg = encodeURIComponent(data.errorMessage || '');
-                        // Redirect with payerAuthError param
-                        window.location.href = checkoutUrl + (checkoutUrl.indexOf('?') > -1 ? '&' : '?') + 'payerAuthError=' + errorMsg;
-                        return;
-                    }
-
-                    // Show error message as fallback
-                    self.showValidationError(data.errorMessage || 'An error occurred while processing your order.');
-
-                    // Handle specific error cases
+                    // Cart issue - redirect to cart (separate UX from payment errors)
                     if (data.cartError && data.redirectUrl) {
-                        // Cart issue - redirect to cart
                         window.location.href = data.redirectUrl;
                         return;
                     }
 
-                    if (data.errorStage) {
-                        // Redirect to specific checkout stage
-                        var stageUrl = window.location.origin + '/s/RefArch/checkout?stage=' + data.errorStage.stage;
-                        console.log('Redirecting to stage:', stageUrl);
-                        // Don't redirect automatically - let user see error first
-                    }
-
-                    // Regenerate capture context for retry
-                    setTimeout(function () {
-                        self.regenerateCaptureContextIfNeeded(true);
-                    }, 2000);
+                    // Route ALL payment errors (including scaRequired) through the SFRA
+                    // payerAuthError redirect so the message renders inside the checkout
+                    // layout (.payerAuthError div in checkout.isml) instead of being
+                    // prepended to <body> by showValidationError.
+                    // #checkout-stage-url is rendered server-side in unifiedCheckout.isml via
+                    // URLUtils.https('Checkout-Begin', 'stage', 'payment'). Fall back to the
+                    // current checkout path (site/locale-agnostic) rather than a hardcoded
+                    // site URL if the field is ever absent.
+                    var checkoutUrl = $('#checkout-stage-url').val() || window.location.pathname;
+                    var errorMsg = encodeURIComponent(data.errorMessage || 'An error occurred while processing your order.');
+                    window.location.href = checkoutUrl + (checkoutUrl.indexOf('?') > -1 ? '&' : '?') + 'payerAuthError=' + errorMsg;
+                    return;
 
                 } else {
                     // Success - redirect to confirmation page via POST form
@@ -1942,8 +1924,13 @@ var unifiedCheckout = {
                     console.log('Card saved successfully, redirecting...');
                     window.location.href = data.redirectUrl;
                 } else {
-                    // Fallback redirect
-                    window.location.href = '/on/demandware.store/Sites-Site/default/PaymentInstruments-List';
+                    // Fallback redirect to the account payment list. The URL is rendered
+                    // server-side via URLUtils on the save-card form (paymentForm.isml);
+                    // never hardcode the site/locale path here.
+                    var listUrl = $('#uc-save-payment-form').data('payment-instruments-list-url');
+                    if (listUrl) {
+                        window.location.href = listUrl;
+                    }
                 }
             },
             error: function(xhr, status, error) {

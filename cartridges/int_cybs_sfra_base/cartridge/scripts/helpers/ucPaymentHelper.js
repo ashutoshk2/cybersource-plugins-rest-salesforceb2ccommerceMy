@@ -1311,6 +1311,25 @@ function buildSerializedToken(instrumentIdentifierId, paymentInstrumentId, custo
 }
 
 /**
+ * Determine whether the consumer explicitly opted in to saving the card, based on the
+ * Unified Checkout transient token. The SDK records the "save card" checkbox state at
+ * metadata.consumerPreference.saveCard. Only an explicit boolean true counts as opt-in;
+ * a missing/undecodable token, a missing consumerPreference, or saveCard === false all
+ * mean "do not save".
+ *
+ * @param {string} transientToken - Transient token JWT from the SDK
+ * @returns {boolean} - True only when metadata.consumerPreference.saveCard === true
+ */
+function didConsumerOptToSaveCard(transientToken) {
+    if (!transientToken) {
+        return false;
+    }
+    var payload = decodeJwtPayload(transientToken);
+    return !!(payload && payload.metadata && payload.metadata.consumerPreference &&
+        payload.metadata.consumerPreference.saveCard === true);
+}
+
+/**
  * Check if user opted to save card in UC completeMandate response
  * @param {Object} jwtPayload - Decoded completeMandate JWT payload
  * @returns {boolean} - True if tokenInformation exists
@@ -1426,9 +1445,16 @@ function upsertCreditCard(wallet, serializedToken, cardDetails, instrumentIdenti
  * @param {Object} jwtPayload - Decoded completeMandate JWT payload
  * @param {Object} cardDetails - Card details object
  * @param {dw.customer.Customer} customer - Customer object
+ * @param {string} transientToken - Transient token JWT from the SDK (carries the
+ *   consumer's saveCard preference); the card is saved only when the consumer opted in
  * @returns {boolean} - True if token was saved successfully
  */
-function saveTokenToWallet(jwtPayload, cardDetails, customer) {
+function saveTokenToWallet(jwtPayload, cardDetails, customer, transientToken) {
+    if (!didConsumerOptToSaveCard(transientToken)) {
+        logger.debug('saveTokenToWallet: Consumer did not opt to save card (transient token saveCard !== true)');
+        return false;
+    }
+
     if (!didUserRequestSaveCard(jwtPayload)) {
         logger.debug('saveTokenToWallet: User did not opt to save card');
         return false;
@@ -1740,6 +1766,7 @@ module.exports = {
     getExistingTmsCustomerId: getExistingTmsCustomerId,
     buildTmsTokenTypes: buildTmsTokenTypes,
     buildSerializedToken: buildSerializedToken,
+    didConsumerOptToSaveCard: didConsumerOptToSaveCard,
     didUserRequestSaveCard: didUserRequestSaveCard,
     extractTokenInformation: extractTokenInformation,
     findCreditCardByInstrumentIdentifier: findCreditCardByInstrumentIdentifier,

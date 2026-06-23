@@ -20,7 +20,8 @@
     <iscomment>Hidden form for CSRF token and UC response data</iscomment>
     <form id="uc-save-payment-form" class="payment-form uc-save-card-form" method="POST"
         action="${URLUtils.url('PaymentInstruments-SavePaymentDirect')}"
-        data-save-payment-direct-url="${URLUtils.https('PaymentInstruments-SavePaymentDirect')}">
+        data-save-payment-direct-url="${URLUtils.https('PaymentInstruments-SavePaymentDirect')}"
+        data-payment-instruments-list-url="${URLUtils.url('PaymentInstruments-List')}">
 
         <input type="hidden" name="${pdict.csrf.tokenName}" value="${pdict.csrf.token}" />
         <input type="hidden" name="completeMandateJwt" id="completeMandateJwt" value="" />

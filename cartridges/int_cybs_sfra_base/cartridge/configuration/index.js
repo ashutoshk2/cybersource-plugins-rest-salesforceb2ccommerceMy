@@ -36,7 +36,12 @@ function getConfig(config) {
     
     return {
         // Api Client config
-        authenticationType: 'jwt',
+        // Auth mechanism is selectable via the Core BM preference (HTTP Signature / JWT).
+        // Falls back to 'http_signature' when the preference is blank/unimported so existing
+        // sites keep their current behavior. Value matches apiClient/constants Constants.HTTP.
+        // String() coerces the Java-backed preference value to a native JS string so strict
+        // typeof checks (merchantConfig.defaultPropValues) and downstream consumers behave.
+        authenticationType: String(config.authenticationType || customPreferences.Core.Preferences.AuthenticationType.getValue() || 'http_signature'),
         runEnvironment: 'cybersource.environment.SANDBOX',
         enableLog: EnableLog,
         logFilename: LogFileName,
