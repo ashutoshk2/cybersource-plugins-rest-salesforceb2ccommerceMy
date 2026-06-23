@@ -1099,20 +1099,15 @@ function buildLineItems(basket) {
         if (lineItem instanceof dw.order.ProductLineItem) {
             // UC v1 (ISV Phase 1): canonical line-item shape. typeOfSupply '00' = goods.
             var product = lineItem.product;
-            var productDescription = '';
-            if (product && product.shortDescription) {
-                productDescription = product.shortDescription.markup || '';
-            }
-            if (!productDescription) {
-                productDescription = lineItem.productName || '';
-            }
+            var productDescription = (product && product.shortDescription && product.shortDescription.markup) || lineItem.productName || '';
+            productDescription = productDescription.substring(0, 32);
             itemObject = {
                 productSku: lineItem.productID || '',
                 productName: lineItem.productName || '',
                 productDescription: productDescription,
                 quantity: lineItem.quantityValue,
                 unitPrice: formatAmount(lineItem.basePrice.value, currencyCode),
-                totalAmount: formatAmount(lineItem.adjustedGrossPrice.value, currencyCode),
+                totalAmount: formatAmount(lineItem.basePrice.value * lineItem.quantityValue, currencyCode),
                 typeOfSupply: '00',
                 taxAmount: formatAmount(lineItem.adjustedTax.value > 0 ? lineItem.adjustedTax.value : 0, currencyCode)
             };
@@ -1124,7 +1119,7 @@ function buildLineItems(basket) {
                 productDescription: 'GIFT_CERTIFICATE',
                 quantity: 1,
                 unitPrice: formatAmount(lineItem.adjustedPrice.value, currencyCode),
-                totalAmount: formatAmount(lineItem.adjustedGrossPrice.value, currencyCode),
+                totalAmount: formatAmount(lineItem.adjustedPrice.value, currencyCode),
                 typeOfSupply: '00',
                 taxAmount: formatAmount(0, currencyCode)
             };
@@ -1139,8 +1134,9 @@ function buildLineItems(basket) {
                 productDescription: 'SHIPPING',
                 quantity: 1,
                 unitPrice: formatAmount(lineItem.adjustedPrice.value, currencyCode),
-                totalAmount: formatAmount(lineItem.adjustedGrossPrice.value, currencyCode),
-                typeOfSupply: '01'
+                totalAmount: formatAmount(lineItem.adjustedPrice.value, currencyCode),
+                typeOfSupply: '01',
+                taxAmount: formatAmount(lineItem.adjustedTax ? lineItem.adjustedTax.value : 0, currencyCode)
             };
         } else if (lineItem instanceof dw.order.ProductShippingLineItem) {
             // typeOfSupply '01' = shipping/services.
@@ -1150,7 +1146,7 @@ function buildLineItems(basket) {
                 productDescription: 'SHIPPING_SURCHARGE',
                 quantity: 1,
                 unitPrice: formatAmount(lineItem.adjustedPrice.value, currencyCode),
-                totalAmount: formatAmount(lineItem.adjustedGrossPrice.value, currencyCode),
+                totalAmount: formatAmount(lineItem.adjustedPrice.value, currencyCode),
                 typeOfSupply: '01',
                 taxAmount: formatAmount(lineItem.adjustedTax ? lineItem.adjustedTax.value : 0, currencyCode)
             };
