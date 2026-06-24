@@ -82,7 +82,9 @@ function getSelectedPaymentInstruments(selectedPaymentInstruments) {
             results.bankAccountNumber = paymentInstrument.bankAccountNumber;
             results.bankRoutingNumber = paymentInstrument.bankRoutingNumber;
 
-        } else if (paymentInstrument.paymentMethod === 'ALT_PAYMENT_METHOD') {
+        } else if (paymentInstrument.paymentMethod === 'ALT_PAYMENT_METHOD'
+            || paymentInstrument.paymentMethod === 'PAYPAL'
+            || paymentInstrument.paymentMethod === 'VENMO') {
             // Alternate payment methods (iDEAL, BNPL, ...) carry no card/bank data;
             // surface the scheme descriptor recorded on the instrument at order
             // placement (see CheckoutServices-PlaceOrderDirect) so the confirmation /

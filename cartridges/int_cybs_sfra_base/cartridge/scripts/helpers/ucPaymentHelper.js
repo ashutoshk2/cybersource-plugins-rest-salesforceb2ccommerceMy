@@ -958,15 +958,21 @@ function buildBillToAddress(basket) {
     var billTo = {
         firstName: billingAddress.firstName || '',
         lastName: billingAddress.lastName || '',
-        email: basket.customerEmail || '',
         address1: billingAddress.address1 || '',
-        address2: billingAddress.address2 || '',
         locality: billingAddress.city || '',
         administrativeArea: billingAddress.stateCode || '',
         postalCode: billingAddress.postalCode || '',
-        country: billingAddress.countryCode ? billingAddress.countryCode.value.toUpperCase() : '',
-        phoneNumber: billingAddress.phone || ''
+        country: billingAddress.countryCode ? billingAddress.countryCode.value.toUpperCase() : ''
     };
+    if (basket.customerEmail) {
+        billTo.email = basket.customerEmail;
+    }
+    if (billingAddress.address2) {
+        billTo.address2 = billingAddress.address2;
+    }
+    if (billingAddress.phone) {
+        billTo.phoneNumber = billingAddress.phone;
+    }
     return billTo;
 }
 

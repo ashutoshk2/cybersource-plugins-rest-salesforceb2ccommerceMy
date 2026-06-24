@@ -324,6 +324,17 @@ server.post('PlaceOrderDirect', server.middleware.https, function (req, res, nex
     var clientReferenceCode = jwtPayload.details &&
         jwtPayload.details.clientReferenceInformation &&
         jwtPayload.details.clientReferenceInformation.code;
+
+    // Known issue: for PayPal the completeMandate result does not echo the
+    // merchant reference (clientReferenceInformation.code) we sent and returns 'default'.
+    // Fall back to the order number reserved at capture-context time, then clear it.
+    if (!clientReferenceCode || clientReferenceCode === 'default') {
+        var reservedOrderNo = session.privacy.ucOrderNo;
+        if (reservedOrderNo) {
+            clientReferenceCode = reservedOrderNo;
+            session.privacy.ucOrderNo = null;
+        }
+    }
     var order = COHelpers.createOrder(currentBasket, clientReferenceCode);
     if (!order) {
         secureResponseHelper.secureJsonResponse(res, {
