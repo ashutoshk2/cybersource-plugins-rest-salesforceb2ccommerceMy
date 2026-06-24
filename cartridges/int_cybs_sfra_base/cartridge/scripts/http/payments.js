@@ -882,6 +882,7 @@ function generateUcCaptureContextSaveCard(billTo) {
         // completeMandate.type stays EBC-managed and is not sent.
         var completeMandate = {
             decisionManager: false,
+            type:"PREFER_AUTH",
             consumerAuthentication: 'NONE',
             tms: {
                 // tokenCreate:true is required for UC to honor TMS_TOKEN.customer association below.
