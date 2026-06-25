@@ -773,14 +773,6 @@ function generateUcCaptureContext(isMiniCart, selectedPaymentInstrumentId) {
         // Full device data (for 3DS) is handled during payment authorization, not capture context
         requestObj.data.deviceInformation = ucPaymentHelper.buildCaptureContextDeviceInformation();
 
-        // Payment Information: Card type selection indicator
-        // typeSelectionIndicator '1' = Cardholder selects card type
-        requestObj.data.paymentInformation = {
-            card: {
-                typeSelectionIndicator: '1'
-            }
-        };
-
         // Consumer Authentication Information: Add challengeCode for 3DS handling
         // When SCA was required (478 response) on a previous attempt, set challengeCode = '04' to mandate challenge
         var consumerAuthInfo = ucPaymentHelper.buildConsumerAuthenticationInformation(configObject);
@@ -937,13 +929,6 @@ function generateUcCaptureContextSaveCard(billTo) {
 
         // Device Information
         requestObj.data.deviceInformation = ucPaymentHelper.buildCaptureContextDeviceInformation();
-
-        // Payment Information
-        requestObj.data.paymentInformation = {
-            card: {
-                typeSelectionIndicator: '1'
-            }
-        };
 
         // Generate Capture Context
         var instance = new cybersourceRestApi.UnifiedCheckoutCaptureContextApi(configObject);
