@@ -9,6 +9,25 @@ var STATUS_CAPTURED = 'Captured';
 var STATUS_PARTIAL = 'Partially Captured';
 
 /**
+ * Present a raw gateway status (e.g. 'AUTHORIZED', 'SETTLE_INITIATED', 'COMPLETED') as the
+ * Title Case label shown in BM's "Visa Acceptance Transaction Status" attribute. Kept here so
+ * auth-time (CheckoutServices) and webhook-time (this helper / WebhookNotification) writes share
+ * one vocabulary — 'AUTHORIZED' normalizes to 'Authorized', matching STATUS_AUTHORIZED, so a later
+ * capture/settlement webhook upgrades the value cleanly instead of flipping its casing. Returns ''
+ * for an empty status so callers can guard against writing a literal "undefined".
+ * @param {string} rawStatus gateway transaction status
+ * @returns {string} display label (e.g. 'Authorized', 'Settle Initiated')
+ */
+function formatTransactionStatus(rawStatus) {
+    if (!rawStatus) {
+        return '';
+    }
+    return String(rawStatus).toLowerCase().replace(/_/g, ' ').replace(/(^|\s)\w/g, function (m) {
+        return m.toUpperCase();
+    });
+}
+
+/**
  * Whether the webhook indicates a capture has occurred.
  * payments product: a payments.capture.status.* event IS the signal.
  * DM/FM case-management: the detail object embeds a capture link (_embedded.capture).
@@ -52,22 +71,27 @@ function getProcessedIds(paymentTransaction) {
 }
 
 /**
- * Apply the authorization-only outcome: mark Authorized / NOT_PAID,
- * never downgrading a more-final state.
+ * Apply a non-capture outcome (authorization, review, pending, decline): record the ACTUAL
+ * gateway status and mark the order NOT_PAID, never downgrading a more-final (PAID/PART_PAID)
+ * state. AUTHORIZED — or a missing status on an authorization event — keeps the canonical
+ * 'Authorized' label (matches STATUS_AUTHORIZED). Any other status (AUTHORIZED_PENDING_REVIEW,
+ * PENDING, DECLINED, ...) is reflected verbatim (normalized) rather than mislabeled as Authorized.
  * @param {Object} order dw.order.Order
  * @param {Object} paymentTransaction PaymentTransaction
+ * @param {string} status raw gateway status from the notification
  * @returns {Object} { applied, status }
  */
-function applyAuthorized(order, paymentTransaction) {
+function applyNonCaptureStatus(order, paymentTransaction, status) {
     var current = order.getPaymentStatus().getValue();
     if (current === Order.PAYMENT_STATUS_PAID || current === Order.PAYMENT_STATUS_PARTPAID) {
         return { applied: false, status: paymentTransaction.custom.cybsTransactionStatus };
     }
+    var label = (!status || status === 'AUTHORIZED') ? STATUS_AUTHORIZED : formatTransactionStatus(status);
     Transaction.wrap(function () {
-        paymentTransaction.custom.cybsTransactionStatus = STATUS_AUTHORIZED;
+        paymentTransaction.custom.cybsTransactionStatus = label;
         order.setPaymentStatus(Order.PAYMENT_STATUS_NOTPAID);
     });
-    return { applied: true, status: STATUS_AUTHORIZED };
+    return { applied: true, status: label };
 }
 
 /**
@@ -178,7 +202,7 @@ function applyTransactionOutcome(params) {
     var paymentTransaction = paymentInstrument.paymentTransaction;
 
     if (!hasCaptureSignal(params.eventType, details)) {
-        return applyAuthorized(order, paymentTransaction);
+        return applyNonCaptureStatus(order, paymentTransaction, details.status);
     }
     return applyCapture(order, paymentTransaction, params.transactionId, params.fetchCapturedAmount);
 }
@@ -239,5 +263,6 @@ module.exports = {
     hasCaptureSignal: hasCaptureSignal,
     applyTransactionOutcome: applyTransactionOutcome,
     applyCapturedAmount: applyCapturedAmount,
-    handleWebhook: handleWebhook
+    handleWebhook: handleWebhook,
+    formatTransactionStatus: formatTransactionStatus
 };

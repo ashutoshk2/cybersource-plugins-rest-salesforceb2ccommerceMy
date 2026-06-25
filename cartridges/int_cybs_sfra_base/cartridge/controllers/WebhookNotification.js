@@ -180,7 +180,16 @@ function handleApmPaymentUpdate(payload, res, next) {
     var orderId = order.orderNo;
     var SUCCESS = ['COMPLETED', 'SETTLED'];
     var FAILURE = ['DECLINED', 'FAILED', 'CANCELLED', 'VOIDED'];
+    var CardHelper = require('*/cartridge/scripts/helpers/CardHelper');
+    var apmStatusHelper = require('*/cartridge/scripts/helpers/webhookOrderStatusHelper');
+    var apmPaymentInstrument = CardHelper.getNonGCPaymemtInstument(order);
     Transaction.wrap(function () {
+        // Reflect the APM notification's gateway status in BM (Visa Acceptance Transaction
+        // Status) for every outcome, so a settlement/decline updates the value set at auth time.
+        if (apmPaymentInstrument && apmPaymentInstrument.paymentTransaction && status) {
+            apmPaymentInstrument.paymentTransaction.custom.cybsTransactionStatus =
+                apmStatusHelper.formatTransactionStatus(status);
+        }
         if (SUCCESS.indexOf(status) > -1) {
             if (order.getConfirmationStatus() !== order.CONFIRMATION_STATUS_CONFIRMED) {
                 order.setConfirmationStatus(order.CONFIRMATION_STATUS_CONFIRMED);

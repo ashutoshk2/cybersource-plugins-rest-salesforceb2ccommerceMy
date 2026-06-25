@@ -34,6 +34,7 @@ server.post('PlaceOrderDirect', server.middleware.https, function (req, res, nex
     var addressHelpers = require('*/cartridge/scripts/helpers/addressHelpers');
     var payments = require('*/cartridge/scripts/http/payments');
     var ucPaymentHelper = require('~/cartridge/scripts/helpers/ucPaymentHelper');
+    var webhookOrderStatusHelper = require('~/cartridge/scripts/helpers/webhookOrderStatusHelper');
     var configObject = require('~/cartridge/configuration/index.js');
 
     var logger = Logger.getLogger('Cybersource', 'PlaceOrderDirect');
@@ -393,11 +394,17 @@ server.post('PlaceOrderDirect', server.middleware.https, function (req, res, nex
                     paymentInstrument.paymentTransaction.custom.paymentDetails = paymentDetailsStr;
                 }
 
-                // Store optional processor info (if custom attributes exist)
-                // Store optional processor info (if custom attributes exist)
+                // Store optional processor info. Guard each field individually:
+                // processorInfo may be present while approvalCode / networkTransactionId
+                // are absent for some payment methods (e.g. Pay by Bank), and writing
+                // undefined surfaces a literal "undefined" in the BM payment section.
                 if (processorInfo) {
-                    paymentInstrument.paymentTransaction.custom.approvalCode = processorInfo.approvalCode;
-                    paymentInstrument.paymentTransaction.custom.networkTransactionId = processorInfo.networkTransactionId;
+                    if (processorInfo.approvalCode) {
+                        paymentInstrument.paymentTransaction.custom.approvalCode = processorInfo.approvalCode;
+                    }
+                    if (processorInfo.networkTransactionId) {
+                        paymentInstrument.paymentTransaction.custom.networkTransactionId = processorInfo.networkTransactionId;
+                    }
                 }
                 if (jwtPayload.details && jwtPayload.details.reconciliationId) {
                     paymentInstrument.paymentTransaction.custom.reconciliationId = jwtPayload.details.reconciliationId;
@@ -415,6 +422,15 @@ server.post('PlaceOrderDirect', server.middleware.https, function (req, res, nex
                 }
                 paymentInstrument.paymentTransaction.custom.authMethod = (configObject.authenticationType || '').toUpperCase();
                 paymentInstrument.paymentTransaction.custom.resultTimestamp = new Date().toISOString();
+
+                // Gateway transaction status (jwtPayload.status, e.g. AUTHORIZED / PENDING).
+                // Normalized to the same Title Case the webhook status helper writes, so a later
+                // settlement/capture webhook upgrades this value cleanly. Guarded so an absent
+                // status doesn't surface a literal "undefined" in the BM payment section.
+                if (authStatus) {
+                    paymentInstrument.paymentTransaction.custom.cybsTransactionStatus =
+                        webhookOrderStatusHelper.formatTransactionStatus(authStatus);
+                }
 
 
                 logger.info('PlaceOrderDirect: Payment instrument updated - TransactionID: {0}, PaymentDetails: {1}, PaymentMethod: {2}',

@@ -1016,6 +1016,30 @@ function buildCardHolderName(billTo) {
 }
 
 /**
+ * Map a UC billTo object to the plain address shape expected by SFRA's
+ * addressHelpers (updateAddressFields / checkIfAddressStored / generateAddressName).
+ * Translates UC field names: locality -> city, administrativeArea -> states.stateCode,
+ * phoneNumber -> phone.
+ * @param {Object} billTo - UC billTo (firstName, lastName, address1, address2, locality,
+ *   administrativeArea, postalCode, country, phoneNumber); may be null/partial
+ * @returns {Object|null} SFCC-shaped address object, or null when billTo is missing
+ */
+function mapUcBillToToSfccAddress(billTo) {
+    if (!billTo) return null;
+    return {
+        firstName: billTo.firstName || '',
+        lastName: billTo.lastName || '',
+        address1: billTo.address1 || '',
+        address2: billTo.address2 || '',
+        city: billTo.locality || '',
+        postalCode: billTo.postalCode || '',
+        phone: billTo.phoneNumber || '',
+        country: billTo.country || '',
+        states: { stateCode: billTo.administrativeArea || '' }
+    };
+}
+
+/**
  * Build shipTo object from basket shipping address
  * @param {dw.order.Basket} basket - Current basket
  * @returns {Object|null} - shipTo object or null
@@ -1751,6 +1775,7 @@ module.exports = {
     buildOrderInformation: buildOrderInformation,
     buildBillToFromCustomerAddress: buildBillToFromCustomerAddress,
     buildCardHolderName: buildCardHolderName,
+    mapUcBillToToSfccAddress: mapUcBillToToSfccAddress,
     buildCaptureContextDeviceInformation: buildCaptureContextDeviceInformation,
     buildConsumerAuthenticationInformation: buildConsumerAuthenticationInformation,
     buildDdcBackupDeviceInformation: buildDdcBackupDeviceInformation,

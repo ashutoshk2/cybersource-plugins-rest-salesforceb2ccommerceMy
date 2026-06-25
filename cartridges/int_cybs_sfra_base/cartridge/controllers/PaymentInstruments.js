@@ -113,6 +113,7 @@ if (configObject.tokenizationEnabled && configObject.cartridgeEnabled) {
         var payments = require('~/cartridge/scripts/http/payments');
         var ucPaymentHelper = require('~/cartridge/scripts/helpers/ucPaymentHelper');
         var accountHelpers = require('*/cartridge/scripts/helpers/accountHelpers');
+        var addressHelpers = require('*/cartridge/scripts/helpers/addressHelpers');
 
         var logger = Logger.getLogger('Cybersource', 'SavePaymentDirect');
 
@@ -180,23 +181,29 @@ if (configObject.tokenizationEnabled && configObject.cartridgeEnabled) {
         // Extract card details from JWT and transient token
         var cardDetails = ucPaymentHelper.extractCardDetails(jwtPayload, transientToken, null);
 
-        // Resolve the cardholder name. The completeMandate JWT's orderInformation carries
-        // only amountDetails (no billTo), so it almost never yields a name for the
-        // save-card flow; the name the shopper entered lives in the transient token's
-        // transaction details. Try the JWT first (cheap), then fall back to the transient
-        // token via getPaymentDetails (the same source checkout uses for the holder name).
-        if (jwtPayload.details && jwtPayload.details.orderInformation && jwtPayload.details.orderInformation.billTo) {
-            cardDetails.cardHolderName = ucPaymentHelper.buildCardHolderName(jwtPayload.details.orderInformation.billTo);
-        }
-        if (!cardDetails.cardHolderName && transientToken) {
+        // Resolve the shopper's billing details from the transient token once. It is the
+        // authoritative source for both the cardholder name and the billing address the
+        // shopper entered/confirmed in the UC widget. (The completeMandate JWT carries only
+        // orderInformation.amountDetails, no billTo.)
+        var transientBillTo = null;
+        if (transientToken) {
             try {
                 var paymentDetails = payments.getPaymentDetails(transientToken);
                 if (paymentDetails && paymentDetails.orderInformation && paymentDetails.orderInformation.billTo) {
-                    cardDetails.cardHolderName = ucPaymentHelper.buildCardHolderName(paymentDetails.orderInformation.billTo);
+                    transientBillTo = paymentDetails.orderInformation.billTo;
                 }
-            } catch (nameErr) {
-                logger.warn('SavePaymentDirect: cardholder name lookup from transient token failed: {0}', nameErr.message || nameErr);
+            } catch (pdErr) {
+                logger.warn('SavePaymentDirect: transient-token billing lookup failed: {0}', pdErr.message || pdErr);
             }
+        }
+
+        // Cardholder name: prefer the completeMandate JWT billTo (cheap, usually absent),
+        // else fall back to the transient-token billTo (the source checkout uses).
+        if (jwtPayload.details && jwtPayload.details.orderInformation && jwtPayload.details.orderInformation.billTo) {
+            cardDetails.cardHolderName = ucPaymentHelper.buildCardHolderName(jwtPayload.details.orderInformation.billTo);
+        }
+        if (!cardDetails.cardHolderName && transientBillTo) {
+            cardDetails.cardHolderName = ucPaymentHelper.buildCardHolderName(transientBillTo);
         }
 
         // Save token to wallet
@@ -291,6 +298,24 @@ if (configObject.tokenizationEnabled && configObject.cartridgeEnabled) {
             } else {
                 defaultPaymentHelper.ensureSingleDefault(defaultWallet);
             }
+        }
+
+        // Best-effort: add the billing address the shopper entered in the UC widget to
+        // their address book (deduped). Never blocks the card save — the card is already
+        // persisted at this point, so any failure here is logged and swallowed.
+        try {
+            var sfccAddress = ucPaymentHelper.mapUcBillToToSfccAddress(transientBillTo);
+            var addressBook = req.currentCustomer.addressBook;
+            // Require the minimal fields the dedup key uses (address1 + postalCode + city)
+            // so we never store an incomplete entry.
+            if (sfccAddress && sfccAddress.address1 && sfccAddress.postalCode && sfccAddress.city && addressBook) {
+                if (!addressHelpers.checkIfAddressStored(sfccAddress, addressBook.addresses)) {
+                    addressHelpers.saveAddress(sfccAddress, req.currentCustomer, addressHelpers.generateAddressName(sfccAddress));
+                    logger.info('SavePaymentDirect: billing address added to address book for customer {0}', customerNo);
+                }
+            }
+        } catch (addrErr) {
+            logger.warn('SavePaymentDirect: address-book save skipped: {0}', addrErr.message || addrErr);
         }
 
         // Send account edited email
