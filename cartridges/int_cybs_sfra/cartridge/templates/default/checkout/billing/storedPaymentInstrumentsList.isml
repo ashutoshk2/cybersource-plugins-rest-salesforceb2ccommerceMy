@@ -73,7 +73,6 @@
                     <isif condition="${isEcheckRow}">
                         Electronic Check
                     <iselse/>
-                        ${Resource.msg('msg.payment.type.credit', 'confirmation', null)}
                         ${paymentInstrument.creditCardType}
                     </isif>
                 </span>

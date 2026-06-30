@@ -1,5 +1,4 @@
-​'use strict';
-
+'use strict';
 /**
  * Helper functions for Unified Checkout payment processing
  * Includes:
@@ -1301,11 +1300,11 @@ function buildCompleteMandate(configObject, isTokenizationEnabled, isRegisteredC
 /**
  * Build transientTokenResponseOptions for the UC capture context, honoring the
  * VisaAcceptance_UnifiedCheckout_AllowedCardPrefix preference (BIN return mode):
- *   'None'  -> includeCardPrefix: false  (no BIN in the transient token)
  *   'Six'   -> field omitted entirely    (CyberSource defaults to a 6-digit BIN)
  *   'Eight' -> includeCardPrefix: true   (8-digit BIN)
+ *   unselected (null/empty) -> includeCardPrefix: false (no BIN in the transient token)
  * Any other or legacy value (including a leftover boolean from the old toggle) is
- * treated as 'None'.
+ * treated as the unselected case.
  * @param {Object} configObject - resolved configuration (configuration/index)
  * @returns {Object} - transientTokenResponseOptions object for the capture-context request
  */
@@ -1318,7 +1317,7 @@ function buildTransientTokenResponseOptions(configObject) {
     if (mode === 'Eight') {
         return { includeCardPrefix: true };
     }
-    // 'None' (default) and any unexpected/legacy value: suppress the BIN.
+    // Unselected (null/empty) and any unexpected/legacy value: suppress the BIN.
     return { includeCardPrefix: false };
 }
 

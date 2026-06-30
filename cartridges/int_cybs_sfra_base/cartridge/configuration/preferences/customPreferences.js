@@ -465,9 +465,9 @@ SecureIntegrationConfiguration:{
             UnifiedCheckoutAllowedCardPrefix: {
                 id: 'VisaAcceptance_UnifiedCheckout_AllowedCardPrefix',
                 display_name: 'Card Prefix (BIN) in UC Response',
-                description: 'Controls the card prefix (BIN) returned in the Unified Checkout transient token response. None: no BIN (default). Six: six-digit BIN. Eight: eight-digit BIN.',
+                description: 'Controls the card prefix (BIN) returned in the Unified Checkout transient token response. Leave unselected for no BIN (includeCardPrefix:false). Six: six-digit BIN. Eight: eight-digit BIN.',
                 type: Types.EnumOfString,
-                default: 'None',
+                default: null,
                 flags: { mandatory: false }
             }
         }

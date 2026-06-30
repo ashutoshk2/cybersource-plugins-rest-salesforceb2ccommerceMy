@@ -405,10 +405,6 @@
                 <type>enum-of-string</type>
                 <externally-managed-flag>false</externally-managed-flag>
                 <value-definitions>
-                    <value-definition default="true">
-                        <display xml:lang="x-default">None — no BIN returned</display>
-                        <value>None</value>
-                    </value-definition>
                     <value-definition>
                         <display xml:lang="x-default">Six-digit BIN</display>
                         <value>Six</value>
