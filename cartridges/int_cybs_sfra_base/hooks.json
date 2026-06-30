@@ -91,6 +91,10 @@
         {
             "name": "app.payment.processor.payments_paze",
             "script": "./cartridge/scripts/hooks/payment/processor/payments_paze"
+        },
+        {
+            "name": "app.payment.modifyrequest",
+            "script": "./cartridge/scripts/hooks/payment/modifyRequest"
         }
 
     ]
