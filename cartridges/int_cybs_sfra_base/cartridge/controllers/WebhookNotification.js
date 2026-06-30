@@ -349,14 +349,7 @@ server.use('tokenUpdate', function(req, res, next){
 //   1. Enrichment: log additional transactional info (final settlement
 //      status, risk decisions, network token info) that wasn't in the
 //      synchronous response.
-//   2. Safety net: if the response handler never reached the order (e.g.
-//      browser closed mid-flow), stage the payload under
-//      `CybersourceWebhookStaging` so a manual / cron reconciliation can
-//      pick it up. The CyberSource retry policy gives us up to 3 deliveries.
-//
-// Important: the webhook MUST NOT downgrade an already-confirmed order back
-// to NOTCONFIRMED. A late-arriving AUTHORIZED_PENDING_REVIEW for an order the
-// response already confirmed is normal (review can clear after auth).
+
 server.use('paymentNotification', function (req, res, next) {
     if (req.httpMethod === 'GET') {
         res.setStatusCode(200);
@@ -390,28 +383,10 @@ server.use('paymentNotification', function (req, res, next) {
         var order = OrderMgr.getOrder(orderId);
 
         if (!order) {
-            var retryCount = parseInt(payload.retryNumber || (req.httpHeaders.containsKey('v-c-retry-count') ? req.httpHeaders.get('v-c-retry-count') : 0), 10) || 0;
 
-            Transaction.wrap(function () {
-                var stagingObj = CustomObjectMgr.getCustomObject('VisaAcceptanceWebhookStaging', orderId) || CustomObjectMgr.createCustomObject('VisaAcceptanceWebhookStaging', orderId);
-
-                if (retryCount >= 2) {
-                    Logger.error('paymentNotification: CRITICAL - FINAL RETRY FAILED. Failed to create order ' + orderId + ' after all webhook retries. This is definitively an orphaned authorization.');
-                } else if (stagingObj.custom.payload) {
-                    Logger.warn('paymentNotification: Order ' + orderId + ' STILL not found on webhook retry (' + retryCount + '/3). Overwriting staged payload.');
-                } else {
-                    Logger.info('paymentNotification: Order ' + orderId + ' not found on initial delivery. Staging payload.');
-                }
-                stagingObj.custom.payload = JSON.stringify(payload);
-            });
-
-            if (retryCount >= 2) {
-                res.setStatusCode(200);
-                res.json({ success: true, message: 'Final retry acknowledged. Orphaned authorization staged.' });
-            } else {
-                res.setStatusCode(503);
-                res.json({ success: false, message: 'Order not yet created. Payload staged. Requesting retry as safety net.' });
-            }
+            Logger.warn('paymentNotification: order ' + orderId + ' not found.');
+            res.setStatusCode(200);
+            res.json({ success: true });
             return next();
         }
 
@@ -440,9 +415,6 @@ server.use('paymentNotification', function (req, res, next) {
                 order.setConfirmationStatus(order.CONFIRMATION_STATUS_CONFIRMED);
                 Logger.info('paymentNotification: Promoted order ' + orderId + ' to CONFIRMED via webhook safety net (response handler must have missed it).');
             }
-
-            var stagingObj = CustomObjectMgr.getCustomObject('VisaAcceptanceWebhookStaging', orderId);
-            if (stagingObj) CustomObjectMgr.remove(stagingObj);
         });
 
         // Reflect the transaction's auth/capture status in BM via the shared status helper.

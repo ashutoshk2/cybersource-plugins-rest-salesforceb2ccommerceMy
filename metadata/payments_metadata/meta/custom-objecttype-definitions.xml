@@ -73,32 +73,4 @@
             </attribute-group>
         </group-definitions>
     </custom-type>
-    <custom-type type-id="VisaAcceptanceWebhookStaging">
-        <display-name xml:lang="x-default">VisaAcceptance Webhook Staging</display-name>
-        <description xml:lang="x-default">Safety net for UC payment notifications that arrive before their order exists. Keyed by order number; stores the raw webhook payload for later reconciliation by PlaceOrderDirect.</description>
-        <staging-mode>no-staging</staging-mode>
-        <storage-scope>organization</storage-scope>
-        <key-definition attribute-id="OrderNo">
-            <display-name xml:lang="x-default">Order Number</display-name>
-            <type>string</type>
-            <min-length>0</min-length>
-        </key-definition>
-        <attribute-definitions>
-            <attribute-definition attribute-id="payload">
-                <display-name xml:lang="x-default">Payload</display-name>
-                <type>text</type>
-                <localizable-flag>false</localizable-flag>
-                <mandatory-flag>false</mandatory-flag>
-                <externally-managed-flag>false</externally-managed-flag>
-                <min-length>0</min-length>
-            </attribute-definition>
-        </attribute-definitions>
-        <group-definitions>
-            <attribute-group group-id="VisaAcceptanceWebhookStaging">
-                <display-name xml:lang="x-default">VisaAcceptance Webhook Staging</display-name>
-                <attribute attribute-id="OrderNo"/>
-                <attribute attribute-id="payload"/>
-            </attribute-group>
-        </group-definitions>
-    </custom-type>
 </metadata>

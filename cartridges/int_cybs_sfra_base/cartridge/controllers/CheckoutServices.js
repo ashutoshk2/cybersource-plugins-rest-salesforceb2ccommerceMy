@@ -471,35 +471,6 @@ server.post('PlaceOrderDirect', server.middleware.https, function (req, res, nex
         return next();
     }
 
-    // Check for staged webhook payloads that arrived before order creation
-    try {
-        var CustomObjectMgr = require('dw/object/CustomObjectMgr');
-        var stagingObj = CustomObjectMgr.getCustomObject('VisaAcceptanceWebhookStaging', order.orderNo);
-        if (stagingObj) {
-            var stagedPayload = JSON.parse(stagingObj.custom.payload);
-            var webhookDetails = (stagedPayload.payload && stagedPayload.payload.transactionResult) ? stagedPayload.payload.transactionResult.details : (stagedPayload.payload ? stagedPayload.payload[0].data : stagedPayload);
-
-            Transaction.wrap(function () {
-                if (webhookDetails.status === 'COMPLETED' || webhookDetails.status === 'SETTLED' || webhookDetails.status === 'AUTHORIZED') {
-                    order.setConfirmationStatus(order.CONFIRMATION_STATUS_CONFIRMED);
-
-                    // PENDING / SETTLE_INITIATED cover asynchronous alternate payment
-                    // methods that have not fully settled yet (e.g. iDEAL/Multibanco
-                    // PENDING, Tink SETTLE_INITIATED); treated the same as
-                    // AUTHORIZED_PENDING_REVIEW.
-                } else if (webhookDetails.status === 'AUTHORIZED_PENDING_REVIEW' || webhookDetails.status === 'PENDING' || webhookDetails.status === 'SETTLE_INITIATED') {
-
-                    order.setConfirmationStatus(order.CONFIRMATION_STATUS_NOTCONFIRMED);
-                }
-                CustomObjectMgr.remove(stagingObj);
-            });
-            logger.info('PlaceOrderDirect: Applied staged webhook payload and removed staging object for order {0}', order.orderNo);
-        }
-    } catch (stagingErr) {
-        logger.error('PlaceOrderDirect: Error applying staged webhook payload: {0}', stagingErr.message || stagingErr);
-    }
-
-
     // Asynchronous/redirect alternate payment methods authorize as PENDING or
     // SETTLE_INITIATED in the result JWT and settle later. If no settlement webhook has
     // already confirmed the order above, leave it NOTCONFIRMED so it is not treated as
