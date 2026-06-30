@@ -3,10 +3,9 @@
 
 <iscomment>Add Unified Checkout JS globally for minicart support</iscomment>
 <isset name="isUCEnabled" value="${require('*/cartridge/configuration/index').unifiedCheckoutEnabled}" scope="page" />
-<isset name="isMinicartEnabled" value="${require('*/cartridge/configuration/index').minicartEnabled}" scope="page" />
 <isset name="isCartridgeEnabled" value="${require('*/cartridge/configuration/index').cartridgeEnabled}" scope="page" />
-<isset name="isPaymentsPresent" value="${!empty(require('*/cartridge/configuration/index').digitalPaymentMethods)}" scope="page" />
-<isif condition="${isMinicartEnabled && isCartridgeEnabled && isUCEnabled && isPaymentsPresent}">
+<isset name="isExpressPayEnabled" value="${require('*/cartridge/configuration/index').unifiedCheckoutExpressPay}" scope="page" />
+<isif condition="${isCartridgeEnabled && isUCEnabled && isExpressPayEnabled}">
 	<isscript>
         var assets = require('*/cartridge/scripts/assets');
         assets.addJs('/custom/unifiedCheckout.js');

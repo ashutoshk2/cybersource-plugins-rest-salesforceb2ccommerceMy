@@ -252,49 +252,26 @@ _exports.prototype.getHttpSignature = function (resource, method, merchantKeyId,
 
 
 _exports.prototype.getJWTToken = function (resource, method, merchantId, digest, requestHost) {
-    var Signature = require('dw/crypto/Signature');
-    var KeyRef = require('dw/crypto/KeyRef');
+    var Constants = require('../apiClient/constants');
     var UUIDUtils = require('dw/util/UUIDUtils');
 
-    // Read the P12 signing alias from BM site preferences.
-    // Use Meta Key credentials when Meta Key is enabled.
-    var cybsLogger = require('dw/system/Logger').getLogger('CyberSource', 'ApiClient');
-    var certHelper = require('*/cartridge/scripts/helpers/certHelper');
-    var p12PrivateKeyAlias;
-    // The MID expected in the signing cert's subject CN. For meta keys this is the
-    // portfolio owner (the JWT iss), not the transacting child MID.
-    var expectedMid;
-    if (configObject.metaKeyEnabled) {
-        cybsLogger.info('Meta Key authentication is enabled. Using Meta Key credentials for merchant {0}.', merchantId);
-        var missingFields = [];
-        if (!configObject.p12PrivateKeyAlias) { missingFields.push('p12PrivateKeyAlias'); }
-        if (!configObject.metaKeyMerchantId) { missingFields.push('metaKeyMerchantId'); }
-        if (missingFields.length > 0) {
-            cybsLogger.error('Meta Key is enabled but required fields are missing: {0}. Check Business Manager site preferences.', missingFields.join(', '));
-        }
-        // Meta Key reuses the standard P12 signing alias; only the issuer MID differs.
-        p12PrivateKeyAlias = configObject.p12PrivateKeyAlias;
-        expectedMid = configObject.metaKeyMerchantId;
-    } else {
-        p12PrivateKeyAlias = configObject.p12PrivateKeyAlias;
-        expectedMid = merchantId;
-    }
-
-    // Derive the kid (subject DN serialNumber) from the cert bound to the signing alias,
-    // rather than reading it from a separate site preference.
-    var p12KeyId = certHelper.getKidFromAlias(p12PrivateKeyAlias, expectedMid);
+    // Shared-secret JWT (v2): the token is signed with the REST shared secret key pair
+    // (KeyId + Secret Key from EBC), not a P12 certificate. The `kid` is the shared-secret
+    // key id and the signature is an HMAC-SHA256 over the signing input keyed with the
+    // base64-decoded shared secret. See restgs-jwt-con-shared-secret-intro.md.
+    var merchantKeyId = this.merchantConfig.getMerchantKeyID();
+    var merchantSecretKey = this.merchantConfig.getMerchantsecretKey();
 
     var currentTimestamp = Math.floor(Date.now() / 1000);
 
-    // JWS Header Claims - only alg, typ, kid per spec
+    // JWS Header Claims - alg, typ, kid per spec (Step 3B)
     var header = {
-        alg: 'RS256',
+        alg: Constants.JWT_SHARED_SECRET_ALG,
         typ: 'JWT',
-        kid: p12KeyId,
-        'v-c-merchant-id': merchantId
+        kid: merchantKeyId
     };
 
-    // JWS Body Claims - JWT v2 (field order matches working reference)
+    // JWS Body Claims - JWT v2 (Step 3C)
     var jwtPayload = {};
     if (digest) {
         jwtPayload.digest = digest;
@@ -302,7 +279,8 @@ _exports.prototype.getJWTToken = function (resource, method, merchantId, digest,
     }
     jwtPayload.exp = currentTimestamp + 120;
     jwtPayload.iat = currentTimestamp;
-    // For meta keys, iss must be the portfolio owner (P12 owner), not the transacting child MID
+    // iss is the MID that created the shared secret key pair. For meta/portfolio keys this is
+    // the portfolio owner MID; v-c-merchant-id stays the transacting child MID.
     jwtPayload.iss = (configObject.metaKeyEnabled && configObject.metaKeyMerchantId) ? configObject.metaKeyMerchantId : merchantId;
     jwtPayload.jti = UUIDUtils.createUUID();
     jwtPayload['request-method'] = method;
@@ -315,13 +293,13 @@ _exports.prototype.getJWTToken = function (resource, method, merchantId, digest,
     var encodedHeader = this.base64UrlEncode(JSON.stringify(header));
     var encodedPayload = this.base64UrlEncode(JSON.stringify(jwtPayload));
 
-    // Create signing input and sign with private key from SFCC keystore
+    // Create signing input: [JWS Header].[Claim Set] (Step 3D)
     var signingInput = encodedHeader + '.' + encodedPayload;
 
-    // Sign with private key from SFCC keystore (P12 uploaded to BM > Private Keys and Certificates)
-    var keyRef = new KeyRef(p12PrivateKeyAlias);
-    var sig = new Signature();
-    var signatureBytes = sig.signBytes(new Bytes(signingInput, 'UTF-8'), keyRef, 'SHA256withRSA');
+    // HMAC-SHA256 the signing input with the base64-decoded shared secret, then base64URL encode.
+    var key = Encoding.fromBase64(merchantSecretKey);
+    var mac = new Mac(Constants.HmacSHA256);
+    var signatureBytes = mac.digest(new Bytes(signingInput, 'UTF-8'), key);
     var encodedSignature = this.base64UrlEncode(signatureBytes);
 
     return signingInput + '.' + encodedSignature;
@@ -352,14 +330,12 @@ _exports.prototype.applyHttpSignatureHeaders = function (headerParams, opts) {
 };
 
 /**
- * Applies JWT (token) authentication headers to the request.
+ * Applies shared-secret JWT (token) authentication headers to the request.
  * The JWT carries host / method / resource / digest as claims, so the
  * HTTP-signature-only headers (signature, host, date, User-Agent) are NOT sent.
  *
- * NOTE: the exact JWT wire format (the "Bearer " prefix and the digest claim shape)
- * should be verified against a live CyberSource JWT call. The raw (unprefixed) base64
- * digest is passed to getJWTToken so the digest claim is not double-prefixed with
- * "SHA-256=" against its separate digestAlgorithm claim.
+ * The raw (unprefixed) base64 digest is passed to getJWTToken so the digest claim is
+ * not double-prefixed with "SHA-256=" against its separate digestAlgorithm claim.
  *
  * @param {Object} headerParams - header map to mutate
  * @param {Object} opts - {resource, method, requestHost, merchantId, isBodyMethod, rawDigest}
@@ -399,8 +375,10 @@ _exports.prototype.callApi = function (path, httpMethod, pathParams, queryParams
     var method = httpMethod.toLowerCase();
     var merchantId = this.merchantConfig.getMerchantID();
 
-    // Selected auth mechanism from the Core BM preference. Defaults to HTTP signature.
-    var authType = (this.merchantConfig.getAuthenticationType() || Constants.HTTP).toLowerCase();
+    // Auth mechanism is selected by endpoint, not by a BM preference:
+    // the UC V1 Sessions endpoint does not yet support shared-secret JWT, so it keeps
+    // HTTP signature; every other endpoint uses shared-secret JWT.
+    var useHttpSignature = (path === '/uc/v1/sessions');
 
     var url = this.buildUrl(path, pathParams, queryParams);
     var resource = url.substr(this.basePath.length);
@@ -451,8 +429,8 @@ _exports.prototype.callApi = function (path, httpMethod, pathParams, queryParams
         rawDigest = this.generateDigest(payload);
     }
 
-    // Apply auth headers for the selected mechanism (HTTP signature vs JWT).
-    if (authType === Constants.JWT) {
+    // Apply auth headers for the endpoint's mechanism (JWT for all but /uc/v1/sessions).
+    if (!useHttpSignature) {
         this.applyJwtHeaders(headerParams, {
             resource: resource,
             method: method,

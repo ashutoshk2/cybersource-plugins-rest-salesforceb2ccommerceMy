@@ -51,29 +51,6 @@
                 <externally-managed-flag>false</externally-managed-flag>
                 <default-value>false</default-value>
             </attribute-definition>
-            <attribute-definition attribute-id="VisaAcceptance_AuthenticationType">
-                <display-name xml:lang="x-default">Authentication Mechanism</display-name>
-                <description xml:lang="x-default">Authentication mechanism used for Visa Acceptance REST API calls. HTTP Signature uses the REST KeyId/Secret Key; JWT uses the P12 private key alias for RS256 signing. Defaults to HTTP Signature when unset.</description>
-                <type>enum-of-string</type>
-                <mandatory-flag>false</mandatory-flag>
-                <externally-managed-flag>false</externally-managed-flag>
-                <value-definitions>
-                    <value-definition default="true">
-                        <display xml:lang="x-default">HTTP Signature</display>
-                        <value>http_signature</value>
-                    </value-definition>
-                    <value-definition>
-                        <display xml:lang="x-default">JWT</display>
-                        <value>jwt</value>
-                    </value-definition>
-                </value-definitions>
-            </attribute-definition>
-                        <attribute-definition attribute-id="VisaAcceptance_P12PrivateKeyAlias">
-                <display-name xml:lang="x-default">P12 Private Key Alias</display-name>
-                <description xml:lang="x-default">Alias of the P12 private key imported in BM Private Keys and Certificates.</description>
-                <type>string</type>
-                <externally-managed-flag>false</externally-managed-flag>
-            </attribute-definition>
             <attribute-definition attribute-id="VisaAcceptance_MetaKeyEnabled">
                 <display-name xml:lang="x-default">Enable Meta Key</display-name>
                 <description xml:lang="x-default">Enable or disable Meta Key for Visa Acceptance.</description>
@@ -86,13 +63,6 @@
                 <description xml:lang="x-default">The portfolio/account merchant ID that owns the Meta Key P12 certificate.</description>
                 <type>string</type>
                 <externally-managed-flag>false</externally-managed-flag>
-            </attribute-definition>
-            <attribute-definition attribute-id="VisaAcceptance_UnifiedCheckout_Cart_Minicart">
-                <display-name xml:lang="x-default">Enable Unified Checkout for Cart and Mini Cart</display-name>
-                <description xml:lang="x-default">Enable or Disable Unified Checkout for digital payments on Cart and Mini Cart.</description>
-                <type>boolean</type>
-                <externally-managed-flag>false</externally-managed-flag>
-                <default-value>false</default-value>
             </attribute-definition>
             <attribute-definition attribute-id="VisaAcceptance_CommerceIndicator">
                 <display-name xml:lang="x-default">Commerce Indicator</display-name>
@@ -388,50 +358,22 @@
                     </value-definition>
                 </value-definitions>
             </attribute-definition>
-            <attribute-definition attribute-id="VisaAcceptance_UnifiedCheckout_DigitalPaymentMethods">
-                <display-name xml:lang="x-default">Digital Payment Methods in UnifiedCheckout</display-name>
-                <type>enum-of-string</type>
-                <mandatory-flag>false</mandatory-flag>
-                <externally-managed-flag>false</externally-managed-flag>
-                <select-multiple-flag>true</select-multiple-flag>
-                <value-definitions>
-                    <value-definition>
-                        <display xml:lang="x-default">GOOGLEPAY</display>
-                        <value>GOOGLEPAY</value>
-                    </value-definition>
-                    <value-definition>
-                        <display xml:lang="x-default">APPLEPAY</display>
-                        <value>APPLEPAY</value>
-                    </value-definition>
-                    <value-definition>
-                        <display xml:lang="x-default">CLICKTOPAY</display>
-                        <value>CLICKTOPAY</value>
-                    </value-definition>
-                </value-definitions>
-            </attribute-definition>
-            <attribute-definition attribute-id="VisaAcceptance_UnifiedCheckout_PaymentAcceptanceLocation">
-                <display-name xml:lang="x-default">Payment Acceptance Location for UnifiedCheckout</display-name>
-                <description xml:lang="x-default">Embedded is loaded in the Checkout page while Sidebar is loaded in the side of the screen.</description>
+            <attribute-definition attribute-id="VisaAcceptance_UnifiedCheckout_NonWalletDisplayMode">
+                <display-name xml:lang="x-default">Non-Wallet UC Display Mode</display-name>
+                <description xml:lang="x-default">Display mode for the card / non-wallet UC instance.</description>
                 <type>enum-of-string</type>
                 <mandatory-flag>false</mandatory-flag>
                 <externally-managed-flag>false</externally-managed-flag>
                 <value-definitions>
-                <value-definition default="true">
-                <display xml:lang="x-default">Embedded</display>
-                <value>Embedded</value>
-                </value-definition>
-                <value-definition>
-                <display xml:lang="x-default">Sidebar</display>
-                <value>Sidebar</value>
-                </value-definition>
+                    <value-definition default="true">
+                        <display xml:lang="x-default">Embedded</display>
+                        <value>Embedded</value>
+                    </value-definition>
+                    <value-definition>
+                        <display xml:lang="x-default">Sidebar</display>
+                        <value>Sidebar</value>
+                    </value-definition>
                 </value-definitions>
-            </attribute-definition>
-            <attribute-definition attribute-id="VisaAcceptance_UnifiedCheckout_EnableECheck">
-                <display-name xml:lang="x-default">Enable E-Check Payment for Unified Checkout</display-name>
-                <description xml:lang="x-default">Enable or Disable E-Check Payment for Unified Checkout.</description>
-                <type>boolean</type>
-                <externally-managed-flag>false</externally-managed-flag>
-                <default-value>false</default-value>
             </attribute-definition>
             <attribute-definition attribute-id="VisaAcceptance_UnifiedCheckout_CheckoutLabel">
                 <display-name xml:lang="x-default">Checkout Label for Unified Checkout</display-name>
@@ -487,8 +429,6 @@
                 <attribute attribute-id="VisaAcceptance_MerchantKeySecret"/>
                 <attribute attribute-id="VisaAcceptance_CommerceIndicator"/>
                 <attribute attribute-id="VisaAcceptance_EnableTestEndpoints"/>
-                <attribute attribute-id="VisaAcceptance_AuthenticationType"/>
-                <attribute attribute-id="VisaAcceptance_P12PrivateKeyAlias"/>
                 <attribute attribute-id="VisaAcceptance_MetaKeyEnabled"/>
                 <attribute attribute-id="VisaAcceptance_MetaKeyMerchantId"/>
             </attribute-group>

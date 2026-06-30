@@ -14,13 +14,10 @@ var ApiException = require('./ApiException');
 
 function MerchantConfig(result) {
   /*Common Parameters*/
-  // Preference values from dw getCustomPreferenceValue are Java-backed (typeof "object"),
-  // not native JS strings. Coerce to a native string so the `typeof === "string"` checks
-  // in defaultPropValues behave (mirrors the .toString() handling of merchantID/secretKey).
-  // null/undefined is preserved so the mandatory AUTHENTICATION_REQ check still fires.
-  this.authenticationType = (result.authenticationType === null || result.authenticationType === undefined)
-    ? result.authenticationType
-    : String(result.authenticationType);
+  // Auth mechanism is no longer merchant-selectable: shared-secret JWT is used for all REST
+  // calls, with HTTP signature reserved for /uc/v1/sessions (decided per-endpoint in
+  // ApiClient.callApi). The payment transaction's authMethod is recorded from the
+  // configuration module's authenticationType, not from MerchantConfig.
   this.url;
   this.requestHost;
   this.requestJsonPath = result.requestJsonPath;
@@ -40,8 +37,6 @@ function MerchantConfig(result) {
   this.keyPass = result.keyPass;
   this.keyType;
   this.keyFilename = result.keyFileName;
-  // P12 private key alias used by JWT (RS256) signing. See ApiClient.getJWTToken / certHelper.
-  this.p12PrivateKeyAlias = result.p12PrivateKeyAlias;
   this.enableLog = result.enableLog;
   this.useHttpClient;
   /* proxy Parameters*/
@@ -61,14 +56,6 @@ function MerchantConfig(result) {
 
   this.defaultPropValues();
 }
-
-MerchantConfig.prototype.getAuthenticationType = function getAuthenticationType() {
-  return this.authenticationType;
-};
-
-MerchantConfig.prototype.setAuthenticationType = function setAuthenticationType(authType) {
-  this.authenticationType = authType;
-};
 
 MerchantConfig.prototype.setMerchantID = function setMerchantID(merchantID) {
   this.merchantID = merchantID;
@@ -307,39 +294,21 @@ MerchantConfig.prototype.defaultPropValues = function defaultPropValues() {
 
   if (this.merchantID === null || this.merchantID === "" || this.merchantID === undefined) {
     ApiException.ApiException(Constants.MERCHANTID_REQ, logger);
+  } else if (typeof this.merchantID !== "string") {
+    this.merchantID = this.merchantID.toString();
   }
 
-  if (this.authenticationType === null || this.authenticationType === "" || this.authenticationType === undefined) {
-    ApiException.ApiException(Constants.AUTHENTICATION_REQ, logger);
-  } //authentication mechanism specific checks
+  // Both auth mechanisms use the REST shared-secret key pair: shared-secret JWT signs the
+  // token with it (KeyId = kid, Secret Key = HMAC key) and HTTP signature (/uc/v1/sessions)
+  // uses the same pair. So the KeyId and Secret Key are always required.
+  if (this.merchantKeyId === null || this.merchantKeyId === "" || this.merchantKeyId === undefined) {
+    ApiException.ApiException(Constants.MERCHANT_KEY_ID_REQ, logger);
+  }
 
-
-  if (typeof this.authenticationType === "string") {
-    if (this.authenticationType.toLowerCase() === Constants.HTTP) {
-      if (this.merchantKeyId === null || this.merchantKeyId === "" || this.merchantKeyId === undefined) {
-        ApiException.ApiException(Constants.MERCHANT_KEY_ID_REQ, logger);
-      } else if (typeof this.merchantID !== "string") {
-        this.merchantID = this.merchantID.toString();
-      }
-
-      if (this.merchantsecretKey === null || this.merchantsecretKey === "" || this.merchantsecretKey === undefined) {
-        ApiException.ApiException(Constants.MERCHANT_SECRET_KEY_REQ, logger);
-      } else if (typeof this.merchantsecretKey !== "string") {
-        this.merchantsecretKey = this.merchantsecretKey.toString();
-      }
-    } else if (this.authenticationType.toLowerCase() === Constants.JWT) {
-      // JWT (token) auth signs with the P12 private key alias from BM site preferences
-      // (see ApiClient.getJWTToken / certHelper). The legacy file-based key model
-      // (keyAlias/keyPass/keysDirectory/keyFilename) is no longer used. Meta Key specifics
-      // (metaKeyMerchantId) are validated/logged in getJWTToken when Meta Key is enabled.
-      if (this.p12PrivateKeyAlias === null || this.p12PrivateKeyAlias === "" || this.p12PrivateKeyAlias === undefined) {
-        ApiException.ApiException(Constants.P12_PRIVATE_KEY_ALIAS_REQ, logger);
-      }
-    } else {
-      ApiException.ApiException(Constants.AUTH_ERROR, logger);
-    }
-  } else {
-    ApiException.ApiException(Constants.AUTH_ERROR, logger);
+  if (this.merchantsecretKey === null || this.merchantsecretKey === "" || this.merchantsecretKey === undefined) {
+    ApiException.ApiException(Constants.MERCHANT_SECRET_KEY_REQ, logger);
+  } else if (typeof this.merchantsecretKey !== "string") {
+    this.merchantsecretKey = this.merchantsecretKey.toString();
   }
   /**
    * This method is to log all merchantConfic properties

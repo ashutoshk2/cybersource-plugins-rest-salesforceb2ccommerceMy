@@ -1,4 +1,4 @@
-'use strict';
+​'use strict';
 
 var page = module.superModule;
 var server = require('server');
@@ -352,6 +352,11 @@ server.post('PlaceOrderDirect', server.middleware.https, function (req, res, nex
     // Set order status in session for fraud detection hook
     session.privacy.orderStatus = authStatus;
 
+    // Carry eCheck bank details out of the Transaction.wrap so the TMS save block
+    // below can reuse the same getPaymentDetails-enriched values without calling the
+    // API twice. Stays null for non-eCheck flows.
+    var enrichedBankDetails = null;
+
     // Update payment instrument with transaction details from SDK authorization
     try {
         Transaction.wrap(function () {
@@ -384,6 +389,51 @@ server.post('PlaceOrderDirect', server.middleware.https, function (req, res, nex
                     ucPaymentHelper.setInstrumentCustomAttribute(paymentInstrument, 'apmPaymentType', apmDetailsStr);
                     ucPaymentHelper.setInstrumentCustomAttribute(paymentInstrument, 'apmMethod', apmDescriptor.method);
                     ucPaymentHelper.setInstrumentCustomAttribute(paymentInstrument, 'apmMandateType', session.privacy.ucResolvedMandateType);
+                } else if (detectedPaymentMethod === 'BANK_TRANSFER') {
+                    // eCheck (ACH). The transient JWT carries schema-only placeholders for
+                    // bank.routingNumber and bank.account.number ({}, not real values), so
+                    // we fetch the populated bank details via the TransientTokenData API
+                    // (getPaymentDetails) and merge them into extractBankDetailsFromTransient's
+                    // output. Reuse the credit-card wallet slots so the SFRA payment summary,
+                    // confirmation page, and email render eCheck in the same column as PAN entries.
+                    var bankDetails = ucPaymentHelper.extractBankDetailsFromTransient(transientToken, order.billingAddress);
+                    try {
+                        var pd = payments.getPaymentDetails(transientToken);
+                        var pdBank = pd && pd.paymentInformation && pd.paymentInformation.bank;
+                        if (pdBank) {
+                            if (!bankDetails.routingNumber && pdBank.routingNumber) {
+                                bankDetails.routingNumber = typeof pdBank.routingNumber === 'string'
+                                    ? pdBank.routingNumber
+                                    : (pdBank.routingNumber.value || '');
+                            }
+                            if (pdBank.account) {
+                                var pdAccountNum = typeof pdBank.account.number === 'string'
+                                    ? pdBank.account.number
+                                    : (pdBank.account.number && (pdBank.account.number.maskedValue || pdBank.account.number.value)) || '';
+                                if (!bankDetails.maskedAccount && pdAccountNum) {
+                                    bankDetails.maskedAccount = pdAccountNum;
+                                    if (pdAccountNum.length >= 4) {
+                                        bankDetails.last4 = pdAccountNum.slice(-4);
+                                    }
+                                }
+                            }
+                        }
+                    } catch (pdErr) {
+                        logger.warn('PlaceOrderDirect: getPaymentDetails lookup failed for eCheck: {0}', pdErr.message || pdErr);
+                    }
+                    enrichedBankDetails = bankDetails;
+                    if (bankDetails.accountHolder && !paymentInstrument.creditCardHolder) {
+                        paymentInstrument.setCreditCardHolder(bankDetails.accountHolder);
+                    }
+                    if (bankDetails.last4) {
+                        paymentInstrument.setCreditCardNumber('••••' + bankDetails.last4);
+                    }
+                    paymentInstrument.setCreditCardType('eCheck');
+                    if (bankDetails.routingNumber) {
+                        ucPaymentHelper.setInstrumentCustomAttribute(paymentInstrument, 'echeckRoutingNumber', bankDetails.routingNumber);
+                    }
+                    paymentInstrument.paymentTransaction.custom.paymentDetails =
+                        ucPaymentHelper.buildEcheckPaymentDetailsString(bankDetails);
                 } else {
                     // Extract and set card details (pass order billing address for cardholder name)
                     var cardDetails = ucPaymentHelper.extractCardDetails(jwtPayload, transientToken, order.billingAddress);
@@ -485,12 +535,36 @@ server.post('PlaceOrderDirect', server.middleware.https, function (req, res, nex
 
 
     // Save TMS token to customer wallet only when the consumer explicitly opted in
-    // (transient token metadata.consumerPreference.saveCard === true).
-    // Extract card details first (needed for wallet entry) - pass billing address for cardholder name
-    var cardDetailsForWallet = ucPaymentHelper.extractCardDetails(jwtPayload, transientToken, order.billingAddress);
-    var tokenSaved = ucPaymentHelper.saveTokenToWallet(jwtPayload, cardDetailsForWallet, session.getCustomer(), transientToken);
+    // (transient token metadata.consumerPreference.saveCard === true), the auth response
+    // returned tokenInformation, and the shopper is authenticated. Triple-gating lives
+    // inside saveTokenToWallet — we just supply the display details.
+    //
+    // For eCheck (BANK_TRANSFER) the response has no card object, so we synthesize a
+    // card-shaped record from the transient token's bank.account / bank.routingNumber.
+    // Stored under METHOD_CREDIT_CARD with creditCardType="eCheck" so the same wallet
+    // selector, GetSavedCards, and CreateUCTokenWithCard pipelines that handle PAN
+    // automatically handle saved eCheck instruments too.
+    var detailsForWallet;
+    if (detectedPaymentMethod === 'BANK_TRANSFER') {
+        // Reuse the getPaymentDetails-enriched bankDetails computed above. The JWT-only
+        // extractBankDetailsFromTransient returns empty placeholders, so falling back to
+        // it here would re-introduce the null routing-number tile bug.
+        var echeckDetails = enrichedBankDetails
+            || ucPaymentHelper.extractBankDetailsFromTransient(transientToken, order.billingAddress);
+        detailsForWallet = {
+            cardHolderName: echeckDetails.accountHolder,
+            cardTypeName: 'eCheck',
+            maskedNumber: echeckDetails.last4 ? ('••••' + echeckDetails.last4) : '',
+            expirationMonth: '',
+            expirationYear: '',
+            echeckRoutingNumber: echeckDetails.routingNumber || ''
+        };
+    } else {
+        detailsForWallet = ucPaymentHelper.extractCardDetails(jwtPayload, transientToken, order.billingAddress);
+    }
+    var tokenSaved = ucPaymentHelper.saveTokenToWallet(jwtPayload, detailsForWallet, session.getCustomer(), transientToken);
     if (tokenSaved) {
-        logger.info('PlaceOrderDirect: TMS token saved to customer wallet');
+        logger.info('PlaceOrderDirect: TMS token saved to customer wallet (method: {0})', detectedPaymentMethod);
     }
 
     // Save addresses to address book for logged in customers

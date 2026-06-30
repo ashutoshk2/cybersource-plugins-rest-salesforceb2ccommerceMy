@@ -1,4 +1,4 @@
-'use strict';
+​'use strict';
 
 /**
  * Helper functions for Unified Checkout payment processing
@@ -689,6 +689,85 @@ function extractBankDetails(paymentDetails, billingAddress) {
         accountNumber: accountNumber,
         accountHolder: accountHolder
     };
+}
+
+/**
+ * Extract eCheck bank details from the UC transient token.
+ * Source: content.paymentInformation.bank.{account.{number,type,maskedValue}, routingNumber}.
+ *
+ * Visa Acceptance transient tokens use any of three shapes per field:
+ *   - bare string ("121000358")
+ *   - wrapped scalar ({ value: "121000358" } or { maskedValue: "xxxxxx1234" })
+ *   - empty placeholder object ({}) when the field is declared in schema but unfilled
+ * coerceTokenString flattens all three into a plain string or '' so downstream code is
+ * safe to call .slice / .length on.
+ */
+function coerceTokenString(raw) {
+    if (raw == null) return '';
+    if (typeof raw === 'string') return raw;
+    if (typeof raw === 'object') {
+        if (typeof raw.value === 'string') return raw.value;
+        if (typeof raw.maskedValue === 'string') return raw.maskedValue;
+    }
+    return '';
+}
+
+function extractBankDetailsFromTransient(transientToken, billingAddress) {
+    var details = {
+        routingNumber: '',
+        maskedAccount: '',
+        last4: '',
+        accountHolder: ''
+    };
+
+    if (billingAddress) {
+        var firstName = billingAddress.firstName || '';
+        var lastName = billingAddress.lastName || '';
+        if (firstName || lastName) {
+            details.accountHolder = (firstName + ' ' + lastName).trim();
+        }
+    }
+
+    if (!transientToken) {
+        return details;
+    }
+
+    var payload = decodeJwtPayload(transientToken);
+    var bank = payload && payload.content && payload.content.paymentInformation && payload.content.paymentInformation.bank;
+    if (!bank) {
+        return details;
+    }
+
+    details.routingNumber = coerceTokenString(bank.routingNumber);
+
+    if (bank.account) {
+        // Prefer maskedValue; fall back to number (may itself be masked, e.g. "xxxxxx1234").
+        details.maskedAccount = coerceTokenString(bank.account.maskedValue)
+            || coerceTokenString(bank.account.number);
+        if (details.maskedAccount.length >= 4) {
+            details.last4 = details.maskedAccount.slice(-4);
+        }
+    }
+
+    return details;
+}
+
+/**
+ * Build the storefront payment-summary string for an eCheck order.
+ * Shows the full routing number and the last-4 of the account, masked.
+ */
+function buildEcheckPaymentDetailsString(bankDetails) {
+    if (!bankDetails) return '';
+    if (bankDetails.routingNumber && bankDetails.last4) {
+        return 'Routing: ' + bankDetails.routingNumber + ' · ••••' + bankDetails.last4;
+    }
+    if (bankDetails.last4) {
+        return 'eCheck ••••' + bankDetails.last4;
+    }
+    if (bankDetails.routingNumber) {
+        return 'Routing: ' + bankDetails.routingNumber;
+    }
+    return 'eCheck';
 }
 
 // ============================================================================
@@ -1414,7 +1493,7 @@ function findCreditCardByInstrumentIdentifier(wallet, instrumentIdentifierId) {
  *
  * @param {dw.customer.Wallet} wallet - customer wallet
  * @param {string} serializedToken - serialized TMS token to store
- * @param {Object} cardDetails - { cardHolderName, cardTypeName, maskedNumber, expirationMonth, expirationYear }
+ * @param {Object} cardDetails - { cardHolderName, cardTypeName, maskedNumber, expirationMonth, expirationYear, echeckRoutingNumber }
  * @param {string} instrumentIdentifierId - CyberSource instrumentIdentifier id
  * @returns {Object} { uuid: <saved card UUID>, replacedExisting: <boolean> }
  */
@@ -1429,6 +1508,10 @@ function upsertCreditCard(wallet, serializedToken, cardDetails, instrumentIdenti
     var masked = details.maskedNumber;
     var expMonth = details.expirationMonth;
     var expYear = details.expirationYear;
+    // eCheck-only: routing number lives on a custom attribute so the wallet selector
+    // can render it without polluting creditCardNumber. Carry over from existing PI
+    // when replacing (same masked-instrument-safe pattern used for the card fields).
+    var routingNumber = details.echeckRoutingNumber || '';
 
     if (existingPI) {
         // Getters are safe on a masked instrument; carry over anything the new details
@@ -1443,6 +1526,13 @@ function upsertCreditCard(wallet, serializedToken, cardDetails, instrumentIdenti
         masked = masked || existingPI.maskedCreditCardNumber;
         expMonth = expMonth || existingPI.creditCardExpirationMonth;
         expYear = expYear || existingPI.creditCardExpirationYear;
+        if (!routingNumber) {
+            try {
+                routingNumber = (existingPI.custom && existingPI.custom.echeckRoutingNumber) || '';
+            } catch (e) {
+                routingNumber = '';
+            }
+        }
     }
 
     var savedUUID = null;
@@ -1456,6 +1546,9 @@ function upsertCreditCard(wallet, serializedToken, cardDetails, instrumentIdenti
         newPI.setCreditCardToken(serializedToken);
         if (wasDefault) {
             newPI.custom.isDefault = true;
+        }
+        if (routingNumber) {
+            newPI.custom.echeckRoutingNumber = routingNumber;
         }
         if (existingPI) {
             wallet.removePaymentInstrument(existingPI);
@@ -1750,6 +1843,8 @@ module.exports = {
 
     getProcessorIdForMethod: getProcessorIdForMethod,
     extractBankDetails: extractBankDetails,
+    extractBankDetailsFromTransient: extractBankDetailsFromTransient,
+    buildEcheckPaymentDetailsString: buildEcheckPaymentDetailsString,
 
     // Card details extraction
     extractCardDetails: extractCardDetails,

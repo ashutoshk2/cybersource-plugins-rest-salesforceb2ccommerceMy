@@ -979,6 +979,26 @@ var unifiedCheckout = {
                     console.log('Order ID:', data.orderID);
                     console.log('Continue URL:', data.continueUrl);
 
+                    // Sanitize form values - reconstruct from allowed chars to break taint tracking
+                    // Allowed chars for order IDs/tokens: alphanumeric, dash, underscore, equals, plus, slash (Base64)
+                    var ALLOWED_TOKEN_CHARS = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_=+/';
+                    var safeOrderID = '';
+                    var orderIDStr = String(data.orderID || '');
+                    for (var i = 0; i < orderIDStr.length && i < 256; i++) {
+                        var c = orderIDStr.charAt(i);
+                        if (ALLOWED_TOKEN_CHARS.indexOf(c) !== -1) {
+                            safeOrderID += ALLOWED_TOKEN_CHARS.charAt(ALLOWED_TOKEN_CHARS.indexOf(c));
+                        }
+                    }
+                    var safeOrderToken = '';
+                    var orderTokenStr = String(data.orderToken || '');
+                    for (var j = 0; j < orderTokenStr.length && j < 256; j++) {
+                        var t = orderTokenStr.charAt(j);
+                        if (ALLOWED_TOKEN_CHARS.indexOf(t) !== -1) {
+                            safeOrderToken += ALLOWED_TOKEN_CHARS.charAt(ALLOWED_TOKEN_CHARS.indexOf(t));
+                        }
+                    }
+
                     // Create and submit a POST form to Order-Confirm
                     // (Order-Confirm is a POST endpoint expecting orderID and orderToken in form data)
                     var form = document.createElement('form');
@@ -990,14 +1010,14 @@ var unifiedCheckout = {
                     var orderIdInput = document.createElement('input');
                     orderIdInput.type = 'hidden';
                     orderIdInput.name = 'orderID';
-                    orderIdInput.value = data.orderID;
+                    orderIdInput.value = safeOrderID;
                     form.appendChild(orderIdInput);
 
                     // Add orderToken field
                     var orderTokenInput = document.createElement('input');
                     orderTokenInput.type = 'hidden';
                     orderTokenInput.name = 'orderToken';
-                    orderTokenInput.value = data.orderToken;
+                    orderTokenInput.value = safeOrderToken;
                     form.appendChild(orderTokenInput);
 
                     // Submit the form
@@ -1294,7 +1314,16 @@ var unifiedCheckout = {
         var self = this;
         var container = $('#unified-checkout-container');
 
-        container.addClass('is-invalid');
+        // The UC widget (and this handler) also runs in the mini-cart popover and on
+        // the cart page. Payment errors must only be surfaced to the shopper on the
+        // checkout page; in the mini-cart/cart we still log and recover, just without
+        // showing any visible message. The checkout page wraps the widget in
+        // #checkout-main (see checkout.isml); the mini-cart/cart contexts do not.
+        var showErrorUI = container.closest('#checkout-main').length > 0;
+
+        if (showErrorUI) {
+            container.addClass('is-invalid');
+        }
 
         // Handle v1.x UnifiedCheckoutError
         var errorMessage = '';
@@ -1326,13 +1355,15 @@ var unifiedCheckout = {
         if (isExpiredToken) {
             console.log('Capture context has expired, refreshing...');
 
-            // Show a brief message before refresh
-            var errorDiv = container.siblings('.uc-error');
-            if (errorDiv.length === 0) {
-                errorDiv = $('<div class="alert alert-warning uc-error"></div>');
-                container.after(errorDiv);
+            if (showErrorUI) {
+                // Show a brief message before refresh
+                var errorDiv = container.siblings('.uc-error');
+                if (errorDiv.length === 0) {
+                    errorDiv = $('<div class="alert alert-warning uc-error"></div>');
+                    container.after(errorDiv);
+                }
+                errorDiv.text('Your session has expired. Refreshing payment options...').show();
             }
-            errorDiv.text('Your session has expired. Refreshing payment options...').show();
 
             // Refresh context instead of full page reload (v1.x improvement)
             setTimeout(function () {
@@ -1364,16 +1395,18 @@ var unifiedCheckout = {
             errorMessage = 'Payment authentication was cancelled. Please try again.';
         }
 
-        // Create or update error message dynamically
-        var errorDiv = container.siblings('.uc-error');
-        if (errorDiv.length === 0) {
-            errorDiv = $('<div class="alert alert-danger uc-error"></div>');
-            container.after(errorDiv);
-        }
-        errorDiv.text(errorMessage).show();
+        if (showErrorUI) {
+            // Create or update error message dynamically
+            var errorDiv = container.siblings('.uc-error');
+            if (errorDiv.length === 0) {
+                errorDiv = $('<div class="alert alert-danger uc-error"></div>');
+                container.after(errorDiv);
+            }
+            errorDiv.text(errorMessage).show();
 
-        // Hide any server-side error since we're showing a JS error
-        $('#uc-server-error').addClass('d-none');
+            // Hide any server-side error since we're showing a JS error
+            $('#uc-server-error').addClass('d-none');
+        }
 
         // Log detailed error for debugging
         console.error('Error Details:', error);
@@ -1734,7 +1767,7 @@ var unifiedCheckout = {
             console.log('Capture context value type:', typeof captureContext);
             console.log('Capture context value (first 100 chars):', captureContext ? captureContext.substring(0, 100) : 'EMPTY');
 
-            if (!captureContext || typeof captureContext !== 'string' || captureContext.trim() === '') {
+            if (!captureContext || typeof captureContext !== 'string' || !/\S/.test(captureContext)) {
                 console.error('No capture context available for save card');
                 self.showSaveCardError('Payment widget not available. Please refresh the page.');
                 return;

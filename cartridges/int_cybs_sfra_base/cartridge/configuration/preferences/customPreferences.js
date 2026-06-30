@@ -86,28 +86,6 @@ module.exports = {
                 }
             },
             /** @type {CustomPreference} */
-            AuthenticationType: {
-                id: 'VisaAcceptance_AuthenticationType',
-                display_name: 'Authentication Mechanism',
-                description: 'Authentication mechanism used for Cybersource REST API calls. HTTP Signature uses the REST KeyId/Secret Key; JWT uses the P12 private key alias for RS256 signing. Defaults to HTTP Signature when unset.',
-                type: Types.EnumOfString,
-                default: 'http_signature',
-                flags: {
-                    mandatory: false
-                }
-            },
-            /** @type {CustomPreference} */
-            P12PrivateKeyAlias: {
-                id: 'VisaAcceptance_P12PrivateKeyAlias',
-                display_name: 'P12 Private Key Alias',
-                description: 'Alias of the P12 private key imported in BM Private Keys and Certificates. Used for JWT RS256 signing.',
-                type: Types.string,
-                default: undefined,
-                flags: {
-                    mandatory: false
-                }
-            },
-            /** @type {CustomPreference} */
             MetaKeyEnabled: {
                 id: 'VisaAcceptance_MetaKeyEnabled',
                 display_name: 'Enable Meta Key',
@@ -439,30 +417,11 @@ SecureIntegrationConfiguration:{
                 }
             },
             UnifiedCheckoutPaymentAcceptanceLocation: {
-                id: 'VisaAcceptance_UnifiedCheckout_PaymentAcceptanceLocation',
-                display_name: 'Unified Checkout Payment Acceptance Location',
-                description: 'Embedded is loaded in the Checkout page while Sidebar is loaded in the side of the screen.',
+                id: 'VisaAcceptance_UnifiedCheckout_NonWalletDisplayMode',
+                display_name: 'Non-Wallet UC Display Mode',
+                description: 'Display mode for the card / non-wallet UC instance. Embedded loads in the Checkout page; Sidebar loads on the side of the screen.',
                 type: Types.EnumOfString,
                 default: 'Embedded',
-                flags: {
-                    mandatory: false
-                }
-            },
-            DigitalPaymentMethods: {
-                id: 'VisaAcceptance_UnifiedCheckout_DigitalPaymentMethods',
-                display_name: 'Digital Payment Methods in Unified Checkout',
-                type: Types.EnumOfString,
-                default: false,
-                flags: {
-                    mandatory: false
-                }
-            },               
-            ECheckEnabledforUnifiedCheckout: {
-                id: 'VisaAcceptance_UnifiedCheckout_EnableECheck',
-                display_name: 'Enable E-Check Payment for Unified Checkout',
-                description: 'Enable or Disable E-Check Payment for Unified Checkout',
-                type: Types.boolean,
-                default: false,
                 flags: {
                     mandatory: false
                 }
@@ -473,16 +432,6 @@ SecureIntegrationConfiguration:{
                 description: 'Label for Unified Checkout Tab on the payment page',
                 type: Types.string,
                 default: 'Secure Payments powered by Visa Acceptance Solutions',
-                flags: {
-                    mandatory: false
-                }
-            },
-            VisaAcceptance_UnifiedCheckout_Cart_Minicart: {
-                id: 'VisaAcceptance_UnifiedCheckout_Cart_Minicart',
-                display_name: 'Enable Unified Checkout for Cart and Mini Cart',
-                description: 'Enable or Disable Unified Checkout for digital payments on Cart and Mini Cart.',
-                type: Types.boolean,
-                default: false,
                 flags: {
                     mandatory: false
                 }
