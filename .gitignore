@@ -1,3 +1,4 @@
 cartridges/int_cybs_sfra/cartridge/static/
 node_modules
 .vscode/
+documentation/markdown

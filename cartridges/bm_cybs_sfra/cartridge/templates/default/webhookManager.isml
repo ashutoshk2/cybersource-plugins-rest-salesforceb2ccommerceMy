@@ -22,8 +22,10 @@
     <isif condition="${pdict.error === 'sync_failed'}">
         <div style="background:#fbeae9;border:1px solid #f0c6c2;border-left:3px solid #b3261e;color:#8a2018;padding:12px 14px;border-radius:6px;margin:0 0 10px;font-size:13px;line-height:1.5"><b>Sync failed.</b> One or more webhooks could not be synchronized. Check the table below for products still showing <b>NOT SUBSCRIBED</b>, confirm the product is provisioned for your merchant, then review the <code style="font-family:ui-monospace,Consolas,monospace;background:rgba(27,31,36,0.07);padding:1px 5px;border-radius:4px">cybs_webhooks</code> custom log for details.</div>
     </isif>
-    <isif condition="${pdict.info === 'pending_review'}">
-        <div style="background:#fdf3d7;border:1px solid #ecd9a4;border-left:3px solid #9a6700;color:#7a5200;padding:12px 14px;border-radius:6px;margin:0 0 10px;font-size:13px;line-height:1.5"><b>Pending review.</b> A webhook subscription was created and is now <b>PENDING REVIEW</b>. It is tracked here but will not deliver notifications until approved. Re-synchronize once the review is complete to activate it.</div>
+    <isset name="fraudStatus" value="${pdict.subscriptions.fraudManagement ? pdict.subscriptions.fraudManagement.status : ''}" scope="page" />
+    <isset name="ucStatus" value="${pdict.subscriptions.unifiedCheckout ? pdict.subscriptions.unifiedCheckout.status : ''}" scope="page" />
+    <isif condition="${(fraudStatus && fraudStatus !== 'ACTIVE') || (ucStatus && ucStatus !== 'ACTIVE')}">
+        <div style="background:#fdf3d7;border:1px solid #ecd9a4;border-left:3px solid #9a6700;color:#7a5200;padding:12px 14px;border-radius:6px;margin:0 0 10px;font-size:13px;line-height:1.5"><b>Webhook not active.</b> A subscription is not <b>ACTIVE</b> at CyberSource (see the Webhook Status column). A webhook only delivers when ACTIVE; it moves to ACTIVE after a successful health check from CyberSource. If it stays INACTIVE, PENDING REVIEW, or SUSPENDED, confirm CyberSource can reach the webhook URL.</div>
     </isif>
 
     <isset name="dmMismatch" value="${pdict.config.dmEnabled && !pdict.subscriptions.fraudManagement}" scope="page" />
@@ -64,8 +66,6 @@
 
     <form action="${pdict.actionUrl}" method="POST">
         <input type="hidden" name="action" value="advanced"/>
-        <!-- Custom Webhook Base URL hidden from the UI; stored value still submitted so updateAdvanced never blanks it. -->
-        <input type="hidden" name="webhookBaseUrl" value="${pdict.config.webhookBaseUrl}"/>
         <!-- Egress public-cert input removed: backend derives the cert from the .p12 (egressMleAlias)
              and registers it with KMS. This hidden field carries the stored value as a fallback. -->
         <input type="hidden" name="egressPublicKey" value="${pdict.config.egressPublicKey}"/>

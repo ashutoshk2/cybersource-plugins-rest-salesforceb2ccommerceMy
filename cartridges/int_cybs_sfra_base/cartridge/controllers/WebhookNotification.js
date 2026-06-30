@@ -211,6 +211,7 @@ function handleApmPaymentUpdate(payload, res, next) {
 
 function handleDmNotification(req, res, next) {
     if (req.httpMethod === 'GET') {
+        res.setStatusCode(200);
         res.json({ success: true });
         return next();
     }
@@ -358,6 +359,7 @@ server.use('tokenUpdate', function(req, res, next){
 // response already confirmed is normal (review can clear after auth).
 server.use('paymentNotification', function (req, res, next) {
     if (req.httpMethod === 'GET') {
+        res.setStatusCode(200);
         res.json({ success: true });
         return next();
     }

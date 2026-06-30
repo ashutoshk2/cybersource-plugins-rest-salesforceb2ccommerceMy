@@ -1,7 +1,7 @@
 'use strict';
 
 var server = require('server');
-var webhookSubscription = require('~/cartridge/scripts/webhookSubscription');
+var webhookSubscription = require('*/cartridge/scripts/webhookSubscription');
 
 server.get('Show', server.middleware.https, function (req, res, next) {
     var viewData = webhookSubscription.getViewData();
@@ -22,7 +22,7 @@ server.post('Save', server.middleware.https, function (req, res, next) {
     if (action === 'sync') {
         syncResults = webhookSubscription.syncWithPreferences();
     } else if (action === 'advanced') {
-        syncResults = webhookSubscription.updateAdvanced(req.form.webhookBaseUrl, req.form.egressMleAlias, req.form.egressPublicKey);
+        syncResults = webhookSubscription.updateAdvanced(req.form.egressMleAlias, req.form.egressPublicKey);
     }
 
     var redirectArgs = ['WebhookManager-Show'];
@@ -60,21 +60,10 @@ server.post('Save', server.middleware.https, function (req, res, next) {
     }
 
 
-    // A created-but-PENDING_REVIEW subscription is mapped in BM but not yet active — surface
-    // that distinctly from a clean success so the merchant knows to re-sync after approval.
-    var hasPending = false;
-    if (!hasError && syncResults) {
-        var pendingKeys = Object.keys(syncResults).filter(function (key) {
-            return syncResults[key] && syncResults[key].pendingReview === true;
-        });
-        hasPending = pendingKeys.length > 0;
-    }
-    
-
+    // Non-ACTIVE state (PENDING_REVIEW / INACTIVE / SUSPENDED) is surfaced live from the subscription
+    // status in the view, not via a redirect flash — so the banner always matches the status column.
     if (!hasError) {
-        
-        redirectArgs.push(hasPending ? 'info' : 'success', hasPending ? 'pending_review' : 'true');
-        
+        redirectArgs.push('success', 'true');
     }
 
     res.redirect(require('dw/web/URLUtils').url.apply(null, redirectArgs));

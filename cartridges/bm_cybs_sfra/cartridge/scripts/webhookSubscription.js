@@ -1,14 +1,11 @@
 'use strict';
 
-// NOTE: This module relies on the SFCC LocalServiceRegistry-backed apiClient.callApi
-// invoking its callback synchronously (inline, before callApi returns). All control
-// flow here — checking webhookId/securityKey/error variables after a callApi call —
-// depends on that contract. If the underlying transport ever becomes truly async,
-// every subscribe/activate/delete sequence below must be reworked into continuations.
+// Relies on the http layer's callApi invoking its callback synchronously (so each webhooks.* call
+// returns a populated { data, error } before it returns).
 
-var configObject = require('int_cybs_sfra_base/cartridge/configuration/index');
-var apiClient = require('int_cybs_sfra_base/cartridge/apiClient/ApiClient');
-var MerchantConfig = require('int_cybs_sfra_base/cartridge/apiClient/merchantConfig');
+var webhooks = require('*/cartridge/scripts/http/webhookManagement');
+var webhookHelper = require('*/cartridge/scripts/helpers/webhookHelper');
+var WEBHOOK_CONFIGS = require('*/cartridge/scripts/config/webhookConfigs');
 var Transaction = require('dw/system/Transaction');
 var CustomObjectMgr = require('dw/object/CustomObjectMgr');
 var URLUtils = require('dw/web/URLUtils');
@@ -16,281 +13,69 @@ var URLAction = require('dw/web/URLAction');
 var Site = require('dw/system/Site');
 var Logger = require('dw/system/Logger').getLogger('cybs_webhooks', 'webhookSubscription');
 
-var merchantId = new MerchantConfig(configObject).getMerchantID();
-apiClient.instance.setConfiguration(configObject);
-
 var CUSTOM_OBJECT_TYPE = 'CyberSource Webhook Subscription';
 
-var WEBHOOK_CONFIGS = {
-    fraudManagement: {
-        name: 'Fraud Management',
-        notificationEndpoint: 'WebhookNotification-dmNotification',
-        products: [
-            {
-                productId: 'decisionManager',
-                eventTypes: ['risk.casemanagement.decision.accept', 'risk.casemanagement.decision.reject']
-            },
-            {
-                productId: 'fraudManagementEssentials',
-                eventTypes: ['risk.profile.decision.review', 'risk.casemanagement.decision.accept', 'risk.casemanagement.decision.reject']
-            }
-        ]
-    },
-    unifiedCheckout: {
-        name: 'UC Webhook Events',
-        description: 'UC Events Simulation',
-        notificationEndpoint: 'WebhookNotification-paymentNotification',
-        products: [
-            { productId: 'unifiedCheckout', eventTypes: ['uc.orders.transactionresults'] },
-            { productId: 'alternativePaymentMethods', eventTypes: ['payments.payments.updated'] }
-        ]
-    }
-};
-
-function retrieveWebhooks(productId, callback) {
-    var queryParams = { organizationId: merchantId, productId: productId };
-    apiClient.instance.callApi('/notification-subscriptions/v2/webhooks', 'GET', {}, queryParams, {}, {}, null, [], ['application/json;charset=utf-8'], ['application/json;charset=utf-8'], {}, function(data, error, response) {
-        // dw.svc.Result has NO `statusCode` property — accessing it throws a ReferenceError, even
-        // on the success path. The HTTP status is delivered as the numeric `error` arg
-        // (Result.error). A 404 means "no subscriptions for this product yet" — treat it as an
-        // empty list, not an error.
-        if (error === 404) {
-            if (callback) callback([], null, response);
-        } else {
-            if (callback) callback(data, error, response);
-        }
-    });
-}
-
-function createSecurityKey(callback) {
-    var postBody = {
-        clientRequestAction: 'CREATE',
-        keyInformation: { provider: 'nrtd', tenant: merchantId, keyType: 'sharedSecret', organizationId: merchantId }
-    };
-    apiClient.instance.callApi('/kms/egress/v2/keys-sym', 'POST', {}, {}, {}, {}, postBody, [], ['application/json;charset=utf-8'], ['application/hal+json;charset=utf-8'], {}, callback);
-}
-
-
-// Register the merchant's egress public CERTIFICATE with CyberSource KMS so it can encrypt
-// Response-MLE webhooks. Per the authoritative "Unified Checkout Webhook implementation" wiki
-// (CyPse/3489185269, Step 3), the /kms/egress/v2/keys-asym STORE payload is:
-//   clientRequestAction: 'STORE', keyInformation: { provider: <merchantId>, tenant: 'nrtd',
-//   keyType: 'publickey', organizationId: <merchantId>, pub: <base64-DER X.509 certificate> }
-// NOTE: for the ASYM key provider=organizationId and tenant='nrtd' (the SYM signature key in
-// createSecurityKey has them swapped — provider='nrtd', tenant=merchantId — which is correct
-// per the same wiki and intentional). `pub` is the raw base64 of the DER certificate (the
-// MID/leaf public cert), NOT a PEM block and NOT a SubjectPublicKeyInfo.
-function uploadAsymmetricKey(pubCertB64, callback) {
-    if (!pubCertB64) {
-        if (callback) callback({ status: 'SKIPPED' }, null);
-        return;
-    }
-    var cleanCert = String(pubCertB64).replace(/\s+/g, '');
-    var postBody = {
-        clientRequestAction: 'STORE',
-        keyInformation: {
-            provider: merchantId,
-            tenant: 'nrtd',
-            keyType: 'publickey',
-            organizationId: merchantId,
-            pub: cleanCert
-        }
-    };
-    apiClient.instance.callApi('/kms/egress/v2/keys-asym', 'POST', {}, {}, {}, {}, postBody, [], ['application/json;charset=utf-8'], ['application/hal+json;charset=utf-8'], {}, callback);
-}
-
-
-
 /**
- * Derive the egress MLE public CERTIFICATE from the .p12 already imported in BM
- * "Private Keys and Certificates" under the given keystore alias — the SAME alias the
- * webhook decryption path uses (new KeyRef(alias) in WebhookNotification.js). Returns the
- * raw base64-encoded DER of the leaf X.509 certificate (NOT PEM-wrapped), which is exactly
- * the value the CyberSource /kms/egress/v2/keys-asym STORE `pub` field expects per the
- * "Unified Checkout Webhook implementation" wiki (Step 2: extract the public certificate,
- * Base-64 encoded; Step 3: STORE it). Returns '' on any failure so callers can fall back.
- *
- * Using getCertificate(KeyRef) (the cert bound to the private-key entry) guarantees the
- * registered public cert pairs with the private key WebhookNotification uses to decrypt —
- * the "No key mismatch errors" path the wiki recommends for EBC-generated P12s.
- *
- * NOTE: the egress .p12 MUST be an RSA keypair — webhook Response MLE is pinned to
- * RSA-OAEP-256 (WebhookNotification.decryptMLEPayload). dw.crypto exposes no subject-key
- * algorithm, so an EC .p12 cannot be detected here; the sandbox round-trip is the backstop.
- *
- * @param {string} alias keystore alias of the merchant .p12 (private key entry)
- * @returns {string} base64-DER X.509 certificate, or '' on failure
- */
-function deriveEgressCertificateB64(alias) {
-    if (!alias) {
-        Logger.error('deriveEgressCertificateB64: no egress alias configured.');
-        return '';
-    }
-    try {
-        var CertificateUtils = require('dw/crypto/CertificateUtils');
-        var KeyRef = require('dw/crypto/KeyRef');
-        // getCertificate(KeyRef) returns the leaf X509Certificate bound to the .p12 private-key
-        // entry, so the registered cert is by construction the pair of the decryption key.
-        var cert = CertificateUtils.getCertificate(new KeyRef(alias));
-        if (!cert) {
-            Logger.error('deriveEgressCertificateB64: no certificate for alias "' + alias + '".');
-            return '';
-        }
-        // base64-encoded DER of the X.509 certificate (the wiki `pub` value, e.g. "MIIC...").
-        var b64 = CertificateUtils.getEncodedCertificate(cert);
-        var clean = b64 ? String(b64).replace(/\s+/g, '') : '';
-        if (!clean || !/^[A-Za-z0-9+/=]+$/.test(clean)) {
-            Logger.error('deriveEgressCertificateB64: getEncodedCertificate returned empty/non-base64 for alias "' + alias + '".');
-            return '';
-        }
-        // Log the leaf cert identity so an operator can confirm the expected .p12 is bound to the alias.
-        try {
-            Logger.info('deriveEgressCertificateB64: derived egress certificate from alias "' + alias + '" (subject=' + cert.getSubjectDN() + ', serial=' + cert.getSerialNumber() + ', b64len=' + clean.length + ').');
-        } catch (logErr) { /* identity logging is best-effort */ }
-        return clean;
-    } catch (e) {
-        Logger.error('deriveEgressCertificateB64 failed for alias "' + alias + '": ' + ((e && e.message) || e) + '. Verify the RSA .p12 is imported under Administration > Operations > Private Keys and Certificates with this exact alias.');
-        return '';
-    }
-}
-
-
-function createSubscription(config, webhookUrl, callback) {
-    var postBody = {
-        name: config.name,
-        description: config.description || ('CyberSource Webhook for ' + config.name),
-        organizationId: merchantId,
-        webhookUrl: webhookUrl,
-        healthCheckUrl: webhookUrl,
-        notificationScope: 'SELF',
-        products: config.products,
-        retryPolicy: {
-            algorithm: 'ARITHMETIC',
-            firstRetry: 1,
-            interval: 1,
-            numberOfRetries: 3,
-            deactivateFlag: true,
-            repeatSequenceCount: 0,
-            repeatSequenceWaitTime: 0
-        },
-        securityPolicy: {
-            securityType: 'key',
-            proxyType: 'external'
-        }
-    };
-    apiClient.instance.callApi('/notification-subscriptions/v2/webhooks', 'POST', {}, {}, {}, {}, postBody, [], ['application/json;charset=utf-8'], ['application/json;charset=utf-8'], {}, callback);
-}
-
-function activateSubscription(webhookId, callback) {
-    var postBody = { status: 'ACTIVE' };
-    apiClient.instance.callApi('/notification-subscriptions/v2/webhooks/' + webhookId + '/status', 'PUT', {}, {}, {}, {}, postBody, [], ['application/json;charset=utf-8'], ['application/json;charset=utf-8'], {}, callback);
-}
-
-function deleteSubscription(webhookId, callback) {
-    apiClient.instance.callApi('/notification-subscriptions/v2/webhooks/{webhookId}', 'DELETE', { webhookId: webhookId }, {}, {}, {}, null, [], ['application/json;charset=utf-8'], ['application/json;charset=utf-8'], {}, callback);
-}
-
-/**
- * Compare two event-type lists as unordered sets.
- *
- * @param {Array} a first event-type list
- * @param {Array} b second event-type list
- * @returns {boolean} true when both lists contain exactly the same event types
- */
-function eventTypesMatch(a, b) {
-    if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) {
-        return false;
-    }
-    for (var i = 0; i < a.length; i++) {
-        var found = false;
-        for (var j = 0; j < b.length; j++) {
-            if (a[i] === b[j]) { found = true; break; }
-        }
-        if (!found) return false;
-    }
-    return true;
-}
-
-/**
- * Create a webhook subscription, recovering from the CyberSource 400 "Record already exists"
- * conflict. That 400 occurs when a subscription already exists at CyberSource for this
- * product/event but is no longer tracked locally (the local custom object was lost, or its
- * WebhookUrl changed so the activate-existing path in subscribeProduct was skipped). Because a
- * webhook's HMAC shared secret is only returned at creation time and cannot be recovered, the
- * orphaned remote subscription is NOT silently adopted (which would leave us unable to validate
- * inbound signatures) — every webhook matching the SAME product and event is deleted and a fresh
- * one is created with the security key the caller just generated. The caller maps the returned
- * webhookId via subscribeProduct's normal activate-and-persist path.
- *
- * Conflict detection uses the "already exists" response body together with the HTTP status. Per
- * ApiClient, the error callback is (errorMessageString, error, response) where `error` is the
- * dw.svc Result.error (the numeric HTTP status). Never read response.statusCode — dw.svc.Result
- * has no such property and accessing it throws a ReferenceError.
+ * Create a subscription, recovering from the 400 "Record already exists" conflict (a subscription
+ * exists at CyberSource but is untracked locally). The HMAC secret is only returned at creation and
+ * cannot be recovered, so matching webhook(s) are deleted and recreated rather than adopted.
  *
  * @param {Object} subConfig per-call subscription config (name, description, products)
  * @param {string} webhookUrl target webhook URL
- * @param {string} productId CyberSource product id to reconcile against (e.g. 'unifiedCheckout', 'decisionManager')
- * @returns {Object} object of shape { webhookId: string, status: string, error: string }
+ * @param {string} productId product id to reconcile against
+ * @returns {Object} { webhookId, status, error }
  */
 function createSubscriptionWithRecovery(subConfig, webhookUrl, productId) {
     var result = { webhookId: '', status: '', error: null };
     var conflict = false;
 
-    createSubscription(subConfig, webhookUrl, function (data, error, response) {
-        if (!error && data && data.webhookId) {
-            result.webhookId = data.webhookId;
-            result.status = data.status || '';
-        } else if (error) {
-            // On error, `data` is the response body text (Result.errorMessage) and `error` is the
-            // numeric HTTP status (Result.error). Never read response.statusCode — dw.svc.Result
-            // has no such property and accessing it throws a ReferenceError.
-            var msg = (typeof data === 'string') ? data : JSON.stringify(data || error);
-            // Require both the 400 status and the distinctive duplicate message so recovery only
-            // runs on a real "already exists".
-            if (error === 400 && /already\s*exist/i.test(msg)) {
-                conflict = true;
-            } else {
-                Logger.error('createSubscription failed for ' + productId + ': ' + msg);
-                result.error = 'API_ERROR';
-            }
+    var createResult = webhooks.createSubscription(subConfig, webhookUrl);
+    if (!createResult.error && createResult.data && createResult.data.webhookId) {
+        result.webhookId = createResult.data.webhookId;
+        result.status = createResult.data.status || '';
+    } else if (createResult.error) {
+        // On error, data is the response body and error is the numeric HTTP status.
+        var msg = (typeof createResult.data === 'string') ? createResult.data : JSON.stringify(createResult.data || createResult.error);
+        // Recover only on a real 400 "already exists". error may be a number or numeric string.
+        if (parseInt(createResult.error, 10) === 400 && /already\s*exist/i.test(msg)) {
+            conflict = true;
+        } else {
+            Logger.error('createSubscription failed for ' + productId + ': ' + msg);
+            result.error = 'API_ERROR';
         }
-    });
+    }
 
     if (result.webhookId || result.error) return result;
     if (!conflict) { result.error = 'API_ERROR'; return result; }
 
-    // A subscription already exists remotely for one of this config's products but is untracked
-    // locally. A config can bundle several products in one webhook (UC bundles unifiedCheckout +
-    // alternativePaymentMethods) and the conflict can be on ANY of them, so reconcile across ALL
-    // products - e.g. a pre-existing alternativePaymentMethods webhook must be found/deleted too,
-    // not just a unifiedCheckout one. Dedup ids since one webhook can cover several products.
+    // The conflict can be on any bundled product (UC bundles unifiedCheckout + alternativePaymentMethods),
+    // so reconcile across all of this config's products. Dedup ids since one webhook can cover several.
     Logger.warn('createSubscriptionWithRecovery: ' + productId + ' (or a bundled product) already exists at CyberSource but is untracked locally; deleting matching subscription(s) and recreating to restore a known security key.');
     var idsToDelete = [];
     function collectConflicts(prod) {
         var targetEvents = prod.eventTypes || [];
-        retrieveWebhooks(prod.productId, function (listData, listErr) {
-            if (listErr) {
-                Logger.error('createSubscriptionWithRecovery: retrieveWebhooks failed for ' + prod.productId + ': ' + JSON.stringify(listErr));
-                return;
-            }
-            if (!Array.isArray(listData) || !listData.length) return;
-            for (var i = 0; i < listData.length; i++) {
-                var wh = listData[i];
-                if (!wh || !wh.webhookId || idsToDelete.indexOf(wh.webhookId) !== -1) continue; // eslint-disable-line no-continue
-                var whEvents = [];
-                if (Array.isArray(wh.products)) {
-                    for (var p = 0; p < wh.products.length; p++) {
-                        if (wh.products[p] && wh.products[p].productId === prod.productId && Array.isArray(wh.products[p].eventTypes)) {
-                            whEvents = wh.products[p].eventTypes;
-                            break;
-                        }
+        var listResult = webhooks.retrieveWebhooks(prod.productId);
+        if (listResult.error) {
+            Logger.error('createSubscriptionWithRecovery: retrieveWebhooks failed for ' + prod.productId + ': ' + JSON.stringify(listResult.error));
+            return;
+        }
+        var listData = listResult.data;
+        if (!Array.isArray(listData) || !listData.length) return;
+        for (var i = 0; i < listData.length; i++) {
+            var wh = listData[i];
+            if (!wh || !wh.webhookId || idsToDelete.indexOf(wh.webhookId) !== -1) continue; // eslint-disable-line no-continue
+            var whEvents = [];
+            if (Array.isArray(wh.products)) {
+                for (var p = 0; p < wh.products.length; p++) {
+                    if (wh.products[p] && wh.products[p].productId === prod.productId && Array.isArray(wh.products[p].eventTypes)) {
+                        whEvents = wh.products[p].eventTypes;
+                        break;
                     }
                 }
-                // Match on event types, or fall back to a lone product-scoped webhook whose
-                // per-product event types the response omitted.
-                if (eventTypesMatch(whEvents, targetEvents) || listData.length === 1) idsToDelete.push(wh.webhookId);
             }
-        });
+            // Match on event types, or a lone product-scoped webhook whose event types the response omitted.
+            if (webhookHelper.eventTypesMatch(whEvents, targetEvents) || listData.length === 1) idsToDelete.push(wh.webhookId);
+        }
     }
     for (var pc = 0; pc < (subConfig.products || []).length; pc++) collectConflicts(subConfig.products[pc]);
 
@@ -300,36 +85,29 @@ function createSubscriptionWithRecovery(subConfig, webhookUrl, productId) {
         return result;
     }
 
-    // deleteSubscription invokes its callback synchronously (see the module-level contract note);
-    // a named helper keeps the per-id delete out of the loop body (no closure over the loop var).
     var deletedAny = false;
     function deleteWebhook(existingId) {
-        var ok = false;
-        deleteSubscription(existingId, function (delData, delError) {
-            if (delError) {
-                Logger.error('createSubscriptionWithRecovery: delete of existing ' + productId + ' webhook ' + existingId + ' failed: ' + JSON.stringify(delError));
-            } else {
-                ok = true;
-            }
-        });
-        return ok;
+        var delResult = webhooks.deleteSubscription(existingId);
+        if (delResult.error) {
+            Logger.error('createSubscriptionWithRecovery: delete of existing ' + productId + ' webhook ' + existingId + ' failed: ' + JSON.stringify(delResult.error));
+            return false;
+        }
+        return true;
     }
     for (var d = 0; d < idsToDelete.length; d++) {
         if (deleteWebhook(idsToDelete[d])) deletedAny = true;
     }
     if (!deletedAny) { result.error = 'ALREADY_EXISTS'; return result; }
 
-    createSubscription(subConfig, webhookUrl, function (data, error) {
-        if (!error && data && data.webhookId) {
-            result.webhookId = data.webhookId;
-            result.status = data.status || '';
-        } else {
-            // Delete succeeded but recreate failed: the product currently has NO webhook. Surface a
-            // distinct error and warn so the operator knows a re-run is required to restore it.
-            Logger.warn('createSubscriptionWithRecovery: recreate after delete failed for ' + productId + ' — the product now has NO webhook; re-run subscribe to restore it. ' + JSON.stringify(error || data));
-            result.error = 'RECREATE_FAILED_AFTER_DELETE';
-        }
-    });
+    var recreateResult = webhooks.createSubscription(subConfig, webhookUrl);
+    if (!recreateResult.error && recreateResult.data && recreateResult.data.webhookId) {
+        result.webhookId = recreateResult.data.webhookId;
+        result.status = recreateResult.data.status || '';
+    } else {
+        // Delete succeeded but recreate failed: the product now has no webhook.
+        Logger.warn('createSubscriptionWithRecovery: recreate after delete failed for ' + productId + ' — the product now has NO webhook; re-run subscribe to restore it. ' + JSON.stringify(recreateResult.error || recreateResult.data));
+        result.error = 'RECREATE_FAILED_AFTER_DELETE';
+    }
     return result;
 }
 
@@ -337,37 +115,27 @@ function subscribeProduct(configId, forceRecreate) {
     var config = WEBHOOK_CONFIGS[configId];
     var site = Site.getCurrent();
 
-    var webhookBaseUrl = '';
     var egressPublicKey = '';
     try {
         var globalObj = CustomObjectMgr.getCustomObject(CUSTOM_OBJECT_TYPE, 'globalConfiguration');
         if (globalObj) {
-            webhookBaseUrl = globalObj.custom.BaseUrl;
             egressPublicKey = globalObj.custom.EgressPublicKey || '';
         }
     } catch (e) {}
 
-    // UC webhook payload is delivered with Response MLE (Asymmetric encryption); CyberSource
-    // must hold the egress public key to encrypt it, or the webhook is broken-on-arrival.
-    
-    // If no key is stored yet (fresh merchant, or never ran "Update Advanced Settings"), derive
-    // it from the egress .p12 keystore alias and register it with KMS now. Only proceed if KMS
-    // accepts it, so we never subscribe UC with a key that isn't actually in KMS.
+    // UC webhooks use Response MLE; CyberSource needs the egress public key to encrypt them. If none
+    // is stored yet, derive it from the .p12 alias and register with KMS — only proceed if KMS accepts it.
     if (configId === 'unifiedCheckout' && !egressPublicKey) {
-        // Read the alias from the committed site preference (not the module-cached configObject),
-        // so an alias the merchant just changed in the same updateAdvanced request is honored.
         var egressAlias = site.getCustomPreferenceValue('VisaAcceptance_EgressCertificateAlias');
-        var derivedEgressKey = deriveEgressCertificateB64(egressAlias);
+        var derivedEgressKey = webhookHelper.deriveEgressCertificateB64(egressAlias);
         var derivedUploadOk = false;
         if (derivedEgressKey) {
-            uploadAsymmetricKey(derivedEgressKey, function (data, error) {
-                if (error) Logger.error('subscribeProduct: failed to upload derived egress public key: ' + JSON.stringify(error));
-                else derivedUploadOk = true;
-            });
+            var derivedUpload = webhooks.uploadAsymmetricKey(derivedEgressKey);
+            if (derivedUpload.error) Logger.error('subscribeProduct: failed to upload derived egress public key: ' + JSON.stringify(derivedUpload.error));
+            else derivedUploadOk = true;
         }
         if (derivedUploadOk) {
             egressPublicKey = derivedEgressKey;
-            // Separate, sequential transaction from the subscription-record persistence below.
             Transaction.wrap(function () {
                 var g = CustomObjectMgr.getCustomObject(CUSTOM_OBJECT_TYPE, 'globalConfiguration') || CustomObjectMgr.createCustomObject(CUSTOM_OBJECT_TYPE, 'globalConfiguration');
                 g.custom.EgressPublicKey = egressPublicKey;
@@ -377,73 +145,72 @@ function subscribeProduct(configId, forceRecreate) {
             return { success: false, error: 'EGRESS_KEY_REQUIRED' };
         }
     }
-    
 
-    var webhookUrl = webhookBaseUrl ? (webhookBaseUrl.replace(/\/$/, '') + '/' + config.notificationEndpoint) : URLUtils.https(new URLAction(config.notificationEndpoint, site.ID)).toString();
+    // The webhook callback URL is derived entirely from the site: its ID (in the on-demandware path)
+    // and its configured host, via URLUtils. There is no custom-endpoint override.
+    var webhookUrl = URLUtils.https(new URLAction(config.notificationEndpoint, site.ID)).toString();
 
     var existingObj = CustomObjectMgr.getCustomObject(CUSTOM_OBJECT_TYPE, configId);
-    
-    // When the local record points at a webhook that was deleted directly in EBC, the
-    // re-activation call comes back 404. In that case the record is stale: fall through
-    // and create a fresh subscription rather than leaving the merchant unable to
-    // re-subscribe from BM. A transient/non-404 failure still bails out so we never
-    // create a duplicate of a subscription that may still exist.
+
+    // Re-activating the stored webhook returns 404 if it was deleted in EBC: treat the record as stale
+    // and recreate. A non-404 failure bails out so we never duplicate a subscription that may still exist.
+    // forceRecreate (host repoint) skips this shortcut and always goes through createSubscriptionWithRecovery.
     var staleWebhookDeleted = false;
-    // forceRecreate (host/URL repoint) skips the activate-existing shortcut so we always go
-    // through createSubscriptionWithRecovery, which deletes the same product+event webhook
-    // (even one pointing at a different host) and recreates it for the current storefront.
     if (!forceRecreate && existingObj && existingObj.custom.WebhookId && existingObj.custom.WebhookUrl === webhookUrl) {
         var alreadyActive = false;
-        var activationStatus = 0;
-        activateSubscription(existingObj.custom.WebhookId, function (data, error) {
-            // HTTP status arrives as the numeric `error` arg (dw.svc Result.error). Never read
-            // response.statusCode — dw.svc.Result has no such property and accessing it throws.
-            // A 404 here means the stored webhook was deleted in EBC, so the caller recreates.
-            activationStatus = (typeof error === 'number') ? error : 0;
-            if (error) Logger.error('activateSubscription failed for existing ' + configId + ' (' + existingObj.custom.WebhookId + '): ' + JSON.stringify(error));
-            else alreadyActive = true;
-        });
+        var existingActivation = webhooks.activateSubscription(existingObj.custom.WebhookId);
+        // error carries the HTTP status and may be a number or a numeric string, so normalize it
+        // with parseInt before comparing. The stored webhook is unusable by the current credentials
+        // when it was deleted (404) or belongs to a different org (401/403, e.g. after a MID change)
+        // — in all of those we abandon it and create a fresh one. Any other failure is ambiguous
+        // (the webhook may still exist), so we bail rather than risk a duplicate.
+        var activationStatus = parseInt(existingActivation.error, 10);
+        var existingUnusable = (activationStatus === 404 || activationStatus === 401 || activationStatus === 403);
+        if (existingActivation.error) {
+            // The unusable cases are handled below by recreating (logged as WARN) — only log a real
+            // error for other failures.
+            if (!existingUnusable) {
+                Logger.error('activateSubscription failed for existing ' + configId + ' (' + existingObj.custom.WebhookId + '): ' + JSON.stringify(existingActivation.error));
+            }
+        } else {
+            alreadyActive = true;
+        }
         if (alreadyActive) {
             return { success: true, alreadyExists: true, error: null };
         }
-        if (activationStatus !== 404) {
+        if (!existingUnusable) {
             return { success: false, alreadyExists: true, error: 'ACTIVATION_ERROR' };
         }
-        Logger.warn('Existing ' + configId + ' webhook ' + existingObj.custom.WebhookId + ' no longer exists at CyberSource (deleted in EBC); recreating subscription.');
+        Logger.warn('Existing ' + configId + ' webhook ' + existingObj.custom.WebhookId + ' is not usable by the current credentials (status ' + activationStatus + '); recreating subscription.');
         staleWebhookDeleted = true;
     }
-    // Defer cleanup of any stale subscription until *after* the new one is active and persisted.
-    // A webhook that 404s on re-activation is already gone, so there is nothing to clean up.
+    // Defer stale-subscription cleanup until the replacement is active and persisted.
     var oldWebhookIdToCleanup = (!staleWebhookDeleted && existingObj && existingObj.custom.WebhookId) ? existingObj.custom.WebhookId : null;
-    
 
     var securityKey = '';
-    createSecurityKey(function (data, error) {
-        if (error) Logger.error('createSecurityKey failed for ' + configId + ': ' + JSON.stringify(error));
-        else if (data && data.status === 'SUCCESS') securityKey = data.keyInformation.key;
-    });
+    var keyResult = webhooks.createSecurityKey();
+    if (keyResult.error) Logger.error('createSecurityKey failed for ' + configId + ': ' + JSON.stringify(keyResult.error));
+    else if (keyResult.data && keyResult.data.status === 'SUCCESS') securityKey = keyResult.data.keyInformation.key;
     if (!securityKey) return { success: false, error: 'KEY_ERROR' };
 
     var webhookId = '';
-    
-    // Status reported by CyberSource on creation (e.g. ACTIVE or PENDING_REVIEW).
     var createdStatus = '';
-    
     var specificError = null;
 
-    apiClient.instance.callApi('/notification-subscriptions/v2/products/' + merchantId, 'GET', {}, {}, {}, {}, null, [], ['application/json;charset=utf-8'], ['application/json;charset=utf-8'], {}, function (prodData, prodError) {
-        if (prodError) {
-            Logger.error('Product list fetch failed for ' + configId + ': ' + JSON.stringify(prodError));
-            specificError = 'API_ERROR';
-            return;
-        }
-        var productList = Array.isArray(prodData) ? prodData : (prodData && prodData.products ? prodData.products : null);
+    var productsResult = webhooks.findProductsToSubscribe();
+    var productList = null;
+    if (productsResult.error) {
+        Logger.error('Product list fetch failed for ' + configId + ': ' + JSON.stringify(productsResult.error));
+        specificError = 'API_ERROR';
+    } else {
+        productList = Array.isArray(productsResult.data) ? productsResult.data : (productsResult.data && productsResult.data.products ? productsResult.data.products : null);
         if (!productList) {
             specificError = 'API_ERROR';
-            return;
         }
-        // Diagnostic: surface exactly which webhook products CyberSource offers this merchant,
-        // so a PRODUCT_NOT_ENABLED outcome (below) is debuggable instead of silent.
+    }
+
+    if (productList) {
+        // Log the products CyberSource offers so a PRODUCT_NOT_ENABLED outcome is debuggable.
         var availableProductIds = [];
         for (var ap = 0; ap < productList.length; ap++) {
             availableProductIds.push(productList[ap].productId);
@@ -462,9 +229,6 @@ function subscribeProduct(configId, forceRecreate) {
                                 description: config.description,
                                 products: [config.products[j]]
                             };
-                            // Reconcile against any existing-but-untracked subscription (delete +
-                            // recreate) instead of blindly creating, which CyberSource rejects
-                            // with 400 "Record already exists".
                             var fraudCreated = createSubscriptionWithRecovery(subConfig, webhookUrl, availableProd);
                             if (fraudCreated.error) {
                                 specificError = fraudCreated.error;
@@ -484,9 +248,6 @@ function subscribeProduct(configId, forceRecreate) {
             for (var k = 0; k < productList.length; k++) {
                 if (productList[k].productId === config.products[0].productId) {
                     found = true;
-                    // Reconcile against any existing-but-untracked subscription (delete + recreate)
-                    // instead of blindly creating, which CyberSource rejects with 400 "Record
-                    // already exists".
                     var ucCreated = createSubscriptionWithRecovery(config, webhookUrl, config.products[0].productId);
                     if (ucCreated.error) {
                         specificError = ucCreated.error;
@@ -502,30 +263,23 @@ function subscribeProduct(configId, forceRecreate) {
                 specificError = 'PRODUCT_NOT_ENABLED';
             }
         }
-    });
+    }
 
     if (specificError) return { success: false, error: specificError };
     if (!webhookId) return { success: false, error: 'API_ERROR' };
 
-    
-    // The subscription exists at CyberSource (we have a webhookId). ALWAYS attempt to activate it
-    // (PUT status=ACTIVE) right after creation, then map it in BM so it is tracked and not
-    // recreated as a duplicate on re-sync:
-    //  - activation succeeds -> ACTIVE.
-    //  - activation is rejected because it is awaiting CyberSource review -> record PENDING_REVIEW
-    //    (it activates once approved and the merchant re-synchronizes).
-    //  - any other activation failure -> bail out with ACTIVATION_ERROR.
+    // Force the freshly-created webhook to ACTIVE. CyberSource creates it as PENDING_REVIEW/INACTIVE;
+    // a successful PUT status=ACTIVE promotes it so it can begin delivering.
     var finalStatus = createdStatus || '';
     if (finalStatus !== 'ACTIVE') {
         var activationSucceeded = false;
-        activateSubscription(webhookId, function (data, error) {
-            if (error) {
-                Logger.error('activateSubscription failed for new ' + configId + ' (' + webhookId + '): ' + JSON.stringify(error));
-            } else {
-                activationSucceeded = true;
-                finalStatus = (data && data.status) ? data.status : 'ACTIVE';
-            }
-        });
+        var newActivation = webhooks.activateSubscription(webhookId);
+        if (newActivation.error) {
+            Logger.error('activateSubscription failed for new ' + configId + ' (' + webhookId + '): ' + JSON.stringify(newActivation.error));
+        } else {
+            activationSucceeded = true;
+            finalStatus = (newActivation.data && newActivation.data.status) ? newActivation.data.status : 'ACTIVE';
+        }
         if (!activationSucceeded && finalStatus !== 'PENDING_REVIEW') {
             return { success: false, error: 'ACTIVATION_ERROR' };
         }
@@ -540,59 +294,58 @@ function subscribeProduct(configId, forceRecreate) {
         obj.custom.Status = finalStatus;
     });
 
-    // New subscription is persisted — clean up the stale one only once the replacement is
-    // ACTIVE, so a PENDING_REVIEW replacement doesn't leave the product with no live webhook.
+    // Clean up the stale webhook only once the replacement is ACTIVE.
     if (oldWebhookIdToCleanup && finalStatus === 'ACTIVE') {
-        deleteSubscription(oldWebhookIdToCleanup, function (data, error) {
-            if (error) Logger.error('Cleanup of stale webhook ' + oldWebhookIdToCleanup + ' for ' + configId + ' failed: ' + JSON.stringify(error));
-        });
+        var cleanupResult = webhooks.deleteSubscription(oldWebhookIdToCleanup);
+        if (cleanupResult.error) Logger.error('Cleanup of stale webhook ' + oldWebhookIdToCleanup + ' for ' + configId + ' failed: ' + JSON.stringify(cleanupResult.error));
     }
 
     return { success: true, webhookId: webhookId, status: finalStatus, pendingReview: finalStatus === 'PENDING_REVIEW' };
-    
 }
 
+/**
+ * Unsubscribe a BM-managed product. The local record (holding the un-recoverable HMAC key) is removed
+ * only when CyberSource confirms the delete (error false or 404); any other outcome keeps it for retry.
+ *
+ * @param {string} configId WEBHOOK_CONFIGS key ('fraudManagement' | 'unifiedCheckout')
+ * @returns {Object} { success, alreadyRemoved?, error? }
+ */
 function unsubscribeProduct(configId) {
     var obj = CustomObjectMgr.getCustomObject(CUSTOM_OBJECT_TYPE, configId);
     if (!obj || !obj.custom.WebhookId) return { success: true, alreadyRemoved: true };
-    deleteSubscription(obj.custom.WebhookId, function (data, error) {
-        if (error) Logger.error('deleteSubscription failed for ' + configId + ' (' + obj.custom.WebhookId + '): ' + JSON.stringify(error));
-    });
+    var deleteConfirmed = false;
+    var deleteResult = webhooks.deleteSubscription(obj.custom.WebhookId);
+    if (deleteResult.error === false || parseInt(deleteResult.error, 10) === 404) {
+        deleteConfirmed = true;
+    } else {
+        Logger.error('deleteSubscription failed for ' + configId + ' (' + obj.custom.WebhookId + '): ' + JSON.stringify(deleteResult.error) + ' — keeping local BM record because the webhook was not confirmed deleted at CyberSource.');
+    }
+    if (!deleteConfirmed) return { success: false, error: 'DELETE_FAILED' };
     Transaction.wrap(function () { CustomObjectMgr.remove(obj); });
     return { success: true };
 }
 
 /**
- * Extract the lowercase hostname (no scheme, port, or path) from a URL string.
+ * Abandon the locally stored subscription for a product — clears the tracked WebhookId/Status so the
+ * next sync creates a fresh subscription in the current org and updates BM. Used when the stored
+ * webhook is no longer present at CyberSource for the active merchant (deleted in EBC, or owned by a
+ * different org after a MID change, where we can neither activate nor delete it). The SecurityKey is
+ * left intact until the recreate overwrites it.
  *
- * @param {string} url full URL
- * @returns {string} hostname, or '' when not parseable
+ * @param {string} configId WEBHOOK_CONFIGS key ('fraudManagement' | 'unifiedCheckout')
  */
-function extractHost(url) {
-    if (!url) return '';
-    var s = String(url);
-    var scheme = s.indexOf('://');
-    if (scheme >= 0) s = s.substring(scheme + 3);
-    var slash = s.indexOf('/');
-    if (slash >= 0) s = s.substring(0, slash);
-    var colon = s.indexOf(':');
-    if (colon >= 0) s = s.substring(0, colon);
-    return s.toLowerCase();
-}
-
-/**
- * Whether a reconciled subscription needs a sync action: it is missing, points at a different
- * host (sandbox moved), or exists but is not yet ACTIVE (e.g. INACTIVE) so it must be activated.
- * PENDING_REVIEW is excluded — only CyberSource can advance it (re-syncing after approval picks
- * it up via the not-ACTIVE check once it leaves review).
- *
- * @param {Object} sub reconciled subscription ({ webhookId, status, hostMismatch }) or null
- * @returns {boolean} true when subscribeProduct should run for this product
- */
-function subscriptionNeedsAction(sub) {
-    if (!sub) return true;
-    if (sub.hostMismatch) return true;
-    return !!(sub.status && sub.status !== 'ACTIVE' && sub.status !== 'PENDING_REVIEW');
+function abandonStoredWebhook(configId) {
+    try {
+        Transaction.wrap(function () {
+            var obj = CustomObjectMgr.getCustomObject(CUSTOM_OBJECT_TYPE, configId);
+            if (obj && obj.custom.WebhookId) {
+                obj.custom.WebhookId = '';
+                obj.custom.Status = '';
+            }
+        });
+    } catch (e) {
+        Logger.error('abandonStoredWebhook failed for ' + configId + ': ' + (e && e.message ? e.message : e));
+    }
 }
 
 /**
@@ -604,17 +357,15 @@ function getViewData() {
     var methodValue = (method && method.value) ? method.value : (method || '');
     var dmEnabled = site.getCustomPreferenceValue('VisaAcceptance_DecisionManager') || false;
     var egressMleAlias = site.getCustomPreferenceValue('VisaAcceptance_EgressCertificateAlias');
-    
+
     var testAction = new URLAction('WebhookNotification-dmNotification', site.ID);
     var fullUrl = URLUtils.https(testAction).toString();
     var standardBaseUrl = fullUrl.substring(0, fullUrl.indexOf('WebhookNotification-dmNotification')).replace(/\/$/, '');
 
-    var webhookBaseUrl = '';
     var egressPublicKey = '';
     try {
         var globalObj = CustomObjectMgr.getCustomObject(CUSTOM_OBJECT_TYPE, 'globalConfiguration');
         if (globalObj) {
-            webhookBaseUrl = globalObj.custom.BaseUrl || '';
             egressPublicKey = globalObj.custom.EgressPublicKey || '';
         }
     } catch (e) {}
@@ -623,36 +374,25 @@ function getViewData() {
         config: {
             dmEnabled: dmEnabled,
             secureIntegrationMethod: methodValue,
-            webhookBaseUrl: webhookBaseUrl,
             egressMleAlias: egressMleAlias,
             egressPublicKey: egressPublicKey,
             standardBaseUrl: standardBaseUrl,
-            activeBaseUrl: webhookBaseUrl || standardBaseUrl
+            activeBaseUrl: standardBaseUrl
         },
         subscriptions: {},
         external: []
     };
 
-    // BM-managed products
     ['fraudManagement', 'unifiedCheckout'].forEach(function (productId) {
         try {
             var obj = CustomObjectMgr.getCustomObject(CUSTOM_OBJECT_TYPE, productId);
-            
-            // A record with no WebhookId is not a real subscription (e.g. left over from a
-            // failed/partial attempt) — treat it as not subscribed so it renders inactive
-            // and syncWithPreferences will re-create it instead of skipping it.
+            // A record with no WebhookId isn't a real subscription — treat as not subscribed.
             data.subscriptions[productId] = (obj && obj.custom.WebhookId) ? { webhookId: obj.custom.WebhookId, status: obj.custom.Status } : null;
-            
         } catch (e) { data.subscriptions[productId] = null; }
     });
-    
-    // Ask CyberSource which webhooks actually exist for each product, then:
-    //  (a) reconcile our local record — if the stored webhookId is no longer present
-    //      (e.g. the subscription was deleted directly in EBC) show the product as
-    //      inactive/null so the merchant can re-subscribe from BM; and
-    //  (b) surface any webhook that exists at CyberSource but isn't BM-managed as "external".
-    // Fraud can be provisioned under either Decision Manager or Fraud Management Essentials,
-    // so both product ids are queried to avoid a false "deleted" reconciliation.
+
+    // Ask CyberSource which webhooks exist per product to (a) reconcile our local record (null it if
+    // the stored id is gone) and (b) surface non-managed webhooks as external. Fraud may be under DM or FME.
     var discovery = [
         { key: 'fraudManagement', queryProducts: ['decisionManager', 'fraudManagementEssentials'] },
         { key: 'unifiedCheckout', queryProducts: ['unifiedCheckout'] }
@@ -660,49 +400,49 @@ function getViewData() {
 
     try {
         discovery.forEach(function (entry) {
+            var entryEnabled = (entry.key === 'fraudManagement')
+                ? !!data.config.dmEnabled
+                : (data.config.secureIntegrationMethod === 'Unified_Checkout');
+            if (!entryEnabled) return;
+
             var liveWebhooks = {};
             var gotDefinitiveResponse = false;
             entry.queryProducts.forEach(function (queryProductId) {
                 try {
-                    retrieveWebhooks(queryProductId, function (apiData, error) {
-                        if (error) {
-                            Logger.error('External webhook discovery failed for ' + entry.key + ' (' + queryProductId + '): ' + JSON.stringify(error));
-                            return;
-                        }
-                        if (!Array.isArray(apiData)) return;
-                        // A successful response (including an empty list / 404) is authoritative.
-                        gotDefinitiveResponse = true;
-                        apiData.forEach(function (webhook) {
-                            liveWebhooks[webhook.webhookId] = webhook;
-                        });
+                    var listResult = webhooks.retrieveWebhooks(queryProductId);
+                    if (listResult.error) {
+                        Logger.error('External webhook discovery failed for ' + entry.key + ' (' + queryProductId + '): ' + JSON.stringify(listResult.error));
+                        return;
+                    }
+                    if (!Array.isArray(listResult.data)) return;
+                    // A successful response (incl. empty list / 404) is authoritative.
+                    gotDefinitiveResponse = true;
+                    listResult.data.forEach(function (webhook) {
+                        liveWebhooks[webhook.webhookId] = webhook;
                     });
                 } catch (qe) {
-                    // One product's lookup failing (e.g. not provisioned) must not abort discovery
-                    // for the remaining products — otherwise reconciliation never runs.
+                    // One product's lookup failing must not abort discovery for the rest.
                     Logger.error('getViewData: discovery query threw for ' + entry.key + ' (' + queryProductId + '): ' + (qe && qe.message ? qe.message : qe));
                 }
             });
 
-            // (a) Reconcile the BM-managed local record against live state. Only act on an
-            //     authoritative response so a transient API failure can't wipe the view.
+            // (a) Reconcile the BM-managed record against live state, only on an authoritative response.
             if ((entry.key === 'fraudManagement' || entry.key === 'unifiedCheckout') &&
                 gotDefinitiveResponse &&
                 data.subscriptions[entry.key] && data.subscriptions[entry.key].webhookId) {
                 var liveMatch = liveWebhooks[data.subscriptions[entry.key].webhookId];
                 if (!liveMatch) {
-                    Logger.warn('Local ' + entry.key + ' webhook ' + data.subscriptions[entry.key].webhookId + ' not found at CyberSource (deleted in EBC); showing as inactive.');
+                    Logger.warn('Local ' + entry.key + ' webhook ' + data.subscriptions[entry.key].webhookId + ' not found at CyberSource for the active merchant; abandoning the stored id so the next sync creates a fresh subscription.');
+                    abandonStoredWebhook(entry.key);
                     data.subscriptions[entry.key] = null;
                 } else {
                     if (liveMatch.status) {
-                        // Keep the displayed status in sync with CyberSource so a PENDING_REVIEW
-                        // subscription flips to ACTIVE here once it has been approved.
+                        // Sync displayed status so PENDING_REVIEW flips to ACTIVE once approved.
                         data.subscriptions[entry.key].status = liveMatch.status;
                     }
-                    // Detect a host change (e.g. the sandbox moved): the live webhook points at a
-                    // different host than the current storefront. Flag it so syncWithPreferences
-                    // repoints (delete + recreate) the subscription to this storefront's URL.
-                    var currentHost = extractHost(data.config.activeBaseUrl);
-                    var liveHost = extractHost(liveMatch.webhookUrl);
+                    // Host changed (sandbox moved): flag for repoint on next sync.
+                    var currentHost = webhookHelper.extractHost(data.config.activeBaseUrl);
+                    var liveHost = webhookHelper.extractHost(liveMatch.webhookUrl);
                     if (currentHost && liveHost && currentHost !== liveHost) {
                         data.subscriptions[entry.key].hostMismatch = true;
                         data.subscriptions[entry.key].liveUrl = liveMatch.webhookUrl;
@@ -723,7 +463,6 @@ function getViewData() {
         });
     } catch (e) { Logger.error('getViewData discovery failed: ' + (e && e.message ? e.message : e)); }
     return data;
-
 }
 
 function syncWithPreferences() {
@@ -732,15 +471,13 @@ function syncWithPreferences() {
     var fraud = data.subscriptions.fraudManagement;
     var uc = data.subscriptions.unifiedCheckout;
 
-    // Subscribe/repoint/activate when the product is enabled and the subscription is missing,
-    // points at a different host (sandbox moved -> delete+recreate), or is not yet ACTIVE
-    // (e.g. INACTIVE -> activate the existing webhook).
-    if (data.config.dmEnabled && subscriptionNeedsAction(fraud)) {
+    // Subscribe/repoint/activate when enabled and the subscription needs action; unsubscribe when disabled.
+    if (data.config.dmEnabled && webhookHelper.subscriptionNeedsAction(fraud)) {
         results.dm = subscribeProduct('fraudManagement', !!(fraud && fraud.hostMismatch));
     } else if (!data.config.dmEnabled && fraud) {
         results.dm = unsubscribeProduct('fraudManagement');
     }
-    if (data.config.secureIntegrationMethod === 'Unified_Checkout' && subscriptionNeedsAction(uc)) {
+    if (data.config.secureIntegrationMethod === 'Unified_Checkout' && webhookHelper.subscriptionNeedsAction(uc)) {
         results.uc = subscribeProduct('unifiedCheckout', !!(uc && uc.hostMismatch));
     } else if (data.config.secureIntegrationMethod !== 'Unified_Checkout' && uc) {
         results.uc = unsubscribeProduct('unifiedCheckout');
@@ -748,87 +485,44 @@ function syncWithPreferences() {
     return results;
 }
 
-function updateAdvanced(baseUrl, egressMleAlias, egressPublicKey) {
+function updateAdvanced(egressMleAlias, egressPublicKey) {
     var site = Site.getCurrent();
 
-    // Capture the previous BaseUrl *before* overwriting, so we can detect a rotation.
-    // syncWithPreferences only acts on enable/disable deltas, so without this an
-    // already-subscribed product would keep pointing at the old webhookUrl forever.
-    var oldBaseUrl = '';
-    try {
-        var existingGlobal = CustomObjectMgr.getCustomObject(CUSTOM_OBJECT_TYPE, 'globalConfiguration');
-        if (existingGlobal) oldBaseUrl = existingGlobal.custom.BaseUrl || '';
-    } catch (e) {}
-    var newBaseUrl = baseUrl || '';
-    var baseUrlChanged = (oldBaseUrl !== newBaseUrl);
-
-    
-    // Derive the egress MLE public key from the .p12 keystore entry the merchant is saving,
-    // rather than from a pasted string. An empty form submission falls back to the currently
-    // stored alias preference (which itself defaults via the site-preference default-value),
-    // so the merchant's working alias is never blanked out and no default is hardcoded here.
+    // Derive the egress key from the .p12 alias being saved; an empty form falls back to the stored alias.
     var effectiveAlias = egressMleAlias || site.getCustomPreferenceValue('VisaAcceptance_EgressCertificateAlias');
-    var derivedKey = deriveEgressCertificateB64(effectiveAlias);
+    var derivedKey = webhookHelper.deriveEgressCertificateB64(effectiveAlias);
     var keyToUse = derivedKey || egressPublicKey || '';
 
-    // Register the public key with CyberSource KMS BEFORE persisting/subscribing, and capture
-    // whether KMS accepted it (callApi fires its callback synchronously). We only treat the key
-    // as usable when the upload succeeds, so the UC subscribe guard cannot pass with a key that
-    // never reached KMS (which would make Response-MLE webhooks undecryptable).
+    // Register the key with KMS before subscribing; only treat it usable if KMS accepts it.
     var egressUploadOk = false;
     if (keyToUse) {
-        uploadAsymmetricKey(keyToUse, function (data, error) {
-            if (error) Logger.error('Failed to upload Egress Public Key: ' + JSON.stringify(error));
-            else egressUploadOk = true;
-        });
+        var egressUpload = webhooks.uploadAsymmetricKey(keyToUse);
+        if (egressUpload.error) Logger.error('Failed to upload Egress Public Key: ' + JSON.stringify(egressUpload.error));
+        else egressUploadOk = true;
     }
 
     Transaction.wrap(function () {
         try { site.setCustomPreferenceValue('VisaAcceptance_EgressCertificateAlias', effectiveAlias); } catch(e) { /* pref write is best-effort */ }
         try {
             var globalObj = CustomObjectMgr.getCustomObject(CUSTOM_OBJECT_TYPE, 'globalConfiguration') || CustomObjectMgr.createCustomObject(CUSTOM_OBJECT_TYPE, 'globalConfiguration');
-            globalObj.custom.BaseUrl = newBaseUrl;
-            // Only persist the egress key when KMS accepted it; on failure leave any previously
-            // working stored key untouched rather than clobbering it with an unusable value.
+            // Persist the egress key only when KMS accepted it; otherwise keep the previous working value.
             if (egressUploadOk) {
                 globalObj.custom.EgressPublicKey = keyToUse;
             }
         } catch(e) { /* custom-object access is best-effort */ }
     });
 
-    // EgressPublicKey is now persisted (the transaction above has committed), so the UC subscribe
-    // inside syncWithPreferences re-reads globalConfiguration and sees the freshly stored key.
     var results = syncWithPreferences();
 
-    // Surface a KMS upload failure ONLY when we derived a fresh key from the .p12 and KMS rejected
-    // it (a real misconfiguration). Re-uploading the fallback/previously-stored value is not worth
-    // alarming on. The controller's generic failure handler turns this into an error banner.
+    // Surface a KMS upload failure only when a freshly derived key was rejected (a real misconfiguration).
     if (derivedKey && !egressUploadOk) {
         results.egressKey = { success: false, error: 'EGRESS_KEY_UPLOAD_FAILED' };
-    }
-    
-
-    // BaseUrl rotation: subscribeProduct compares its newly-computed webhookUrl to the
-    // persisted WebhookUrl and creates a fresh subscription (then cleans up the old
-    // one) when they differ. Only invoke for products already subscribed — new
-    // subscriptions were already handled by syncWithPreferences above.
-    if (baseUrlChanged) {
-        ['fraudManagement', 'unifiedCheckout'].forEach(function (configId) {
-            try {
-                var existing = CustomObjectMgr.getCustomObject(CUSTOM_OBJECT_TYPE, configId);
-                if (existing && existing.custom.WebhookId) {
-                    results[configId + 'Rotation'] = subscribeProduct(configId);
-                }
-            } catch (e) {
-                Logger.error('BaseUrl rotation failed for ' + configId + ': ' + e.message);
-            }
-        });
     }
 
     return results;
 }
 
-exports.retrieveWebhooks = retrieveWebhooks;
+exports.retrieveWebhooks = webhooks.retrieveWebhooks;
 exports.subscribeFraudManagement = function() { return subscribeProduct('fraudManagement'); };
 exports.unsubscribeFraudManagement = function() { return unsubscribeProduct('fraudManagement'); };
 exports.subscribeUC = function() { return subscribeProduct('unifiedCheckout'); };
