@@ -98,6 +98,38 @@ httpRefundPayment(transactionId, merchantRefCode, paymentTotal, currency)
 
 ---
 
+## PayPal & Venmo (eWallet)
+
+Capture, authorization reversal, and refund for **PayPal** and **Venmo** orders use the
+**same building blocks** above — `httpCapturePayment`, `httpAuthReversal`, and
+`httpRefundPayment`. You do not call any PayPal-specific function.
+
+PayPal and Venmo are processed by Cybersource as alternative payment methods (eWallets),
+which require two extra fields on the order-management request that card transactions do
+not: `processingInformation.actionList` and `paymentInformation.paymentType`. These are
+added automatically by the `app.payment.modifyrequest` hook
+(`scripts/hooks/payment/modifyRequest.js`), which all three building blocks already invoke.
+The hook looks up the order from the request, and **only** when the order's payment
+instrument is `PAYPAL` or `VENMO` it sets:
+
+| Operation | actionList | paymentType.name | paymentType.method.name |
+|-----------|------------|------------------|--------------------------|
+| Capture | `AP_CAPTURE` | `eWallet` | `payPal` / `venmo` |
+| Authorization Reversal | `AP_AUTH_REVERSAL` | `eWallet` | `payPal` / `venmo` |
+| Refund | `AP_REFUND` | `eWallet` | `payPal` / `venmo` |
+
+For credit card and every other payment method the hook returns the request unchanged, so
+their behavior is identical to before. No new site preferences or custom attributes are
+required, and the existing `capture.js` / `authReversal.js` / `refund.js` scripts are not
+modified.
+
+> The `app.payment.modifyrequest` hook is registered in `int_cybs_sfra_base/hooks.json`.
+> If you maintain your own copy of `hooks.json`, ensure this entry is present, otherwise
+> PayPal/Venmo order-management requests will be sent without the required eWallet fields
+> and rejected by Cybersource.
+
+---
+
 ---
 
 [Next: Customization →](Customization.md)
