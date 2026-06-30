@@ -37,6 +37,9 @@ module.exports = {
   SIGNATURE_ALGORITHAM: "SHA-256=",
   HmacSHA256: "HmacSHA256",
 
+  /* Shared-secret JWT signing algorithm (HMAC). See restgs-jwt-con-shared-secret-intro.md. */
+  JWT_SHARED_SECRET_ALG: "HS256",
+
   /* Unified Checkout constants */
   // v1.x: Auto-versioning recommended - omit clientVersion or set to "1.0"
   UC_CLIENT_VERSION: "1.0",
@@ -73,7 +76,6 @@ module.exports = {
   MERCHANT_KEY_ID_REQ: "MerchantKeyId is Mandatory",
   RUN_ENVIRONMENT_REQ: "RunEnvironment is Mandatory",
   MERCHANT_SECRET_KEY_REQ: "MerchantSecretKey is Mandatory",
-  P12_PRIVATE_KEY_ALIAS_REQ: "P12 Private Key Alias is Mandatory for JWT authentication. Set VisaAcceptance_P12PrivateKeyAlias in Business Manager.",
   KEY_PASS_EMPTY: "KeyPass Empty/Null. Assigining merchantID value",
   KEY_DIRECTORY_EMPTY: "KeysDirectory not provided. Using Default Path:",
   REQUEST_JSON_EMPTY: "RequestJsonPath not provided",

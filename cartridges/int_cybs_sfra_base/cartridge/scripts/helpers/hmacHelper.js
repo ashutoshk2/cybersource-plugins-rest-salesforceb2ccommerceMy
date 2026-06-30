@@ -2,9 +2,6 @@
 
 var Mac = require('dw/crypto/Mac');
 var Encoding = require('dw/crypto/Encoding');
-var Bytes = require('dw/util/Bytes');
-var Signature = require('dw/crypto/Signature');
-var KeyRef = require('dw/crypto/KeyRef');
 var Site = require('dw/system/Site');
 
 
@@ -43,33 +40,10 @@ function verifyHMAC(data, signature) {
 }
 
 /**
- * Resolve the P12 alias used for signing (shared by standard and Meta Key flows).
- * @returns {string} - P12 alias
- */
-function getP12AliasForHMAC() {
-    var configObject = require('../../configuration/index');
-
-    // Both standard and Meta Key flows sign with the same P12 alias.
-    if (!configObject.p12PrivateKeyAlias) {
-        throw new Error('P12 private key alias is not configured. Please set VisaAcceptance_P12PrivateKeyAlias in site preferences.');
-    }
-
-    return configObject.p12PrivateKeyAlias;
-}
-
-/**
- * Derive deterministic HMAC key material from the configured P12 private key.
- * @returns {dw.util.Bytes} - HMAC secret bytes
+ * Resolve the HMAC key material from the configured CyberSource merchant secret key.
+ * @returns {string} - HMAC secret
  */
 function getHMACSecret() {
-    //jwt auth
-    //var p12Alias = getP12AliasForHMAC();
-    //var signature = new Signature();
-    //var keyRef = new KeyRef(p12Alias);
-    //var derivationContext = new Bytes('cybs-tax-cookie-hmac-v1', 'UTF-8');
-    //return signature.signBytes(derivationContext, keyRef, 'SHA256withRSA');
-    
-    //http auth
     var currentSite = Site.getCurrent();
     // Reuse the existing CyberSource merchant secret key
     var secret = currentSite.getCustomPreferenceValue('VisaAcceptance_MerchantKeySecret');

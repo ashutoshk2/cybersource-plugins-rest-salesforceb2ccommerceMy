@@ -1,17 +1,16 @@
+<isset name="isunifiedCheckoutEnabled" value="${require('*/cartridge/configuration/index').unifiedCheckoutEnabled}" scope="page" />
 <isset name="isTokenationEnabled" value="${require('*/cartridge/configuration/index').tokenizationEnabled}" scope="page" />
 <isset name="isCartridgeEnabled" value="${require('*/cartridge/configuration/index').cartridgeEnabled}" scope="page" />
 
 <iscomment>
-    My Account card saving is Unified Checkout (UC) only, in ALL cases — regardless of the
-    configured secureIntegrationMethod (None / Unified_Checkout). The UC widget
+    My Account card saving is Unified Checkout (UC) only. The UC widget
     collects the card + billing details and posts the completeMandate JWT to
     PaymentInstruments-SavePaymentDirect. The SecureAcceptance-CreateUCTokenSaveCard endpoint
     is gated only on the cartridge being enabled, so the save-card widget loads in every case;
-    we therefore key this form on tokenization + cartridge, NOT on unifiedCheckoutEnabled.
     The legacy Flex microform / plain card-entry form has been removed from My Account.
 </iscomment>
 
-<isif condition="${isCartridgeEnabled && isTokenationEnabled}">
+<isif condition="${isCartridgeEnabled && isTokenationEnabled && isunifiedCheckoutEnabled}">
     <iscomment>UC v1 Save Card Mode - Widget collects everything</iscomment>
 
     <iscomment>Include UC widget and scripts</iscomment>

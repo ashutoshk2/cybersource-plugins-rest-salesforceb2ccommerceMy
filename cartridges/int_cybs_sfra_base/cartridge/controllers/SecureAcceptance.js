@@ -110,20 +110,37 @@ if (configObject.cartridgeEnabled) {
                     for (var i = 0; i < paymentInstruments.length; i++) {
                         var pi = paymentInstruments[i];
                         var token = pi.creditCardToken;
-                        
+
                         // Token format: instrumentIdentifierId-paymentInstrumentId-flex[-customerId]
                         if (!empty(token) && token.indexOf('-') > 0) {
                             var tokenParts = token.split('-');
                             if (tokenParts.length >= 2) {
                                 var paymentInstrumentId = tokenParts[1];
-                                
+                                var cardType = pi.creditCardType || 'Card';
+                                var isEcheck = cardType === 'eCheck';
+
+                                // eCheck instruments keep the routing number on a custom
+                                // attribute alongside the masked account in creditCardNumber.
+                                // Surface it here so the saved-card selector can render the
+                                // routing line below the masked account.
+                                var echeckRoutingNumber = '';
+                                if (isEcheck) {
+                                    try {
+                                        echeckRoutingNumber = (pi.custom && pi.custom.echeckRoutingNumber) || '';
+                                    } catch (eRouting) {
+                                        echeckRoutingNumber = '';
+                                    }
+                                }
+
                                 savedCards.push({
                                     paymentInstrumentId: paymentInstrumentId,
-                                    cardType: pi.creditCardType || 'Card',
+                                    cardType: cardType,
                                     maskedNumber: pi.maskedCreditCardNumber || '****',
                                     expirationMonth: pi.creditCardExpirationMonth || '',
                                     expirationYear: pi.creditCardExpirationYear || '',
-                                    cardHolder: pi.creditCardHolder || ''
+                                    cardHolder: pi.creditCardHolder || '',
+                                    isEcheck: isEcheck,
+                                    echeckRoutingNumber: echeckRoutingNumber
                                 });
                             }
                         }

@@ -2,6 +2,7 @@
 
 var server = require('server');
 var webhookSubscription = require('~/cartridge/scripts/webhookSubscription');
+var secureResponseHelper = require('~/cartridge/scripts/helpers/secureResponseHelper');
 
 server.get('Show', server.middleware.https, function (req, res, next) {
     var viewData = webhookSubscription.getViewData();
@@ -11,7 +12,7 @@ server.get('Show', server.middleware.https, function (req, res, next) {
     
     viewData.info = req.querystring.info;
     
-    res.render('webhookManager', viewData);
+    secureResponseHelper.secureRender(res, 'webhookManager', viewData);
     return next();
 });
 

@@ -36,12 +36,11 @@ function getConfig(config) {
     
     return {
         // Api Client config
-        // Auth mechanism is selectable via the Core BM preference (HTTP Signature / JWT).
-        // Falls back to 'http_signature' when the preference is blank/unimported so existing
-        // sites keep their current behavior. Value matches apiClient/constants Constants.HTTP.
-        // String() coerces the Java-backed preference value to a native JS string so strict
-        // typeof checks (merchantConfig.defaultPropValues) and downstream consumers behave.
-        authenticationType: String(config.authenticationType || customPreferences.Core.Preferences.AuthenticationType.getValue() || 'http_signature'),
+        // Auth mechanism is no longer merchant-selectable. ApiClient.callApi picks it per
+        // endpoint: shared-secret JWT for all REST calls, HTTP signature only for
+        // /uc/v1/sessions. This value is informational only (recorded as the payment
+        // transaction's authMethod, which is always JWT for the authorization call).
+        authenticationType: 'jwt',
         runEnvironment: 'cybersource.environment.SANDBOX',
         enableLog: EnableLog,
         logFilename: LogFileName,
@@ -56,7 +55,6 @@ function getConfig(config) {
         merchantKeyId: config.merchantKeyId || customPreferences.Core.Preferences.MerchantKeyId.getValue(),
         merchantsecretKey: config.merchantSecretKey || customPreferences.Core.Preferences.MerchantKeySecret.getValue(),
         CommerceIndicator: config.CommerceIndicator || customPreferences.Core.Preferences.CommerceIndicator.getValue(),
-        p12PrivateKeyAlias: config.p12PrivateKeyAlias || customPreferences.Core.Preferences.P12PrivateKeyAlias.getValue(),
 
         // Meta Key
         metaKeyEnabled: config.metaKeyEnabled || customPreferences.Core.Preferences.MetaKeyEnabled.getValue(),
@@ -124,10 +122,7 @@ function getConfig(config) {
         //SecureIntegrationConfiguration
         secureIntegrationMethod: secureIntegrationMethod,
         UnifiedCheckoutPaymentAcceptanceLocation: config.unifiedCheckoutPaymentAcceptanceLocation || customPreferences.SecureIntegrationConfiguration.Preferences.UnifiedCheckoutPaymentAcceptanceLocation.getValue(),
-        digitalPaymentMethods: config.digitalPaymentMethods || customPreferences.SecureIntegrationConfiguration.Preferences.DigitalPaymentMethods.getValue(),
-        eCheckEnabledForUnifiedCheckout: config.eCheckEnabledForUnifiedCheckout || customPreferences.SecureIntegrationConfiguration.Preferences.ECheckEnabledforUnifiedCheckout.getValue(),
         unifiedCheckoutLabel: config.unifiedCheckoutLabel || customPreferences.SecureIntegrationConfiguration.Preferences.CheckoutLabelforUnifiedCheckout.getValue(),
-        minicartEnabled: config.VisaAcceptance_UnifiedCheckout_Cart_Minicart || customPreferences.SecureIntegrationConfiguration.Preferences.VisaAcceptance_UnifiedCheckout_Cart_Minicart.getValue(),
         cardTransactionType: config.cardTransactionType || customPreferences.SecureIntegrationConfiguration.Preferences.CardTransactionType.getValue(),
         unifiedCheckoutExpressPay: typeof config.unifiedCheckoutExpressPay === 'boolean' ? config.unifiedCheckoutExpressPay : customPreferences.SecureIntegrationConfiguration.Preferences.UnifiedCheckoutExpressPay.getValue(),
         unifiedCheckoutClientVersion: config.unifiedCheckoutClientVersion || customPreferences.SecureIntegrationConfiguration.Preferences.UnifiedCheckoutClientVersion.getValue(),

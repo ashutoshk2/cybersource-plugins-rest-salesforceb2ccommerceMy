@@ -5,8 +5,7 @@
 <isset name="isExpressPayEnabled" value="${require('*/cartridge/configuration/index').unifiedCheckoutExpressPay}" scope="page" />
  <input type="hidden" id="minicart-submit-payment-url" value="${URLUtils.url('CheckoutServices-SubmitPayment')}" />
  <input type="hidden" id="minicart-place-order-url" value="${URLUtils.https('Checkout-Begin', 'stage', 'placeOrder')}" />
-<isset name="isPaymentsPresent" value="${!empty(require('*/cartridge/configuration/index').digitalPaymentMethods)}" scope="page" />
-<isif condition="${isUCEnabled && isCartridgeEnabled && isPaymentsPresent && isExpressPayEnabled}">
+<isif condition="${isUCEnabled && isCartridgeEnabled && isExpressPayEnabled}">
     <iscomment>
         Do NOT load a second jQuery here. This template is injected into the minicart
         popover (miniCart.isml -> checkoutButtons -> here) and on the cart page. The SFRA

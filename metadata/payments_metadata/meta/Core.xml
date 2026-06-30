@@ -50,29 +50,6 @@
                 <externally-managed-flag>false</externally-managed-flag>
                 <default-value>false</default-value>
             </attribute-definition>
-            <attribute-definition attribute-id="VisaAcceptance_AuthenticationType">
-                <display-name xml:lang="x-default">Authentication Mechanism</display-name>
-                <description xml:lang="x-default">Authentication mechanism used for Visa Acceptance REST API calls. HTTP Signature uses the REST KeyId/Secret Key; JWT uses the P12 private key alias for RS256 signing. Defaults to HTTP Signature when unset.</description>
-                <type>enum-of-string</type>
-                <mandatory-flag>false</mandatory-flag>
-                <externally-managed-flag>false</externally-managed-flag>
-                <value-definitions>
-                    <value-definition default="true">
-                        <display xml:lang="x-default">HTTP Signature</display>
-                        <value>http_signature</value>
-                    </value-definition>
-                    <value-definition>
-                        <display xml:lang="x-default">JWT</display>
-                        <value>jwt</value>
-                    </value-definition>
-                </value-definitions>
-            </attribute-definition>
-                        <attribute-definition attribute-id="VisaAcceptance_P12PrivateKeyAlias">
-                <display-name xml:lang="x-default">P12 Private Key Alias</display-name>
-                <description xml:lang="x-default">Alias of the P12 private key imported in BM Private Keys and Certificates.</description>
-                <type>string</type>
-                <externally-managed-flag>false</externally-managed-flag>
-            </attribute-definition>
             <attribute-definition attribute-id="VisaAcceptance_MetaKeyEnabled">
                 <display-name xml:lang="x-default">Enable Meta Key</display-name>
                 <description xml:lang="x-default">Enable or disable Meta Key for Visa Acceptance.</description>
@@ -96,8 +73,6 @@
                 <attribute attribute-id="VisaAcceptance_MerchantKeySecret"/>
                 <attribute attribute-id="VisaAcceptance_CommerceIndicator"/>
                 <attribute attribute-id="VisaAcceptance_EnableTestEndpoints"/>
-                <attribute attribute-id="VisaAcceptance_AuthenticationType"/>
-                <attribute attribute-id="VisaAcceptance_P12PrivateKeyAlias"/>
                 <attribute attribute-id="VisaAcceptance_MetaKeyEnabled"/>
                 <attribute attribute-id="VisaAcceptance_MetaKeyMerchantId"/>
             </attribute-group>

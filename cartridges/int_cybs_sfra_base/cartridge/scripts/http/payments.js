@@ -601,6 +601,13 @@ function generateUcCaptureContext(isMiniCart, selectedPaymentInstrumentId) {
         // Target Origins
         requestObj.targetOrigins = ['https://' + request.httpHost];
 
+        // Pin the Unified Checkout version when a specific 1.x version is configured in BM
+        // (VisaAcceptance_UnifiedCheckout_ClientVersion). Left blank -> omit so UC uses the latest.
+        var clientVersion = configObject.unifiedCheckoutClientVersion;
+        if (!empty(clientVersion) && String(clientVersion).trim() !== '') {
+            requestObj.clientVersion = String(clientVersion).trim();
+        }
+
         // Allowed Card Networks is intentionally NOT sent - it is managed in EBC
         // and must not be included in ISV Phase 1 (see requestingCC.md).
 
@@ -674,7 +681,6 @@ function generateUcCaptureContext(isMiniCart, selectedPaymentInstrumentId) {
         var customerProfile = customer ? customer.getProfile() : null;
         var isRegisteredCustomer = customer && customer.isRegistered() && customer.isAuthenticated() &&
             customerProfile && !empty(customerProfile.getEmail()) && !empty(customerProfile.getCustomerNo());
-        var isTokenizationEnabled = configObject.tokenizationEnabled;
 
         // When the account already owns a TMS customer token, reuse it so the saved card
         // attaches to the existing customer instead of minting a new one (mirrors Non-UC).
@@ -699,12 +705,14 @@ function generateUcCaptureContext(isMiniCart, selectedPaymentInstrumentId) {
         // If selectedPaymentInstrumentId is provided, use ONLY that card (no other payment methods)
         // If null/undefined, show all payment methods (for entering new card)
         if (!isMiniCart && isRegisteredCustomer && customerProfile && selectedPaymentInstrumentId) {
-              // Add TMS token types for saving cards (omit 'customer' when one already exists).
+            // Add TMS token types for saving cards (omit 'customer' when one already exists).
             // tokenCreate:true is required for UC to honor TMS_TOKEN.customer association below.
-             completeMandate.tms = {
-                // tokenCreate: true,
+            completeMandate.tms = {
+                tokenCreate: true,
                 tokenTypes: ucPaymentHelper.buildTmsTokenTypes(existingCustomerId)
             };
+
+            captureMandate.billingType = 'NONE';
 
             // Use only the selected payment instrument
             var tmsConfig = {
@@ -846,6 +854,13 @@ function generateUcCaptureContextSaveCard(billTo) {
         // Target Origins
         requestObj.targetOrigins = ['https://' + request.httpHost];
 
+        // Pin the Unified Checkout version when a specific 1.x version is configured in BM
+        // (VisaAcceptance_UnifiedCheckout_ClientVersion). Left blank -> omit so UC uses the latest.
+        var clientVersion = configObject.unifiedCheckoutClientVersion;
+        if (!empty(clientVersion) && String(clientVersion).trim() !== '') {
+            requestObj.clientVersion = String(clientVersion).trim();
+        }
+
         // Allowed Payment Types - PANENTRY for card entry in Save Card flow
         requestObj.allowedPaymentTypes = ['PANENTRY'];
 
@@ -874,7 +889,7 @@ function generateUcCaptureContextSaveCard(billTo) {
         // completeMandate.type stays EBC-managed and is not sent.
         var completeMandate = {
             decisionManager: false,
-            type:"PREFER_AUTH",
+            type: "PREFER_AUTH",
             consumerAuthentication: 'NONE',
             tms: {
                 // tokenCreate:true is required for UC to honor TMS_TOKEN.customer association below.
@@ -916,6 +931,8 @@ function generateUcCaptureContextSaveCard(billTo) {
             },
             clientReferenceInformation: {
                 code: session.sessionID ? session.sessionID.substring(0, 6).toUpperCase() : 'SAVECD',
+                applicationName: Constants.APPLICATION_NAME,
+                applicationVersion: Constants.APPLICATION_VERSION,
                 partner: {
                     solutionId: configObject.solutionId || ''
                 }
