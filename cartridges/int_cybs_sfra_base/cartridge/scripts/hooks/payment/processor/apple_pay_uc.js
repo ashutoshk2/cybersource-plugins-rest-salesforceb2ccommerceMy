@@ -48,7 +48,7 @@ function Handle(basket, paymentInformation) {
             error: false
         };
     } catch (e) {
-        Logger.getLogger('Cybersource', 'PaymentProcessor').error(
+        Logger.getLogger('VisaAcceptance', 'PaymentProcessor').error(
             'apple_pay_uc.Handle error for basket {0}: {1}', basket.UUID, e.message || e
         );
         serverErrors.push(Resource.msg('error.payment.not.valid', 'checkout', null));

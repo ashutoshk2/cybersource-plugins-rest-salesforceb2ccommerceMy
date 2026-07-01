@@ -35,7 +35,7 @@ function decryptMLEPayload(jweString) {
             else if (padLen === 3) b64 += '=';
             var header = JSON.parse(Encoding.fromBase64(b64).toString());
             if (header.alg !== 'RSA-OAEP-256' || header.enc !== 'A256GCM') {
-                Logger.error('decryptMLEPayload: unexpected JWE algorithms — alg=' + header.alg + ', enc=' + header.enc + '. Expected RSA-OAEP-256 + A256GCM per CyberSource webhook spec.');
+                Logger.error('decryptMLEPayload: unexpected JWE algorithms — alg=' + header.alg + ', enc=' + header.enc + '. Expected RSA-OAEP-256 + A256GCM per Visa Acceptance webhook spec.');
                 throw new Error('Unsupported JWE algorithms');
             }
         } catch (he) {
@@ -68,11 +68,13 @@ function validateSignature(req, customObjectKey) {
         var s = signatureParts[2].split('=')[1];
         if (Math.abs(Date.now() - parseInt(ts)) > 300000) return false;
 
-        var obj = CustomObjectMgr.getCustomObject('CyberSource Webhook Subscription', customObjectKey);
-        if (!obj || !obj.custom.SecurityKey) return false;
+        // The signing key is the single org key stored on globalConfiguration by the Webhook Manager.
+        var globalConfig = CustomObjectMgr.getCustomObject('VisaAcceptanceWebhookSubscription', 'globalConfiguration');
+        if (!globalConfig || !globalConfig.custom.SecurityKey) return false;
+        var securityKey = globalConfig.custom.SecurityKey;
 
         var hmac = new Mac('HmacSHA256');
-        var secret = Encoding.fromBase64(obj.custom.SecurityKey);
+        var secret = Encoding.fromBase64(securityKey);
 
         // CyberSource signs `{timestamp}.{raw_body}`. The earlier 3-variant fallback
         // re-stringified parsed JSON, which can never byte-match the original payload.

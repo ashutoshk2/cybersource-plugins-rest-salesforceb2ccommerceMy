@@ -69,7 +69,7 @@ function createWebhookSubscription(callback) {
     
     var webhookBaseUrl = '';
     try {
-        var globalObj = CustomObjectMgr.getCustomObject('CyberSource Webhook Subscription', 'globalConfiguration');
+        var globalObj = CustomObjectMgr.getCustomObject('VisaAcceptanceWebhookSubscription', 'globalConfiguration');
         if (globalObj) webhookBaseUrl = globalObj.custom.BaseUrl;
     } catch (e) {}
 

@@ -115,7 +115,7 @@ if (configObject.tokenizationEnabled && configObject.cartridgeEnabled) {
         var accountHelpers = require('*/cartridge/scripts/helpers/accountHelpers');
         var addressHelpers = require('*/cartridge/scripts/helpers/addressHelpers');
 
-        var logger = Logger.getLogger('Cybersource', 'SavePaymentDirect');
+        var logger = Logger.getLogger('VisaAcceptance', 'SavePaymentDirect');
 
         // Get the completeMandate JWT from request
         var completeMandateJwt = request.httpParameterMap.completeMandateJwt.stringValue;

@@ -28,13 +28,13 @@ var Types = {
 module.exports = {
     Core: {
         id: 'VisaAcceptance_Core',
-        display_name: 'Cybersource Cartridge configuration',
+        display_name: 'Visa Acceptance Cartridge configuration',
         Preferences: {
             /** @type {CustomPreference} */
             CartridgeEnabled: {
                 id: 'VisaAcceptance_CartridgeEnabled',
-                display_name: 'Enable Cybersource Cartridge',
-                description: 'Enable or disable Cybersource Cartridge. If disabled none of the Cybersource services are invoked.',
+                display_name: 'Enable Visa Acceptance Cartridge',
+                description: 'Enable or disable Visa Acceptance Cartridge. If disabled none of the Visa Acceptance services are invoked.',
                 type: Types.boolean,
                 default: true,
                 flags: {
@@ -44,8 +44,8 @@ module.exports = {
             /** @type {CustomPreference} */
             MerchantID: {
                 id: 'VisaAcceptance_MerchantID',
-                display_name: 'Cybersource MerchantID',
-                description: 'Cybersource Merchant ID',
+                display_name: 'Visa Acceptance MerchantID',
+                description: 'Visa Acceptance Merchant ID',
                 type: Types.string,
                 default: undefined,
                 flags: {
@@ -55,8 +55,8 @@ module.exports = {
             /** @type {CustomPreference} */
             MerchantKeyId: {
                 id: 'VisaAcceptance_MerchantKeyId',
-                display_name: 'Cybersource REST KeyId',
-                description: 'Cybersource REST Key ID',
+                display_name: 'Visa Acceptance REST KeyId',
+                description: 'Visa Acceptance REST Key ID',
                 type: Types.string,
                 default: undefined,
                 flags: {
@@ -66,8 +66,8 @@ module.exports = {
             /** @type {CustomPreference} */
             MerchantKeySecret: {
                 id: 'VisaAcceptance_MerchantKeySecret',
-                display_name: 'Cybersource REST Secret Key',
-                description: 'Cybersource REST Secret Key',
+                display_name: 'Visa Acceptance REST Secret Key',
+                description: 'Visa Acceptance REST Secret Key',
                 type: Types.Password,
                 default: undefined,
                 flags: {
@@ -89,7 +89,7 @@ module.exports = {
             MetaKeyEnabled: {
                 id: 'VisaAcceptance_MetaKeyEnabled',
                 display_name: 'Enable Meta Key',
-                description: 'Enable or disable Meta Key for Cybersource. When enabled, the Meta Key P12 alias and serial number are used instead of the default key.',
+                description: 'Enable or disable Meta Key for Visa Acceptance. When enabled, the Meta Key P12 alias and serial number are used instead of the default key.',
                 type: Types.boolean,
                 default: false,
                 flags: {
@@ -100,7 +100,7 @@ module.exports = {
             MetaKeyMerchantId: {
                 id: 'VisaAcceptance_MetaKeyMerchantId',
                 display_name: 'Meta Key Portfolio Merchant ID',
-                description: 'The portfolio/account merchant ID that owns the Meta Key P12 certificate. Used as the iss (issuer) claim in JWT v2. The transacting merchant ID (v-c-merchant-id) remains the child MID configured in Cybersource_MerchantID.',
+                description: 'The portfolio/account merchant ID that owns the Meta Key P12 certificate. Used as the iss (issuer) claim in JWT v2. The transacting merchant ID (v-c-merchant-id) remains the child MID configured in VisaAcceptance_MerchantID.',
                 type: Types.string,
                 default: undefined,
                 flags: {
@@ -118,7 +118,7 @@ module.exports = {
             DAVEnabled: {
                 id: 'VisaAcceptance_DAVEnabled',
                 display_name: 'Enable Delivery Address Verification Services',
-                description: 'Enable or Disable Delivery Address Verification for Cybersource Cartridge',
+                description: 'Enable or Disable Delivery Address Verification for Visa Acceptance Cartridge',
                 type: Types.boolean,
                 default: true,
                 flags: {
@@ -136,7 +136,7 @@ module.exports = {
             TaxCalculationEnabled: {
                 id: 'VisaAcceptance_TaxCalculationEnabled',
                 display_name: 'Enable Tax calculation Services',
-                description: 'Enables or Disables Tax calculation for Cybersource Cartridge',
+                description: 'Enables or Disables Tax calculation for Visa Acceptance Cartridge',
                 type: Types.boolean,
                 default: true,
                 flags: {
@@ -481,7 +481,7 @@ SecureIntegrationConfiguration:{
             DecisionManagerEnabled: {
                 id: 'VisaAcceptance_DecisionManager',
                 display_name: 'Enable Decision Manager Services',
-                description: 'Enable or Disable Decision Manager for Cybersource Cartridge',
+                description: 'Enable or Disable Decision Manager for Visa Acceptance Cartridge',
                 type: Types.boolean,
                 default: true,
                 flags: {
@@ -499,7 +499,7 @@ SecureIntegrationConfiguration:{
             DeviceFingerprintEnabled: {
                 id: 'VisaAcceptance_DeviceFingerprintEnabled',
                 display_name: 'Enable DeviceFingerprint Service',
-                description: 'Enable or Disable DeviceFingerprint for Cybersource Cartridge',
+                description: 'Enable or Disable DeviceFingerprint for Visa Acceptance Cartridge',
                 type: Types.boolean,
                 default: true,
                 flags: {

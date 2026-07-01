@@ -5,7 +5,7 @@ var configObject = require('../../configuration/index');
 var cybersourceRestApi = require('../../apiClient/index');
 var Constants = require('../../apiClient/constants');
 
-var auditLogger = Logger.getLogger('cybersource', 'refund');
+var auditLogger = Logger.getLogger('VisaAcceptance', 'refund');
 
 /**
  * *

@@ -18,8 +18,8 @@ function activateWebhooks() {
         var configObject = require('../../configuration/index');
 
         var webhooksToActivate = [
-            { type: 'CyberSource Webhook Subscription', id: 'fraudManagement' },
-            { type: 'CyberSource Webhook Subscription', id: 'unifiedCheckout' }
+            { type: 'VisaAcceptanceWebhookSubscription', id: 'fraudManagement' },
+            { type: 'VisaAcceptanceWebhookSubscription', id: 'unifiedCheckout' }
         ];
 
         webhooksToActivate.forEach(function (item) {

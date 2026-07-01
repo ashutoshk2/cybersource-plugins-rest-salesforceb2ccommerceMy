@@ -142,7 +142,7 @@ function createToken(
 function handleUCCreditCard(basket, paymentInformation) {
     var ucPaymentHelper = require('~/cartridge/scripts/helpers/ucPaymentHelper');
     var Logger = require('dw/system/Logger');
-    var logger = Logger.getLogger('Cybersource', 'PaymentProcessor');
+    var logger = Logger.getLogger('VisaAcceptance', 'PaymentProcessor');
     var serverErrors = [];
 
     try {
@@ -202,7 +202,7 @@ function Handle(basket, paymentInformation) {
 
     var configObject = require('~/cartridge/configuration/index.js');
     var Logger = require('dw/system/Logger');
-    var logger = Logger.getLogger('Cybersource', 'PaymentProcessor');
+    var logger = Logger.getLogger('VisaAcceptance', 'PaymentProcessor');
 
     var currentBasket = basket;
     var cardErrors = {};
@@ -383,7 +383,7 @@ function Authorize(orderNumber, paymentInstrument, paymentProcessor) {
         serverErrors.push(
             Resource.msg('error.technical', 'checkout', null)
         );
-        Logger.getLogger('Cybersource', 'PaymentAuthorization').error('Authorization error for order {0}: {1}', orderNumber, JSON.stringify(errorData));
+        Logger.getLogger('VisaAcceptance', 'PaymentAuthorization').error('Authorization error for order {0}: {1}', orderNumber, JSON.stringify(errorData));
     }
     return {
         fieldErrors: fieldErrors,

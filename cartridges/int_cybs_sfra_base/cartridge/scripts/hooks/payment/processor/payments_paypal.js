@@ -21,7 +21,7 @@ var Logger = require('dw/system/Logger');
  */
 function Handle(basket, paymentInformation) {
     var collections = require('*/cartridge/scripts/util/collections');
-    var logger = Logger.getLogger('Cybersource', 'PaymentProcessor');
+    var logger = Logger.getLogger('VisaAcceptance', 'PaymentProcessor');
     var serverErrors = [];
     var PAYPAL = 'PAYPAL';
 

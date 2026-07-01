@@ -25,7 +25,7 @@ function fraudDetection(basket) { // eslint-disable-line no-unused-vars
             // eslint-disable-next-line no-undef
             decision = session.privacy.orderStatus;
         } else {
-            Logger.debug("Error setting fraud decision.  CybersourceFraudDecision missing from session.  Default is set to 'ACCEPT'");
+            Logger.debug("Error setting fraud decision.  Visa Acceptance fraud decision missing from session.  Default is set to 'ACCEPT'");
         }
     }
 

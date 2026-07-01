@@ -67,7 +67,7 @@ server.post('Refresh', server.middleware.https, csrfProtection.validateAjaxReque
     } catch (e) {
         // A single card must never break the checkout flow.
         var Logger = require('dw/system/Logger');
-        Logger.getLogger('Cybersource', 'SavedCardRefresh').error('Refresh failed for piUuid={0}: {1}', piUuid, e.message || e);
+        Logger.getLogger('VisaAcceptance', 'SavedCardRefresh').error('Refresh failed for piUuid={0}: {1}', piUuid, e.message || e);
         result = { success: false };
     }
     res.json(result);

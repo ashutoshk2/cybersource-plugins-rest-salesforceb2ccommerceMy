@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <metadata xmlns="http://www.demandware.com/xml/impex/metadata/2006-10-31">
-    <custom-type type-id="CyberSource Webhook Subscription">
-        <display-name xml:lang="x-default">CyberSource Webhook Subscription</display-name>
-        <description xml:lang="x-default">Stores CyberSource webhook subscription state (per product config and globalConfiguration) managed by the Business Manager Webhook Manager.</description>
+    <custom-type type-id="VisaAcceptanceWebhookSubscription">
+        <display-name xml:lang="x-default">Visa Acceptance Webhook Subscription</display-name>
+        <description xml:lang="x-default">Stores Visa Acceptance webhook subscription state (per product config and globalConfiguration) managed by the Business Manager Webhook Manager.</description>
         <staging-mode>no-staging</staging-mode>
         <storage-scope>organization</storage-scope>
         <key-definition attribute-id="ConfigId">
@@ -61,8 +61,8 @@
             </attribute-definition>
         </attribute-definitions>
         <group-definitions>
-            <attribute-group group-id="CyberSource Webhook Subscription">
-                <display-name xml:lang="x-default">CyberSource Webhook Subscription</display-name>
+            <attribute-group group-id="VisaAcceptanceWebhookSubscription">
+                <display-name xml:lang="x-default">Visa Acceptance Webhook Subscription</display-name>
                 <attribute attribute-id="ConfigId"/>
                 <attribute attribute-id="WebhookId"/>
                 <attribute attribute-id="WebhookUrl"/>

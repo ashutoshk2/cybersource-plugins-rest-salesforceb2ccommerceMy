@@ -13,7 +13,7 @@ var URLAction = require('dw/web/URLAction');
 var Site = require('dw/system/Site');
 var Logger = require('dw/system/Logger').getLogger('cybs_webhooks', 'webhookSubscription');
 
-var CUSTOM_OBJECT_TYPE = 'CyberSource Webhook Subscription';
+var CUSTOM_OBJECT_TYPE = 'VisaAcceptanceWebhookSubscription';
 
 /**
  * Create a subscription, recovering from the 400 "Record already exists" conflict (a subscription
@@ -50,7 +50,7 @@ function createSubscriptionWithRecovery(subConfig, webhookUrl, productId) {
 
     // The conflict can be on any bundled product (UC bundles unifiedCheckout + alternativePaymentMethods),
     // so reconcile across all of this config's products. Dedup ids since one webhook can cover several.
-    Logger.warn('createSubscriptionWithRecovery: ' + productId + ' (or a bundled product) already exists at CyberSource but is untracked locally; deleting matching subscription(s) and recreating to restore a known security key.');
+    Logger.warn('createSubscriptionWithRecovery: ' + productId + ' (or a bundled product) already exists at Visa Acceptance but is untracked locally; deleting matching subscription(s) and recreating to restore a known security key.');
     var idsToDelete = [];
     function collectConflicts(prod) {
         var targetEvents = prod.eventTypes || [];
@@ -111,7 +111,77 @@ function createSubscriptionWithRecovery(subConfig, webhookUrl, productId) {
     return result;
 }
 
-function subscribeProduct(configId, forceRecreate) {
+/**
+ * Fetch the merchant's available webhook products once, normalized to an array.
+ *
+ * @returns {Object} { products: Array|null, error: (boolean|number|string) }
+ */
+function getAvailableProducts() {
+    var productsResult = webhooks.findProductsToSubscribe();
+    if (productsResult.error) {
+        return { products: null, error: productsResult.error };
+    }
+    var data = productsResult.data;
+    var list = Array.isArray(data) ? data : (data && data.products ? data.products : null);
+    return { products: list, error: null };
+}
+
+/**
+ * Reduce a normalized product list to the set of product ids the merchant has enabled.
+ *
+ * @param {Array} products normalized product list from getAvailableProducts
+ * @returns {Array} product id strings
+ */
+function toProductIds(products) {
+    var ids = [];
+    if (Array.isArray(products)) {
+        for (var i = 0; i < products.length; i++) {
+            if (products[i] && products[i].productId) ids.push(products[i].productId);
+        }
+    }
+    return ids;
+}
+
+/**
+ * Store the org signing secret on globalConfiguration for the webhook controller to validate against.
+ * The key is org-scoped and newest-wins, so we keep only the latest.
+ *
+ * @param {string} secret base64 shared secret
+ */
+function storeSigningKey(secret) {
+    if (!secret) return;
+    Transaction.wrap(function () {
+        var globalConfig = CustomObjectMgr.getCustomObject(CUSTOM_OBJECT_TYPE, 'globalConfiguration')
+                || CustomObjectMgr.createCustomObject(CUSTOM_OBJECT_TYPE, 'globalConfiguration');
+        globalConfig.custom.SecurityKey = secret;
+    });
+}
+
+/**
+ * Mint a fresh org signing key and return its secret.
+ *
+ * @returns {string} base64 shared secret ('' on failure)
+ */
+function createSigningKey() {
+    var keyResult = webhooks.createSecurityKey();
+    if (keyResult.error) {
+        Logger.error('createSecurityKey failed: ' + JSON.stringify(keyResult.error));
+        return '';
+    }
+    if (keyResult.data && keyResult.data.status === 'SUCCESS' && keyResult.data.keyInformation) {
+        return keyResult.data.keyInformation.key || '';
+    }
+    return '';
+}
+
+/**
+ * @param {string} configId WEBHOOK_CONFIGS key ('fraudManagement' | 'unifiedCheckout')
+ * @param {boolean} forceRecreate skip the activate-existing shortcut and always recreate (host repoint)
+ * @param {Array} [availableProducts] catalog from getAvailableProducts, reused to avoid re-listing it
+ * @param {string} [signingKey] org signing secret minted once per cycle; self-created if omitted
+ * @returns {Object} subscribe result
+ */
+function subscribeProduct(configId, forceRecreate, availableProducts, signingKey) {
     var config = WEBHOOK_CONFIGS[configId];
     var site = Site.getCurrent();
 
@@ -137,8 +207,8 @@ function subscribeProduct(configId, forceRecreate) {
         if (derivedUploadOk) {
             egressPublicKey = derivedEgressKey;
             Transaction.wrap(function () {
-                var g = CustomObjectMgr.getCustomObject(CUSTOM_OBJECT_TYPE, 'globalConfiguration') || CustomObjectMgr.createCustomObject(CUSTOM_OBJECT_TYPE, 'globalConfiguration');
-                g.custom.EgressPublicKey = egressPublicKey;
+                var globalConfig = CustomObjectMgr.getCustomObject(CUSTOM_OBJECT_TYPE, 'globalConfiguration') || CustomObjectMgr.createCustomObject(CUSTOM_OBJECT_TYPE, 'globalConfiguration');
+                globalConfig.custom.EgressPublicKey = egressPublicKey;
             });
         } else {
             Logger.error('subscribeProduct: ' + configId + ' subscribe blocked — could not derive/register an egress public key from alias "' + egressAlias + '". Verify the RSA .p12 is imported under Private Keys and Certificates.');
@@ -187,25 +257,27 @@ function subscribeProduct(configId, forceRecreate) {
     // Defer stale-subscription cleanup until the replacement is active and persisted.
     var oldWebhookIdToCleanup = (!staleWebhookDeleted && existingObj && existingObj.custom.WebhookId) ? existingObj.custom.WebhookId : null;
 
-    var securityKey = '';
-    var keyResult = webhooks.createSecurityKey();
-    if (keyResult.error) Logger.error('createSecurityKey failed for ' + configId + ': ' + JSON.stringify(keyResult.error));
-    else if (keyResult.data && keyResult.data.status === 'SUCCESS') securityKey = keyResult.data.keyInformation.key;
+    // Use the cycle key if the caller minted one; else self-create (standalone subscribe entry points).
+    var securityKey = signingKey || createSigningKey();
     if (!securityKey) return { success: false, error: 'KEY_ERROR' };
+    storeSigningKey(securityKey);
 
     var webhookId = '';
     var createdStatus = '';
     var specificError = null;
 
-    var productsResult = webhooks.findProductsToSubscribe();
-    var productList = null;
-    if (productsResult.error) {
-        Logger.error('Product list fetch failed for ' + configId + ': ' + JSON.stringify(productsResult.error));
-        specificError = 'API_ERROR';
-    } else {
-        productList = Array.isArray(productsResult.data) ? productsResult.data : (productsResult.data && productsResult.data.products ? productsResult.data.products : null);
-        if (!productList) {
+    // Reuse the caller's catalog if given; else fetch it (standalone subscribe entry points).
+    var productList = Array.isArray(availableProducts) ? availableProducts : null;
+    if (!productList) {
+        var productsResult = webhooks.findProductsToSubscribe();
+        if (productsResult.error) {
+            Logger.error('Product list fetch failed for ' + configId + ': ' + JSON.stringify(productsResult.error));
             specificError = 'API_ERROR';
+        } else {
+            productList = Array.isArray(productsResult.data) ? productsResult.data : (productsResult.data && productsResult.data.products ? productsResult.data.products : null);
+            if (!productList) {
+                specificError = 'API_ERROR';
+            }
         }
     }
 
@@ -215,7 +287,7 @@ function subscribeProduct(configId, forceRecreate) {
         for (var ap = 0; ap < productList.length; ap++) {
             availableProductIds.push(productList[ap].productId);
         }
-        Logger.info('subscribeProduct: ' + configId + ' available webhook products from CyberSource: [' + availableProductIds.join(', ') + ']');
+        Logger.info('subscribeProduct: ' + configId + ' available webhook products from Visa Acceptance: [' + availableProductIds.join(', ') + ']');
         var found = false;
         if (configId === 'fraudManagement') {
             for (var i = 0; i < productList.length; i++) {
@@ -259,7 +331,7 @@ function subscribeProduct(configId, forceRecreate) {
                 }
             }
             if (!found) {
-                Logger.error('subscribeProduct: ' + configId + ' PRODUCT_NOT_ENABLED — required product "' + config.products[0].productId + '" is not among the merchant\'s available webhook products [' + availableProductIds.join(', ') + ']. Ask CyberSource to enable this product for the organization.');
+                Logger.error('subscribeProduct: ' + configId + ' PRODUCT_NOT_ENABLED — required product "' + config.products[0].productId + '" is not among the merchant\'s available webhook products [' + availableProductIds.join(', ') + ']. Ask Visa Acceptance to enable this product for the organization.');
                 specificError = 'PRODUCT_NOT_ENABLED';
             }
         }
@@ -289,7 +361,6 @@ function subscribeProduct(configId, forceRecreate) {
     Transaction.wrap(function () {
         var obj = CustomObjectMgr.getCustomObject(CUSTOM_OBJECT_TYPE, configId) || CustomObjectMgr.createCustomObject(CUSTOM_OBJECT_TYPE, configId);
         obj.custom.WebhookId = webhookId;
-        obj.custom.SecurityKey = securityKey;
         obj.custom.WebhookUrl = webhookUrl;
         obj.custom.Status = finalStatus;
     });
@@ -318,7 +389,7 @@ function unsubscribeProduct(configId) {
     if (deleteResult.error === false || parseInt(deleteResult.error, 10) === 404) {
         deleteConfirmed = true;
     } else {
-        Logger.error('deleteSubscription failed for ' + configId + ' (' + obj.custom.WebhookId + '): ' + JSON.stringify(deleteResult.error) + ' — keeping local BM record because the webhook was not confirmed deleted at CyberSource.');
+        Logger.error('deleteSubscription failed for ' + configId + ' (' + obj.custom.WebhookId + '): ' + JSON.stringify(deleteResult.error) + ' — keeping local BM record because the webhook was not confirmed deleted at Visa Acceptance.');
     }
     if (!deleteConfirmed) return { success: false, error: 'DELETE_FAILED' };
     Transaction.wrap(function () { CustomObjectMgr.remove(obj); });
@@ -380,8 +451,20 @@ function getViewData() {
             activeBaseUrl: standardBaseUrl
         },
         subscriptions: {},
-        external: []
+        external: [],
+        availableProducts: null
     };
+
+    // Fetch the product catalog once when a feature that uses it is enabled, so discovery can query
+    // only the fraud product the org has (not probe both DM and FME) and subscribe can reuse it.
+    var availableProductIds = null;
+    if (data.config.dmEnabled || data.config.secureIntegrationMethod === 'Unified_Checkout') {
+        var avail = getAvailableProducts();
+        if (!avail.error) {
+            data.availableProducts = avail.products;
+            availableProductIds = toProductIds(avail.products);
+        }
+    }
 
     ['fraudManagement', 'unifiedCheckout'].forEach(function (productId) {
         try {
@@ -408,6 +491,9 @@ function getViewData() {
             var liveWebhooks = {};
             var gotDefinitiveResponse = false;
             entry.queryProducts.forEach(function (queryProductId) {
+                // Skip products the org doesn't have — it can't have a subscription for one, so the
+                // query is wasted. If the catalog lookup failed (null), probe every configured product.
+                if (availableProductIds && availableProductIds.indexOf(queryProductId) === -1) return;
                 try {
                     var listResult = webhooks.retrieveWebhooks(queryProductId);
                     if (listResult.error) {
@@ -432,7 +518,7 @@ function getViewData() {
                 data.subscriptions[entry.key] && data.subscriptions[entry.key].webhookId) {
                 var liveMatch = liveWebhooks[data.subscriptions[entry.key].webhookId];
                 if (!liveMatch) {
-                    Logger.warn('Local ' + entry.key + ' webhook ' + data.subscriptions[entry.key].webhookId + ' not found at CyberSource for the active merchant; abandoning the stored id so the next sync creates a fresh subscription.');
+                    Logger.warn('Local ' + entry.key + ' webhook ' + data.subscriptions[entry.key].webhookId + ' not found at Visa Acceptance for the active merchant; abandoning the stored id so the next sync creates a fresh subscription.');
                     abandonStoredWebhook(entry.key);
                     data.subscriptions[entry.key] = null;
                 } else {
@@ -467,18 +553,26 @@ function getViewData() {
 
 function syncWithPreferences() {
     var data = getViewData();
+    // Reuse the catalog getViewData already fetched so subscribe doesn't re-list it per product.
+    var availableProducts = data.availableProducts;
     var results = {};
     var fraud = data.subscriptions.fraudManagement;
     var uc = data.subscriptions.unifiedCheckout;
 
+    var dmWillSubscribe = data.config.dmEnabled && webhookHelper.subscriptionNeedsAction(fraud);
+    var ucWillSubscribe = data.config.secureIntegrationMethod === 'Unified_Checkout' && webhookHelper.subscriptionNeedsAction(uc);
+
+    // The signing key is org-scoped, so mint it once per cycle (not per product) and share it.
+    var signingKey = (dmWillSubscribe || ucWillSubscribe) ? createSigningKey() : '';
+
     // Subscribe/repoint/activate when enabled and the subscription needs action; unsubscribe when disabled.
-    if (data.config.dmEnabled && webhookHelper.subscriptionNeedsAction(fraud)) {
-        results.dm = subscribeProduct('fraudManagement', !!(fraud && fraud.hostMismatch));
+    if (dmWillSubscribe) {
+        results.dm = subscribeProduct('fraudManagement', !!(fraud && fraud.hostMismatch), availableProducts, signingKey);
     } else if (!data.config.dmEnabled && fraud) {
         results.dm = unsubscribeProduct('fraudManagement');
     }
-    if (data.config.secureIntegrationMethod === 'Unified_Checkout' && webhookHelper.subscriptionNeedsAction(uc)) {
-        results.uc = subscribeProduct('unifiedCheckout', !!(uc && uc.hostMismatch));
+    if (ucWillSubscribe) {
+        results.uc = subscribeProduct('unifiedCheckout', !!(uc && uc.hostMismatch), availableProducts, signingKey);
     } else if (data.config.secureIntegrationMethod !== 'Unified_Checkout' && uc) {
         results.uc = unsubscribeProduct('unifiedCheckout');
     }

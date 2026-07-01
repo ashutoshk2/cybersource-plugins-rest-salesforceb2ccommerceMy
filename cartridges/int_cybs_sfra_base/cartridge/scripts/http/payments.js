@@ -423,7 +423,7 @@ function httpAuthorizeWithTransientToken(transientToken, customerEmail, referenc
     var configObject = require('../../configuration/index');
     var cybersourceRestApi = require('../../apiClient/index');
     var Logger = require('dw/system/Logger');
-    var logger = Logger.getLogger('Cybersource', isEcheck ? 'EcheckAuthorization' : 'CreditCardAuthorization');
+    var logger = Logger.getLogger('VisaAcceptance', isEcheck ? 'EcheckAuthorization' : 'CreditCardAuthorization');
 
     var webhookActivationHelper = require('~/cartridge/scripts/helpers/webhookActivationHelper');
     webhookActivationHelper.activateWebhooks();
@@ -1151,7 +1151,7 @@ function formatPhoneNumber(phoneNumber) {
  */
 function decodeCompleteMandateJwt(jwt) {
     var Logger = require('dw/system/Logger');
-    var logger = Logger.getLogger('Cybersource', 'CompleteMandateJWT');
+    var logger = Logger.getLogger('VisaAcceptance', 'CompleteMandateJWT');
 
     if (!jwt || typeof jwt !== 'string') {
         logger.error('decodeCompleteMandateJwt: Invalid JWT input - null or not a string');

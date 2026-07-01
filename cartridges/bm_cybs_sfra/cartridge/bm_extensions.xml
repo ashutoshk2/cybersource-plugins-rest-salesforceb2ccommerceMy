@@ -11,8 +11,8 @@
     <menuaction id="cybs_webhook_manager" menupath="cybs_payment_services" position="100" site="true">
         <name xml:lang="x-default">Webhook Manager</name>
         <!-- START GENAI -->
-        <short_description xml:lang="x-default">Manage Visa Acceptance webhook subscriptions for Decision Manager, Fraud Management, and Unified Checkout</short_description>
-        <description xml:lang="x-default">Manage Visa Acceptance webhook subscriptions for Decision Manager, Fraud Management, and Unified Checkout</description>
+        <short_description xml:lang="x-default">Manage Visa Acceptance webhook subscriptions for Fraud Management and Unified Checkout</short_description>
+        <description xml:lang="x-default">Manage Visa Acceptance webhook subscriptions for Fraud Management and Unified Checkout</description>
         <!-- END GENAI -->
         <exec pipeline="WebhookManager" node="Show"/>
         <sub-pipelines>

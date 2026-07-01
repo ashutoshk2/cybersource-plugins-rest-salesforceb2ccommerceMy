@@ -19,7 +19,7 @@ module.exports = {
     },
     unifiedCheckout: {
         name: 'UC Webhook Events',
-        description: 'UC Events Simulation',
+        description: 'UC Webhook Events',
         notificationEndpoint: 'WebhookNotification-paymentNotification',
         products: [
             { productId: 'unifiedCheckout', eventTypes: ['uc.orders.transactionresults'] },

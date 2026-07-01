@@ -65,7 +65,7 @@ function httpRetrievePaymentInstrument(paymentInstrumentId) {
             // Diagnostic: surface the real shape of an unclassified failure so the
             // retrieve outcome is observable (can be dialed to debug level later).
             var body = parseErrorBody(data);
-            Logger.getLogger('Cybersource', 'SavedCardRefresh').error(
+            Logger.getLogger('VisaAcceptance', 'SavedCardRefresh').error(
                 'TMS retrieve soft-fail: Result.error={0} Result.status={1} Result.statusCode={2} body.reason={3} body.statusCode={4}',
                 response && response.error,
                 response && response.status,
@@ -89,7 +89,7 @@ function httpRetrievePaymentInstrument(paymentInstrumentId) {
  */
 function httpUCCreateToken(ucTransientToken, customerEmail, billingAddress, referenceCode) {
     var Logger = require('dw/system/Logger');
-    var logger = Logger.getLogger('Cybersource', 'UC-TokenManagement');
+    var logger = Logger.getLogger('VisaAcceptance', 'UC-TokenManagement');
     
     try {
         logger.info('Creating UC token for reference: {0}', referenceCode);

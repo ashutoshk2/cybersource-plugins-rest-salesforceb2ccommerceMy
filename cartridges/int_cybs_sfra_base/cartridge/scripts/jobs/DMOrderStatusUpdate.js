@@ -13,7 +13,7 @@ var OrderMgr = require('dw/order/OrderMgr');
 var Transaction = require('dw/system/Transaction');
 var configObject = require('~/cartridge/configuration/index');
 
-var logger = Logger.getLogger('CyberSource', 'ConversionDetailReport');
+var logger = Logger.getLogger('VisaAcceptance', 'ConversionDetailReport');
 
 /**
 * Function to parse XML response return from Conversion response

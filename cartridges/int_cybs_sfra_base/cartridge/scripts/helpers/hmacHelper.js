@@ -49,7 +49,7 @@ function getHMACSecret() {
     var secret = currentSite.getCustomPreferenceValue('VisaAcceptance_MerchantKeySecret');
 
     if (!secret) {
-        throw new Error('CyberSource Merchant Key Secret not configured. Please set VisaAcceptance_MerchantKeySecret in site preferences.');
+        throw new Error('Visa Acceptance Merchant Key Secret not configured. Please set VisaAcceptance_MerchantKeySecret in site preferences.');
     }
 
     return secret;

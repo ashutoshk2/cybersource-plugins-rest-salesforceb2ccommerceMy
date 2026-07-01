@@ -1,4 +1,4 @@
-​'use strict';
+'use strict';
 
 var page = module.superModule;
 var server = require('server');
@@ -37,7 +37,7 @@ server.post('PlaceOrderDirect', server.middleware.https, function (req, res, nex
     var webhookOrderStatusHelper = require('~/cartridge/scripts/helpers/webhookOrderStatusHelper');
     var configObject = require('~/cartridge/configuration/index.js');
 
-    var logger = Logger.getLogger('Cybersource', 'PlaceOrderDirect');
+    var logger = Logger.getLogger('VisaAcceptance', 'PlaceOrderDirect');
 
     // Get the completeMandate JWT from request
     var completeMandateJwt = request.httpParameterMap.completeMandateJwt.stringValue;

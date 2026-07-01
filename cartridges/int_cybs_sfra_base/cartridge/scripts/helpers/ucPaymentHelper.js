@@ -10,7 +10,7 @@
 
 var Transaction = require('dw/system/Transaction');
 var Logger = require('dw/system/Logger');
-var logger = Logger.getLogger('Cybersource', 'UCPaymentHelper');
+var logger = Logger.getLogger('VisaAcceptance', 'UCPaymentHelper');
 
 // ============================================================================
 // Token Processing Functions

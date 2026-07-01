@@ -1,7 +1,7 @@
 'use strict';
 
 var Logger = require('dw/system/Logger');
-var logger = Logger.getLogger('Cybersource', 'CompleteMandateHelper');
+var logger = Logger.getLogger('VisaAcceptance', 'CompleteMandateHelper');
 
 /**
  * Map CyberSource card type code to readable name

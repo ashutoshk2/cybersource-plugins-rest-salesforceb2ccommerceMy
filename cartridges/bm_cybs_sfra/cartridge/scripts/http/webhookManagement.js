@@ -104,7 +104,7 @@ function createSubscription(config, webhookUrl) {
 
     var request = new cybersourceRestApi.CreateWebhook();
     request.name = config.name;
-    request.description = config.description || ('CyberSource Webhook for ' + config.name);
+    request.description = config.description || ('Visa Acceptance Webhook for ' + config.name);
     request.organizationId = merchantId;
     request.products = products;
     request.webhookUrl = webhookUrl;

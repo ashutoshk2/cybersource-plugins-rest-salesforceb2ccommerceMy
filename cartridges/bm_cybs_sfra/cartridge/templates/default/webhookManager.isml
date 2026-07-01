@@ -25,7 +25,7 @@
     <isset name="fraudStatus" value="${pdict.subscriptions.fraudManagement ? pdict.subscriptions.fraudManagement.status : ''}" scope="page" />
     <isset name="ucStatus" value="${pdict.subscriptions.unifiedCheckout ? pdict.subscriptions.unifiedCheckout.status : ''}" scope="page" />
     <isif condition="${(fraudStatus && fraudStatus !== 'ACTIVE') || (ucStatus && ucStatus !== 'ACTIVE')}">
-        <div style="background:#fdf3d7;border:1px solid #ecd9a4;border-left:3px solid #9a6700;color:#7a5200;padding:12px 14px;border-radius:6px;margin:0 0 10px;font-size:13px;line-height:1.5"><b>Webhook not active.</b> A subscription is not <b>ACTIVE</b> at CyberSource (see the Webhook Status column). A webhook only delivers when ACTIVE; it moves to ACTIVE after a successful health check from CyberSource. If it stays INACTIVE, PENDING REVIEW, or SUSPENDED, confirm CyberSource can reach the webhook URL.</div>
+        <div style="background:#fdf3d7;border:1px solid #ecd9a4;border-left:3px solid #9a6700;color:#7a5200;padding:12px 14px;border-radius:6px;margin:0 0 10px;font-size:13px;line-height:1.5"><b>Webhook not active.</b> A subscription is not <b>ACTIVE</b> at Visa Acceptance (see the Webhook Status column). A webhook only delivers when ACTIVE; it moves to ACTIVE after a successful health check from Visa Acceptance. If it stays INACTIVE, PENDING REVIEW, or SUSPENDED, confirm Visa Acceptance can reach the webhook URL.</div>
     </isif>
 
     <isset name="dmMismatch" value="${pdict.config.dmEnabled && !pdict.subscriptions.fraudManagement}" scope="page" />
