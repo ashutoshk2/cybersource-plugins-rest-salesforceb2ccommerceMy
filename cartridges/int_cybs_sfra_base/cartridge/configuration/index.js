@@ -13,8 +13,8 @@ var LogfileMaxSize = '5242880'; // 10 MB In Bytes
 // Partner Information
 
 /** SolutionId
- * Identifier for the partner that is integrated to CyberSource.
- * Send this value in all requests that are sent through the partner solution. CyberSource assigns the ID to the partner.
+ * Identifier for the partner that is integrated to Visa Acceptance.
+ * Send this value in all requests that are sent through the partner solution. Visa Acceptance assigns the ID to the partner.
  * Note When you see a partner ID of 999 in reports, the partner ID that was submitted is incorrect.
  */
 var SolutionId = '7114dw8t';

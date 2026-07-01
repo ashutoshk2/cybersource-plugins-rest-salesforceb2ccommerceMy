@@ -4,26 +4,26 @@
         <custom-attribute-definitions>
             <attribute-definition attribute-id="VisaAcceptance_CartridgeEnabled">
                 <display-name xml:lang="x-default">Enable Visa Acceptance Cartridge</display-name>
-                <description xml:lang="x-default">Enable or disable VisaAcceptance Cartridge. If disabled none of the VisaAcceptance services are invoked.</description>
+                <description xml:lang="x-default">Enable or disable Visa Acceptance Cartridge. If disabled none of the Visa Acceptance services are invoked.</description>
                 <type>boolean</type>
                 <externally-managed-flag>false</externally-managed-flag>
                 <default-value>true</default-value>
             </attribute-definition>
             <attribute-definition attribute-id="VisaAcceptance_MerchantID">
-                <display-name xml:lang="x-default">VisaAcceptance MerchantID</display-name>
-                <description xml:lang="x-default">VisaAcceptance Merchant ID</description>
+                <display-name xml:lang="x-default">Visa Acceptance MerchantID</display-name>
+                <description xml:lang="x-default">Visa Acceptance Merchant ID</description>
                 <type>string</type>
                 <externally-managed-flag>false</externally-managed-flag>
             </attribute-definition>
             <attribute-definition attribute-id="VisaAcceptance_MerchantKeyId">
-                <display-name xml:lang="x-default">VisaAcceptance REST KeyId</display-name>
-                <description xml:lang="x-default">VisaAcceptance REST Key ID</description>
+                <display-name xml:lang="x-default">Visa Acceptance REST KeyId</display-name>
+                <description xml:lang="x-default">Visa Acceptance REST Key ID</description>
                 <type>string</type>
                 <externally-managed-flag>false</externally-managed-flag>
             </attribute-definition>
             <attribute-definition attribute-id="VisaAcceptance_MerchantKeySecret">
-                <display-name xml:lang="x-default">VisaAcceptance REST Secret Key</display-name>
-                <description xml:lang="x-default">VisaAcceptance REST Secret Key</description>
+                <display-name xml:lang="x-default">Visa Acceptance REST Secret Key</display-name>
+                <description xml:lang="x-default">Visa Acceptance REST Secret Key</description>
                 <type>password</type>
                 <externally-managed-flag>false</externally-managed-flag>
             </attribute-definition>
@@ -66,7 +66,7 @@
         </custom-attribute-definitions>
         <group-definitions>
             <attribute-group group-id="VisaAcceptance_Core">
-                <display-name xml:lang="x-default">VisaAcceptance Cartridge configuration</display-name>
+                <display-name xml:lang="x-default">Visa Acceptance Cartridge configuration</display-name>
                 <attribute attribute-id="VisaAcceptance_CartridgeEnabled"/>
                 <attribute attribute-id="VisaAcceptance_MerchantID"/>
                 <attribute attribute-id="VisaAcceptance_MerchantKeyId"/>

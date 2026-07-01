@@ -1,5 +1,5 @@
 /**
- * Cybersource Unified Checkout JavaScript
+ * Visa Acceptance Unified Checkout JavaScript
  * Handles the initialization and management of Unified Checkout widget
  */
 
@@ -815,7 +815,7 @@ var unifiedCheckout = {
 
             // For checkout page: run completeMandate orchestration (3DS/DM/Auth)
             // For minicart/cart: also run completeMandate orchestration with captured billing/shipping
-            // Total amount includes default SFCC tax (not CyberSource tax calculation)
+            // Total amount includes default SFCC tax (not Visa Acceptance tax calculation)
             var result = null;
             result = await checkout.complete(token);
             console.log('UC v1.x completeMandate orchestration finished');

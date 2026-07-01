@@ -70,14 +70,14 @@ server.post('PlaceOrderDirect', server.middleware.https, function (req, res, nex
         logger.error('PlaceOrderDirect: Authorization not successful. Status: {0}', authStatus);
 
         // Check if SCA (Strong Customer Authentication) is required
-        // Expanded SCA detection for new CyberSource response patterns
+        // Expanded SCA detection for new Visa Acceptance response patterns
         var isSCARequired = false;
         var processorInfo = jwtPayload.details && jwtPayload.details.processorInformation;
         var reasonCode = processorInfo && processorInfo.responseCode;
         var reason = jwtPayload.reason;
         var message = jwtPayload.message;
         var outcome = jwtPayload.outcome;
-        // SCA required indicators: response 478, authentication_required status, or new CyberSource patterns
+        // SCA required indicators: response 478, authentication_required status, or new Visa Acceptance patterns
         if (
             reasonCode === '478' ||
             authStatus === 'AUTHENTICATION_REQUIRED' ||
@@ -160,10 +160,10 @@ server.post('PlaceOrderDirect', server.middleware.https, function (req, res, nex
                 // Set default shipping method if not present
                 ucPaymentHelper.setDefaultShippingMethod(currentBasket, Transaction);
 
-                // Recalculate basket totals with new addresses (for tax calculation)
-                Transaction.wrap(function () {
-                    basketCalculationHelpers.calculateTotals(currentBasket);
-                });
+                // // Recalculate basket totals with new addresses (for tax calculation)
+                // Transaction.wrap(function () {
+                //     basketCalculationHelpers.calculateTotals(currentBasket);
+                // });
             }
         } catch (e) {
             logger.error('PlaceOrderDirect: Error getting payment details from transient token: {0}', e.message || e);
@@ -290,10 +290,10 @@ server.post('PlaceOrderDirect', server.middleware.https, function (req, res, nex
         return next();
     }
 
-    // Calculate basket totals
-    Transaction.wrap(function () {
-        basketCalculationHelpers.calculateTotals(currentBasket);
-    });
+    // // Calculate basket totals
+    // Transaction.wrap(function () {
+    //     basketCalculationHelpers.calculateTotals(currentBasket);
+    // });
 
     // Validate payment instruments
     var validPayment = COHelpers.validatePayment(req, currentBasket);
@@ -316,7 +316,7 @@ server.post('PlaceOrderDirect', server.middleware.https, function (req, res, nex
         return next();
     }
 
-    // Create order from basket using the CyberSource clientReferenceInformation.code
+    // Create order from basket using the Visa Acceptance clientReferenceInformation.code
     // as the SFCC order number. That code is the merchant reference the transaction was
     // created against and the key the webhooks reconcile on (OrderMgr.getOrder(code)),
     // so the order number MUST equal it. It is taken from the JWT (authoritative) rather

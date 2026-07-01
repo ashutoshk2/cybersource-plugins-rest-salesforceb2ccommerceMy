@@ -319,8 +319,8 @@ function applyAmountDetailsFromPaymentDetails(basket, paymentDetails, Transactio
 // ============================================================================
 
 /**
- * Map CyberSource card type code to readable name
- * @param {string} cardTypeCode - CyberSource card type code (e.g., '001' for Visa)
+ * Map Visa Acceptance card type code to readable name
+ * @param {string} cardTypeCode - Visa Acceptance card type code (e.g., '001' for Visa)
  * @returns {string} - Readable card type name
  */
 function mapCardType(cardTypeCode) {
@@ -400,7 +400,7 @@ function decodeJwtPayload(token) {
 // Payment Method Detection Functions
 // ============================================================================
 
-// Prefix of the processingInformation.paymentSolution string CyberSource returns for
+// Prefix of the processingInformation.paymentSolution string Visa Acceptance returns for
 // PPRO online bank-transfer APMs on the completeMandate result JWT - e.g.
 // 'BankTransfer Payment Ideal' (iDEAL), 'BankTransfer Payment Multibanco' (Multibanco).
 // These carry no paymentType descriptor, so this prefix is what identifies them. They
@@ -1300,7 +1300,7 @@ function buildCompleteMandate(configObject, isTokenizationEnabled, isRegisteredC
 /**
  * Build transientTokenResponseOptions for the UC capture context, honoring the
  * VisaAcceptance_UnifiedCheckout_AllowedCardPrefix preference (BIN return mode):
- *   'Six'   -> field omitted entirely    (CyberSource defaults to a 6-digit BIN)
+ *   'Six'   -> field omitted entirely    (Visa Acceptance defaults to a 6-digit BIN)
  *   'Eight' -> includeCardPrefix: true   (8-digit BIN)
  *   unselected (null/empty) -> includeCardPrefix: false (no BIN in the transient token)
  * Any other or legacy value (including a leftover boolean from the old toggle) is
@@ -1311,7 +1311,7 @@ function buildCompleteMandate(configObject, isTokenizationEnabled, isRegisteredC
 function buildTransientTokenResponseOptions(configObject) {
     var mode = configObject && configObject.unifiedCheckoutAllowedCardPrefix;
     if (mode === 'Six') {
-        // Omit includeCardPrefix so CyberSource returns the default 6-digit BIN.
+        // Omit includeCardPrefix so Visa Acceptance returns the default 6-digit BIN.
         return {};
     }
     if (mode === 'Eight') {
@@ -1339,7 +1339,7 @@ function buildOrderInformation(basket) {
     };
 
     // Populate billTo/shipTo whenever the basket has them, for both checkout and
-    // Express Pay flows, so the capture-context mirrors the data CyberSource needs to
+    // Express Pay flows, so the capture-context mirrors the data Visa Acceptance needs to
     // render APMs and wallets. The build helpers return null when no address exists.
     var billTo = buildBillToAddress(basket);
     if (billTo) {
@@ -1364,7 +1364,7 @@ function buildOrderInformation(basket) {
 // ============================================================================
 
 /**
- * Resolve the existing CyberSource TMS customer token id stored on the customer's
+ * Resolve the existing Visa Acceptance TMS customer token id stored on the customer's
  * profile (Profile.custom.customerID). This is the id used to attach newly-saved
  * cards to a single customer instead of minting a new customer per card.
  * @param {dw.customer.Customer} customer - customer object
@@ -1384,9 +1384,9 @@ function getExistingTmsCustomerId(customer) {
 /**
  * Build the completeMandate.tms.tokenTypes array for a UC capture context.
  * When the account already has a TMS customer token, the 'customer' type is
- * omitted so CyberSource attaches the new instrument under the existing customer
+ * omitted so Visa Acceptance attaches the new instrument under the existing customer
  * (mirrors the Non-UC actionTokenTypes behavior). When there is no customer yet
- * (first saved card), 'customer' is requested so CyberSource mints one.
+ * (first saved card), 'customer' is requested so Visa Acceptance mints one.
  * @param {string|null} existingCustomerId - stored Profile.custom.customerID, or null
  * @returns {string[]} tokenTypes array
  */
@@ -1401,8 +1401,8 @@ function buildTmsTokenTypes(existingCustomerId) {
  * Build the serialized wallet token string stored in CustomerPaymentInstrument.creditCardToken.
  * Format: "<instrumentIdentifierId>-<paymentInstrumentId>-flex[-<customerId>]".
  * The '-flex-' marker is intentional and shared with Unified Checkout (do not strip it).
- * @param {string} instrumentIdentifierId - CyberSource instrumentIdentifier id
- * @param {string} paymentInstrumentId - CyberSource paymentInstrument id
+ * @param {string} instrumentIdentifierId - Visa Acceptance instrumentIdentifier id
+ * @param {string} paymentInstrumentId - Visa Acceptance paymentInstrument id
  * @param {string|null} customerId - TMS customer id to append, or falsy to omit
  * @returns {string} serialized token
  */
@@ -1455,14 +1455,14 @@ function extractTokenInformation(jwtPayload) {
 }
 
 /**
- * Find an existing saved credit card that belongs to the given CyberSource
+ * Find an existing saved credit card that belongs to the given Visa Acceptance
  * instrumentIdentifier. The serialized token always begins with the
  * instrumentIdentifier id ("<iid>-<piid>-flex[-<customerId>]"), so a card matches
  * when the FIRST hyphen-separated segment of its token equals that id. Using the
  * exact segment (rather than a string prefix) avoids false matches between ids where
  * one is a prefix of another.
  * @param {dw.customer.Wallet} wallet - customer wallet
- * @param {string} instrumentIdentifierId - CyberSource instrumentIdentifier id
+ * @param {string} instrumentIdentifierId - Visa Acceptance instrumentIdentifier id
  * @returns {dw.customer.CustomerPaymentInstrument|null} matching card or null
  */
 function findCreditCardByInstrumentIdentifier(wallet, instrumentIdentifierId) {
@@ -1493,7 +1493,7 @@ function findCreditCardByInstrumentIdentifier(wallet, instrumentIdentifierId) {
  * @param {dw.customer.Wallet} wallet - customer wallet
  * @param {string} serializedToken - serialized TMS token to store
  * @param {Object} cardDetails - { cardHolderName, cardTypeName, maskedNumber, expirationMonth, expirationYear, echeckRoutingNumber }
- * @param {string} instrumentIdentifierId - CyberSource instrumentIdentifier id
+ * @param {string} instrumentIdentifierId - Visa Acceptance instrumentIdentifier id
  * @returns {Object} { uuid: <saved card UUID>, replacedExisting: <boolean> }
  */
 function upsertCreditCard(wallet, serializedToken, cardDetails, instrumentIdentifierId) {
@@ -1676,7 +1676,7 @@ function setDefaultShippingMethod(basket, TransactionObj) {
 
 /**
  * Build deviceInformation object for Capture Context API
- * Per CyberSource documentation, the capture context deviceInformation only supports ipAddress.
+ * Per Visa Acceptance documentation, the capture context deviceInformation only supports ipAddress.
  * Other device fields (httpAcceptContent, userAgentBrowserValue, deviceChannel, etc.) are meant
  * for 3DS payer authentication during payment authorization, not capture context generation.
  * 

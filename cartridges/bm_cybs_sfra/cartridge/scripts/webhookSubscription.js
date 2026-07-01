@@ -17,7 +17,7 @@ var CUSTOM_OBJECT_TYPE = 'VisaAcceptanceWebhookSubscription';
 
 /**
  * Create a subscription, recovering from the 400 "Record already exists" conflict (a subscription
- * exists at CyberSource but is untracked locally). The HMAC secret is only returned at creation and
+ * exists at Visa Acceptance but is untracked locally). The HMAC secret is only returned at creation and
  * cannot be recovered, so matching webhook(s) are deleted and recreated rather than adopted.
  *
  * @param {Object} subConfig per-call subscription config (name, description, products)
@@ -193,7 +193,7 @@ function subscribeProduct(configId, forceRecreate, availableProducts, signingKey
         }
     } catch (e) {}
 
-    // UC webhooks use Response MLE; CyberSource needs the egress public key to encrypt them. If none
+    // UC webhooks use Response MLE; Visa Acceptance needs the egress public key to encrypt them. If none
     // is stored yet, derive it from the .p12 alias and register with KMS — only proceed if KMS accepts it.
     if (configId === 'unifiedCheckout' && !egressPublicKey) {
         var egressAlias = site.getCustomPreferenceValue('VisaAcceptance_EgressCertificateAlias');
@@ -282,7 +282,7 @@ function subscribeProduct(configId, forceRecreate, availableProducts, signingKey
     }
 
     if (productList) {
-        // Log the products CyberSource offers so a PRODUCT_NOT_ENABLED outcome is debuggable.
+        // Log the products Visa Acceptance offers so a PRODUCT_NOT_ENABLED outcome is debuggable.
         var availableProductIds = [];
         for (var ap = 0; ap < productList.length; ap++) {
             availableProductIds.push(productList[ap].productId);
@@ -340,7 +340,7 @@ function subscribeProduct(configId, forceRecreate, availableProducts, signingKey
     if (specificError) return { success: false, error: specificError };
     if (!webhookId) return { success: false, error: 'API_ERROR' };
 
-    // Force the freshly-created webhook to ACTIVE. CyberSource creates it as PENDING_REVIEW/INACTIVE;
+    // Force the freshly-created webhook to ACTIVE. Visa Acceptance creates it as PENDING_REVIEW/INACTIVE;
     // a successful PUT status=ACTIVE promotes it so it can begin delivering.
     var finalStatus = createdStatus || '';
     if (finalStatus !== 'ACTIVE') {
@@ -376,7 +376,7 @@ function subscribeProduct(configId, forceRecreate, availableProducts, signingKey
 
 /**
  * Unsubscribe a BM-managed product. The local record (holding the un-recoverable HMAC key) is removed
- * only when CyberSource confirms the delete (error false or 404); any other outcome keeps it for retry.
+ * only when Visa Acceptance confirms the delete (error false or 404); any other outcome keeps it for retry.
  *
  * @param {string} configId WEBHOOK_CONFIGS key ('fraudManagement' | 'unifiedCheckout')
  * @returns {Object} { success, alreadyRemoved?, error? }
@@ -399,7 +399,7 @@ function unsubscribeProduct(configId) {
 /**
  * Abandon the locally stored subscription for a product — clears the tracked WebhookId/Status so the
  * next sync creates a fresh subscription in the current org and updates BM. Used when the stored
- * webhook is no longer present at CyberSource for the active merchant (deleted in EBC, or owned by a
+ * webhook is no longer present at Visa Acceptance for the active merchant (deleted in EBC, or owned by a
  * different org after a MID change, where we can neither activate nor delete it). The SecurityKey is
  * left intact until the recreate overwrites it.
  *
@@ -474,7 +474,7 @@ function getViewData() {
         } catch (e) { data.subscriptions[productId] = null; }
     });
 
-    // Ask CyberSource which webhooks exist per product to (a) reconcile our local record (null it if
+    // Ask Visa Acceptance which webhooks exist per product to (a) reconcile our local record (null it if
     // the stored id is gone) and (b) surface non-managed webhooks as external. Fraud may be under DM or FME.
     var discovery = [
         { key: 'fraudManagement', queryProducts: ['decisionManager', 'fraudManagementEssentials'] },

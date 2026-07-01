@@ -7,7 +7,7 @@ var Logger = require('dw/system/Logger').getLogger('cybs_webhooks', 'webhookActi
 /**
  * Force the BM-managed webhook subscriptions to ACTIVE from the storefront payment flow.
  *
- * CyberSource creates a subscription as PENDING_REVIEW/INACTIVE; this issues a PUT status=ACTIVE for
+ * Visa Acceptance creates a subscription as PENDING_REVIEW/INACTIVE; this issues a PUT status=ACTIVE for
  * each stored subscription so it can begin delivering. Best-effort: failures are logged and never
  * interrupt checkout.
  *

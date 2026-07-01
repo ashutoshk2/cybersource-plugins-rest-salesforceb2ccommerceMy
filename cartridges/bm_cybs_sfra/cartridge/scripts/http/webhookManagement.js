@@ -1,6 +1,6 @@
 'use strict';
 
-// CyberSource webhook-subscription REST calls. Each function builds the request from SDK model
+// Visa Acceptance webhook-subscription REST calls. Each function builds the request from SDK model
 // constructors, calls the generated Api class, and returns { data, error } (callApi fires its
 // callback synchronously). merchantId is read fresh from the live Site preference per call —
 // configObject is frozen at module load, so it would be stale after a Business-Manager MID change.
@@ -50,7 +50,7 @@ function createSecurityKey() {
     return result;
 }
 
-// Register the egress public cert with KMS so CyberSource can encrypt Response-MLE webhooks.
+// Register the egress public cert with KMS so Visa Acceptance can encrypt Response-MLE webhooks.
 // ASYM key: provider=merchantId, tenant='nrtd' (the SYM key in createSecurityKey swaps these);
 // `pub` is the raw base64 DER cert, not PEM.
 function uploadAsymmetricKey(pubCertB64) {

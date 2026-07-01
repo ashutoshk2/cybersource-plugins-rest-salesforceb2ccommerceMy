@@ -3,27 +3,27 @@
     <type-extension type-id="SitePreferences">
         <custom-attribute-definitions>
             <attribute-definition attribute-id="VisaAcceptance_CartridgeEnabled">
-                <display-name xml:lang="x-default">Enable VisaAcceptance Cartridge</display-name>
-                <description xml:lang="x-default">Enable or disable VisaAcceptance Cartridge. If disabled none of the VisaAcceptance services are invoked.</description>
+                <display-name xml:lang="x-default">Enable Visa Acceptance Cartridge</display-name>
+                <description xml:lang="x-default">Enable or disable Visa Acceptance Cartridge. If disabled none of the Visa Acceptance services are invoked.</description>
                 <type>boolean</type>
                 <externally-managed-flag>false</externally-managed-flag>
                 <default-value>true</default-value>
             </attribute-definition>
             <attribute-definition attribute-id="VisaAcceptance_MerchantID">
-                <display-name xml:lang="x-default">VisaAcceptance MerchantID</display-name>
-                <description xml:lang="x-default">VisaAcceptance Merchant ID</description>
+                <display-name xml:lang="x-default">Visa Acceptance MerchantID</display-name>
+                <description xml:lang="x-default">Visa Acceptance Merchant ID</description>
                 <type>string</type>
                 <externally-managed-flag>false</externally-managed-flag>
             </attribute-definition>
             <attribute-definition attribute-id="VisaAcceptance_MerchantKeyId">
-                <display-name xml:lang="x-default">VisaAcceptance REST KeyId</display-name>
-                <description xml:lang="x-default">VisaAcceptance REST Key ID</description>
+                <display-name xml:lang="x-default">Visa Acceptance REST KeyId</display-name>
+                <description xml:lang="x-default">Visa Acceptance REST Key ID</description>
                 <type>string</type>
                 <externally-managed-flag>false</externally-managed-flag>
             </attribute-definition>
             <attribute-definition attribute-id="VisaAcceptance_MerchantKeySecret">
-                <display-name xml:lang="x-default">VisaAcceptance REST Secret Key</display-name>
-                <description xml:lang="x-default">VisaAcceptance REST Secret Key</description>
+                <display-name xml:lang="x-default">Visa Acceptance REST Secret Key</display-name>
+                <description xml:lang="x-default">Visa Acceptance REST Secret Key</description>
                 <type>string</type>
                 <externally-managed-flag>false</externally-managed-flag>
             </attribute-definition>
@@ -82,14 +82,14 @@
             </attribute-definition>
             <attribute-definition attribute-id="VisaAcceptance_DAVEnabled">
                 <display-name xml:lang="x-default">Enable Delivery Address Verification Services</display-name>
-                <description xml:lang="x-default">Enable or Disable Delivery Address Verification for VisaAcceptance Cartridge</description>
+                <description xml:lang="x-default">Enable or Disable Delivery Address Verification for Visa Acceptance Cartridge</description>
                 <type>boolean</type>
                 <externally-managed-flag>false</externally-managed-flag>
                 <default-value>true</default-value>
             </attribute-definition>
             <attribute-definition attribute-id="VisaAcceptance_TaxCalculationEnabled">
                 <display-name xml:lang="x-default">Enable Tax calculation Services</display-name>
-                <description xml:lang="x-default">Enables or Disables Tax calculation for VisaAcceptance Cartridge</description>
+                <description xml:lang="x-default">Enables or Disables Tax calculation for Visa Acceptance Cartridge</description>
                 <type>boolean</type>
                 <externally-managed-flag>false</externally-managed-flag>
                 <default-value>true</default-value>
@@ -243,7 +243,7 @@
             </attribute-definition>
             <attribute-definition attribute-id="VisaAcceptance_DecisionManager">
                 <display-name xml:lang="x-default">Enable Decision Manager Services</display-name>
-                <description xml:lang="x-default">Enable or Disable Decision Manager for VisaAcceptance Cartridge</description>
+                <description xml:lang="x-default">Enable or Disable Decision Manager for Visa Acceptance Cartridge</description>
                 <type>boolean</type>
                 <externally-managed-flag>false</externally-managed-flag>
                 <default-value>true</default-value>
@@ -257,7 +257,7 @@
             </attribute-definition>
             <attribute-definition attribute-id="VisaAcceptance_DeviceFingerprintEnabled">
                 <display-name xml:lang="x-default">Enable DeviceFingerprint Service</display-name>
-                <description xml:lang="x-default">Enable or Disable DeviceFingerprint for VisaAcceptance Cartridge</description>
+                <description xml:lang="x-default">Enable or Disable DeviceFingerprint for Visa Acceptance Cartridge</description>
                 <type>boolean</type>
                 <externally-managed-flag>false</externally-managed-flag>
                 <default-value>true</default-value>
@@ -418,7 +418,7 @@
         </custom-attribute-definitions>
         <group-definitions>
             <attribute-group group-id="VisaAcceptance_Core">
-                <display-name xml:lang="x-default">VisaAcceptance Cartridge configuration</display-name>
+                <display-name xml:lang="x-default">Visa Acceptance Cartridge configuration</display-name>
                 <attribute attribute-id="VisaAcceptance_CartridgeEnabled"/>
                 <attribute attribute-id="VisaAcceptance_MerchantID"/>
                 <attribute attribute-id="VisaAcceptance_MerchantKeyId"/>

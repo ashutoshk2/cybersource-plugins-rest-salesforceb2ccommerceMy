@@ -5,7 +5,7 @@ var configObject = require('../../configuration/index');
 var cybersourceRestApi = require('../../apiClient/index');
 
 /**
- * Extract { capturedAmount, currency } from a CyberSource transaction/capture response.
+ * Extract { capturedAmount, currency } from a Visa Acceptance transaction/capture response.
  * @param {Object} data API response object
  * @returns {Object|null} { capturedAmount: Number, currency: String } or null
  */
@@ -28,7 +28,7 @@ function extractAmount(data) {
  * NOTE: the apiClient callback contract is (data, error, response) — matching
  * scripts/http/capture.js — not the (error, data) order in the generated JSDoc.
  *
- * @param {string} transactionId CyberSource transaction (request) id
+ * @param {string} transactionId Visa Acceptance transaction (request) id
  * @returns {Object|null} { capturedAmount: Number, currency: String } or null on any failure
  */
 function getCapturedAmount(transactionId) {
