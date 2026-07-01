@@ -160,10 +160,6 @@ server.post('PlaceOrderDirect', server.middleware.https, function (req, res, nex
                 // Set default shipping method if not present
                 ucPaymentHelper.setDefaultShippingMethod(currentBasket, Transaction);
 
-                // Recalculate basket totals with new addresses (for tax calculation)
-                Transaction.wrap(function () {
-                    basketCalculationHelpers.calculateTotals(currentBasket);
-                });
             }
         } catch (e) {
             logger.error('PlaceOrderDirect: Error getting payment details from transient token: {0}', e.message || e);
@@ -290,10 +286,6 @@ server.post('PlaceOrderDirect', server.middleware.https, function (req, res, nex
         return next();
     }
 
-    // Calculate basket totals
-    Transaction.wrap(function () {
-        basketCalculationHelpers.calculateTotals(currentBasket);
-    });
 
     // Validate payment instruments
     var validPayment = COHelpers.validatePayment(req, currentBasket);
