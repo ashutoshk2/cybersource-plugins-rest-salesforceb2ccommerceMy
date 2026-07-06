@@ -352,7 +352,7 @@ function Authorize(orderNumber, paymentInstrument, paymentProcessor) {
         error = true;
         var errorData = {};
 
-        // Extract CyberSource response data from declined payment error
+        // Extract Visa Acceptance response data from declined payment error
         var cybersourceResponseData = null;
 
         if (typeof e === 'object' && e !== null) {
@@ -360,7 +360,7 @@ function Authorize(orderNumber, paymentInstrument, paymentProcessor) {
             if (e.type === 'CARD_NOT_AUTHORIZED_ERROR' && e.messageText) {
                 try {
                     cybersourceResponseData = JSON.parse(e.messageText);
-                    // Set transaction details if we found CyberSource response data
+                    // Set transaction details if we found Visa Acceptance response data
                     if (cybersourceResponseData && cybersourceResponseData.id) {
                         Transaction.wrap(function () {
                             // Set transaction ID and processor even for declined payments

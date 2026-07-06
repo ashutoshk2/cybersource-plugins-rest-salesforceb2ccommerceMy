@@ -24,9 +24,9 @@ function parseErrorBody(data) {
 
 /**
  * Detects a "payment instrument no longer exists at TMS" outcome (HTTP 404/410),
- * tolerating the several shapes SFCC/CyberSource surface it in: the dw.svc.Result
+ * tolerating the several shapes SFCC/Visa Acceptance surface it in: the dw.svc.Result
  * `error` or `statusCode` fields, or a `statusCode` in the parsed JSON error body
- * (tolerant of the several shapes CyberSource/SFCC surface a 404/410 in).
+ * (tolerant of the several shapes Visa Acceptance/SFCC surface a 404/410 in).
  * @param {Object} response - the dw.svc.Result passed to the SDK callback
  * @param {string|Object} data - the error body (JSON string or object)
  * @returns {boolean} true when the instrument is gone (404/410)

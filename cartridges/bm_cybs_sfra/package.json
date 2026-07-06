@@ -3,7 +3,7 @@
     "packageInfo": {
       "version": "0.0.1"
    },
-    "description": "CyberSource Business Manager Extension - Webhook Management",
+    "description": "Visa Acceptance Business Manager Extension - Webhook Management",
     "main": "index.js",
     "cartridge": true
 }

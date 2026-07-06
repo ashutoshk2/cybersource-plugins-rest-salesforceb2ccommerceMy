@@ -2,7 +2,7 @@
 
 /**
  * SFCC payment-instrument method name (set by the UC PayPal/Venmo payment processor
- * hooks) mapped to the Cybersource paymentInformation.paymentType.method.name value.
+ * hooks) mapped to the Visa Acceptance paymentInformation.paymentType.method.name value.
  * PayPal and Venmo are the only eWallet APMs with dedicated payment methods; every
  * other scheme (cards, PPRO bank transfers, BNPL, ...) is intentionally absent so its
  * request is left unchanged.
@@ -13,11 +13,11 @@ var EWALLET_METHODS = {
 };
 
 /**
- * Resolve the Cybersource eWallet method name for the order an order-management request
+ * Resolve the Visa Acceptance eWallet method name for the order an order-management request
  * targets. The order number is read from request.clientReferenceInformation.code, which
  * capture.js / authReversal.js / refund.js all set before invoking this hook.
  *
- * @param {Object} request - the Cybersource order-management request object
+ * @param {Object} request - the Visa Acceptance order-management request object
  * @returns {string|null} 'payPal' or 'venmo' for a PayPal/Venmo order, otherwise null
  */
 function resolveEwalletMethod(request) {
@@ -44,13 +44,13 @@ function resolveEwalletMethod(request) {
 }
 
 /**
- * Add the alternative-payment-method (eWallet) fields Cybersource requires for a
+ * Add the alternative-payment-method (eWallet) fields Visa Acceptance requires for a
  * PayPal/Venmo order-management call - processingInformation.actionList and
  * paymentInformation.paymentType (name 'eWallet', method.name 'payPal' or 'venmo') -
  * and return the request. Card and non-eWallet orders are returned unchanged so the
  * existing credit-card / bank-transfer flows are unaffected.
  *
- * @param {Object} request - the Cybersource request object built by the order-management script
+ * @param {Object} request - the Visa Acceptance request object built by the order-management script
  * @param {string} action - 'AP_CAPTURE', 'AP_AUTH_REVERSAL', or 'AP_REFUND'
  * @returns {Object} the request, with the eWallet fields added when applicable
  */

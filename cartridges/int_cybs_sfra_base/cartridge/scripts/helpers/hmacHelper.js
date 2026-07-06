@@ -40,12 +40,12 @@ function verifyHMAC(data, signature) {
 }
 
 /**
- * Resolve the HMAC key material from the configured CyberSource merchant secret key.
+ * Resolve the HMAC key material from the configured Visa Acceptance merchant secret key.
  * @returns {string} - HMAC secret
  */
 function getHMACSecret() {
     var currentSite = Site.getCurrent();
-    // Reuse the existing CyberSource merchant secret key
+    // Reuse the existing Visa Acceptance merchant secret key
     var secret = currentSite.getCustomPreferenceValue('VisaAcceptance_MerchantKeySecret');
 
     if (!secret) {

@@ -43,7 +43,7 @@ function extractHost(url) {
 
 /**
  * True when subscribeProduct should run: subscription missing, host changed, or not yet ACTIVE.
- * PENDING_REVIEW is excluded (only CyberSource advances it).
+ * PENDING_REVIEW is excluded (only Visa Acceptance advances it).
  *
  * @param {Object} sub reconciled subscription ({ webhookId, status, hostMismatch }) or null
  * @returns {boolean} true when subscribeProduct should run for this product

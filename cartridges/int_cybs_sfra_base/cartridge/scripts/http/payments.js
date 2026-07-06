@@ -765,7 +765,7 @@ function generateUcCaptureContext(isMiniCart, selectedPaymentInstrumentId) {
             orderInformation: ucPaymentHelper.buildOrderInformation(basket, isMiniCart)
         };
 
-        // Client Reference Information - application + order tracking for CyberSource.
+        // Client Reference Information - application + order tracking for Visa Acceptance.
         // code is the reserved SFCC order number (see reservedOrderNo above) so the
         // capture-context, auth, and eventual SFCC order all share one identifier.
         requestObj.data.clientReferenceInformation = {
@@ -1103,7 +1103,7 @@ function getPaymentDetails(transientToken) {
 }
 
 /**
- * Format phone number for CyberSource - removes +1 prefix if present
+ * Format phone number for Visa Acceptance - removes +1 prefix if present
  * @param {string} phoneNumber - Raw phone number (may include +1, spaces, dashes, etc.)
  * @returns {string} Formatted phone number (digits only, +1 removed if present)
  */

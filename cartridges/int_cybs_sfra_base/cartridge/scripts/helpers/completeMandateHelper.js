@@ -4,9 +4,9 @@ var Logger = require('dw/system/Logger');
 var logger = Logger.getLogger('VisaAcceptance', 'CompleteMandateHelper');
 
 /**
- * Map CyberSource card type code to readable name
+ * Map Visa Acceptance card type code to readable name
  * Handles both numeric codes ('001') and string names ('VISA')
- * @param {string} cardTypeCode - CyberSource card type code (e.g., '001' for Visa) or name (e.g., 'VISA')
+ * @param {string} cardTypeCode - Visa Acceptance card type code (e.g., '001' for Visa) or name (e.g., 'VISA')
  * @returns {string} - Readable card type name
  */
 function mapCardType(cardTypeCode) {
@@ -657,7 +657,7 @@ function buildOrderInformation(basket, isMiniCart) {
     var orderInformation = {
         amountDetails: {
             // Use totalGrossPrice which includes the default tax already calculated in basket
-            // For minicart/cart: this uses SFCC's default tax (not CyberSource tax)
+            // For minicart/cart: this uses SFCC's default tax (not Visa Acceptance tax)
             totalAmount: basket.totalGrossPrice.value.toString(),
             currency: basket.currencyCode
         }

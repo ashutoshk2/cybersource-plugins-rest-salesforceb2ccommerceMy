@@ -76,7 +76,7 @@ function validateSignature(req, customObjectKey) {
         var hmac = new Mac('HmacSHA256');
         var secret = Encoding.fromBase64(securityKey);
 
-        // CyberSource signs `{timestamp}.{raw_body}`. The earlier 3-variant fallback
+        // Visa Acceptance signs `{timestamp}.{raw_body}`. The earlier 3-variant fallback
         // re-stringified parsed JSON, which can never byte-match the original payload.
         var regenerated = hmac.digest(new Bytes(ts + '.' + req.body, 'utf8'), secret);
         return regenerated.toString() === Encoding.fromBase64(s).toString();
@@ -151,7 +151,7 @@ function findOrderByReconciliationId(reconciliationId) {
  * bank transfer or eCheck moving from PENDING to COMPLETED. APMs settle immediately (no separate
  * authorization to reverse), so a terminal success confirms the order and marks it PAID, while a
  * terminal failure fails it. Matched to the order via reconciliationId. Best-effort: always ack so
- * CyberSource does not keep retrying a notification we cannot act on.
+ * Visa Acceptance does not keep retrying a notification we cannot act on.
  *
  * @param {Object} payload decoded webhook payload
  * @param {Object} res response object
@@ -172,7 +172,7 @@ function handleApmPaymentUpdate(payload, res, next) {
     var order = findOrderByReconciliationId(reconciliationId);
     if (!order) {
         // Either already confirmed (out of the NOTCONFIRMED scan) or unknown — nothing to act on.
-        // Ack so CyberSource stops retrying rather than looping on a no-op.
+        // Ack so Visa Acceptance stops retrying rather than looping on a no-op.
         Logger.warn('apmNotification: no NOTCONFIRMED order for reconciliationId ' + reconciliationId + ' (status ' + status + '); acknowledging.');
         res.setStatusCode(200);
         res.json({ success: true });
@@ -313,7 +313,7 @@ function handleDmNotification(req, res, next) {
         // Reviewed orders are auth-only (capture is deferred until ACCEPT), so a REJECT must
         // release the authorization hold. The gateway call is made outside the DB transaction and
         // is best-effort — if the auth was already reversed/expired, log it and still ack the
-        // webhook so CyberSource does not keep retrying.
+        // webhook so Visa Acceptance does not keep retrying.
         if (reversal) {
             try {
                 require('~/cartridge/scripts/http/authReversal').httpAuthReversal(reversal.requestId, orderId, reversal.total, reversal.currency);

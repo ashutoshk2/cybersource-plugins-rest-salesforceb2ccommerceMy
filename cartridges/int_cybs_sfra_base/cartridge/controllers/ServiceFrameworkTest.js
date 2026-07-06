@@ -11,11 +11,11 @@ var userLoggedIn = require('*/cartridge/scripts/middleware/userLoggedIn');
 // Membership in this customer group is required to access the test endpoints.
 // The group must be created in Business Manager and assigned only to authorized
 // merchant staff. An empty value blocks all access.
-var TEST_ENDPOINT_CUSTOMER_GROUP = 'CybersourceTestAdmin';
+var TEST_ENDPOINT_CUSTOMER_GROUP = 'VisaAcceptanceTestAdmin';
 
 /**
  * Returns true only when the request is from an authenticated, registered
- * customer who is a member of the privileged Cybersource test customer group.
+ * customer who is a member of the privileged Visa Acceptance test customer group.
  * @param {Object} req SFRA request wrapper
  * @returns {boolean} true if the caller is authorized to use the test endpoints
  */
