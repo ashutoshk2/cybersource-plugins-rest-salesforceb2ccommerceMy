@@ -43,7 +43,13 @@ function extractHost(url) {
 
 /**
  * True when subscribeProduct should run: subscription missing, host changed, or not yet ACTIVE.
- * PENDING_REVIEW is excluded (only Visa Acceptance advances it).
+ * PENDING_REVIEW, RESEND, and BLOCKED are excluded — the Visa Acceptance platform groups these as the
+ * hands-off set (its health-check job skips them and delivery is aborted while in them). PENDING_REVIEW
+ * and RESEND advance on their own (URL validation / retry-queue reprocessing); BLOCKED means a URL was
+ * rejected by security and needs the URL approved, not an auto-retry (a PUT status=ACTIVE would just
+ * fail). SUSPENDED and INACTIVE are intentionally NOT excluded: both are meant to be (re)activated, and
+ * subscribeProduct reactivates an existing same-URL subscription via PUT status=ACTIVE rather than
+ * recreating it.
  *
  * @param {Object} sub reconciled subscription ({ webhookId, status, hostMismatch }) or null
  * @returns {boolean} true when subscribeProduct should run for this product
@@ -51,7 +57,11 @@ function extractHost(url) {
 function subscriptionNeedsAction(sub) {
     if (!sub) return true;
     if (sub.hostMismatch) return true;
-    return !!(sub.status && sub.status !== 'ACTIVE' && sub.status !== 'PENDING_REVIEW');
+    return !!(sub.status
+        && sub.status !== 'ACTIVE'
+        && sub.status !== 'PENDING_REVIEW'
+        && sub.status !== 'RESEND'
+        && sub.status !== 'BLOCKED');
 }
 
 /**

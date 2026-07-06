@@ -64,48 +64,6 @@ server.post('PlaceOrderDirect', server.middleware.https, function (req, res, nex
         return next();
     }
 
-    // Check authorization status
-    var authStatus = jwtPayload.status;
-    if (!ucPaymentHelper.isValidAuthorizationStatus(authStatus)) {
-        logger.error('PlaceOrderDirect: Authorization not successful. Status: {0}', authStatus);
-
-        // Check if SCA (Strong Customer Authentication) is required
-        // Expanded SCA detection for new Visa Acceptance response patterns
-        var isSCARequired = false;
-        var processorInfo = jwtPayload.details && jwtPayload.details.processorInformation;
-        var reasonCode = processorInfo && processorInfo.responseCode;
-        var reason = jwtPayload.reason;
-        var message = jwtPayload.message;
-        var outcome = jwtPayload.outcome;
-        // SCA required indicators: response 478, authentication_required status, or new Visa Acceptance patterns
-        if (
-            reasonCode === '478' ||
-            authStatus === 'AUTHENTICATION_REQUIRED' ||
-            authStatus === 'PENDING_AUTHENTICATION' ||
-            (reason && reason === 'CUSTOMER_AUTHENTICATION_REQUIRED') ||
-            (message && typeof message === 'string' && message.toLowerCase().indexOf('strong customer authentication required') !== -1)
-        ) {
-            isSCARequired = true;
-            ucPaymentHelper.setSCARequiredFlag();
-            logger.info('PlaceOrderDirect: SCA required detected (reasonCode: {0}, status: {1}, reason: {2}, outcome: {3}). Flag set for retry.', reasonCode, authStatus, reason, outcome);
-        }
-
-        // Return appropriate error message
-        var errorMessage;
-        if (isSCARequired) {
-            errorMessage = ucPaymentHelper.getSCAErrorMessage();
-        } else {
-            errorMessage = ucPaymentHelper.getAuthorizationErrorMessage(authStatus) || Resource.msg('error.technical', 'checkout', null);
-        }
-
-        secureResponseHelper.secureJsonResponse(res, {
-            error: true,
-            errorMessage: errorMessage,
-            scaRequired: isSCARequired
-        });
-        return next();
-    }
-
     // Get current basket
     var currentBasket = BasketMgr.getCurrentBasket();
     if (!currentBasket) {
@@ -169,6 +127,52 @@ server.post('PlaceOrderDirect', server.middleware.https, function (req, res, nex
             logger.error('PlaceOrderDirect: Error getting payment details from transient token: {0}', e.message || e);
         }
     }
+
+    // Check authorization status
+    // Runs AFTER address population so the express (minicart/cart) flow persists the UC/wallet-collected
+    // address to the basket even when authorization fails - the client redirects to Checkout-Begin on
+    // failure, and the address must already be on the basket for the checkout page to show it.
+    var authStatus = jwtPayload.status;
+    if (!ucPaymentHelper.isValidAuthorizationStatus(authStatus)) {
+        logger.error('PlaceOrderDirect: Authorization not successful. Status: {0}', authStatus);
+
+        // Check if SCA (Strong Customer Authentication) is required
+        // Expanded SCA detection for new Visa Acceptance response patterns
+        var isSCARequired = false;
+        var processorInfo = jwtPayload.details && jwtPayload.details.processorInformation;
+        var reasonCode = processorInfo && processorInfo.responseCode;
+        var reason = jwtPayload.reason;
+        var message = jwtPayload.message;
+        var outcome = jwtPayload.outcome;
+        // SCA required indicators: response 478, authentication_required status, or new Visa Acceptance patterns
+        if (
+            reasonCode === '478' ||
+            authStatus === 'AUTHENTICATION_REQUIRED' ||
+            authStatus === 'PENDING_AUTHENTICATION' ||
+            (reason && reason === 'CUSTOMER_AUTHENTICATION_REQUIRED') ||
+            (message && typeof message === 'string' && message.toLowerCase().indexOf('strong customer authentication required') !== -1)
+        ) {
+            isSCARequired = true;
+            ucPaymentHelper.setSCARequiredFlag();
+            logger.info('PlaceOrderDirect: SCA required detected (reasonCode: {0}, status: {1}, reason: {2}, outcome: {3}). Flag set for retry.', reasonCode, authStatus, reason, outcome);
+        }
+
+        // Return appropriate error message
+        var errorMessage;
+        if (isSCARequired) {
+            errorMessage = ucPaymentHelper.getSCAErrorMessage();
+        } else {
+            errorMessage = ucPaymentHelper.getAuthorizationErrorMessage(authStatus) || Resource.msg('error.technical', 'checkout', null);
+        }
+
+        secureResponseHelper.secureJsonResponse(res, {
+            error: true,
+            errorMessage: errorMessage,
+            scaRequired: isSCARequired
+        });
+        return next();
+    }
+
     // Validate order
     var validationOrderStatus = hooksHelper('app.validate.order', 'validateOrder', currentBasket, require('*/cartridge/scripts/hooks/validateOrder').validateOrder);
     if (validationOrderStatus.error) {
