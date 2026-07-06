@@ -1178,6 +1178,45 @@ var unifiedCheckout = {
             self.handleCancelPayment();
         });
 
+        // Billing address selection change (the "Billing Address" dropdown, incl.
+        // multi-ship where the shopper picks a different saved/shipping address).
+        // The capture context embeds the billing address, so a changed selection must
+        // regenerate it or the UC widget authorizes against the wrong billTo (this is
+        // the "Billing address set to true/New" case where the form fails to refresh).
+        $(document).on('change', '#billingAddressSelector, select[name="addressSelector"]', function () {
+            setTimeout(function () {
+                if ($('.unified-checkout-container').length > 0) {
+                    console.log('Billing address selection changed - regenerating capture context');
+                    self.regenerateCaptureContextIfNeeded(true);
+                }
+            }, 800); // allow Checkout-SetBillingAddress to persist the new address first
+        });
+
+        // "Update Address" submit in the billing form — the shopper edited the billing
+        // address fields in place. Regenerate once SFRA has saved the change.
+        $(document).on('click', '.billing-address .btn-update-address, .btn-save-multi-ship, .update-address, [name="submit"].btn-update-address', function () {
+            setTimeout(function () {
+                if ($('.unified-checkout-container').length > 0) {
+                    console.log('Billing address updated - regenerating capture context');
+                    self.regenerateCaptureContextIfNeeded(true);
+                }
+            }, 800);
+        });
+
+        // The billing address is persisted server-side via Checkout-SetBillingAddress.
+        // Regenerate whenever that call completes so the UC context always reflects the
+        // address currently on the basket, regardless of which UI path triggered it.
+        $(document).ajaxComplete(function (event, xhr, settings) {
+            if (settings.url && settings.url.indexOf('Checkout-SetBillingAddress') > -1) {
+                if ($('.unified-checkout-container').length > 0) {
+                    console.log('Checkout-SetBillingAddress completed - regenerating capture context');
+                    setTimeout(function () {
+                        self.regenerateCaptureContextIfNeeded(true);
+                    }, 300);
+                }
+            }
+        });
+
         // Listen for client-side validation errors on billing form fields
         $(document).on('blur change', '#dwfrm_billing input, #dwfrm_billing select', function () {
             // Small delay to allow validation to complete
@@ -2059,10 +2098,19 @@ var unifiedCheckout = {
     },
 
     /**
-     * Show save card error message
+     * Show save card error message with a reload link.
+     *
+     * When a save fails, the UC widget is left in a spent/half-mounted state (its
+     * transient token is single-use), so the shopper cannot simply retry in place —
+     * the widget needs a fresh capture context. Rather than a full page reload (which
+     * would wipe this error message before the shopper can read it), we surface a
+     * "Reload" link that re-initializes the widget in place while keeping the message
+     * visible. Mirrors the pre-existing reload-link pattern used on the checkout side.
      * @param {string} message - Error message
      */
     showSaveCardError: function(message) {
+        var self = this;
+
         // Find or create error container
         var $errorContainer = $('.uc-save-card-error');
         if ($errorContainer.length === 0) {
@@ -2070,12 +2118,108 @@ var unifiedCheckout = {
             $('.uc-save-card-form').prepend($errorContainer);
         }
 
-        $errorContainer.text(message).show();
+        // Rebuild content: message text + reload link. Use .text()/DOM APIs (not
+        // string HTML) so the server-provided message can never inject markup.
+        $errorContainer.empty();
+        $errorContainer.append($('<span class="uc-save-card-error-message"></span>').text(message));
+        $errorContainer.append(document.createTextNode(' '));
+        var $reload = $('<a href="#" class="uc-save-card-reload">Reload and try again</a>');
+        $reload.on('click', function (e) {
+            e.preventDefault();
+            self.reloadSaveCardWidget();
+        });
+        $errorContainer.append($reload);
+        $errorContainer.show();
 
         // Scroll to error
         $('html, body').animate({
             scrollTop: $errorContainer.offset().top - 100
         }, 300);
+    },
+
+    /**
+     * Reload the UC save-card widget in place after a failed save.
+     *
+     * Fetches a fresh capture context (the save-card page renders it server-side in
+     * the same template), re-mounts the widget, and re-enables the save button. The
+     * error message is left on screen until the widget successfully re-initializes.
+     */
+    reloadSaveCardWidget: function() {
+        var self = this;
+
+        var reloadUrl = self.sanitizeUrl($('#uc-save-card-reload-url').val());
+
+        // Re-enable the save button in case it was disabled during the failed attempt.
+        $('#uc-save-card-button').prop('disabled', false);
+
+        // No dedicated reload endpoint rendered → fall back to a full page reload so
+        // the shopper is never left stuck. (Full reload clears the message, but it is
+        // the safe last resort when we cannot fetch a fresh context in place.)
+        if (!reloadUrl) {
+            window.location.reload();
+            return;
+        }
+
+        ucPageSpinner().start();
+
+        $.ajax({
+            url: reloadUrl,
+            type: 'GET',
+            dataType: 'html',
+            success: function (html) {
+                // The CreateUCTokenSaveCard endpoint renders the unifiedCheckoutSaveCard
+                // fragment: the widget container plus fresh #ucCaptureContext / client
+                // library hidden fields. Replace only that widget region — NOT the whole
+                // form — so the form's CSRF token, hidden JWT inputs and buttons survive.
+                var $existing = $('.unified-checkout-container.uc-save-card').first();
+                var $anchor = $existing.length ? $existing : $('.uc-save-card-form').first();
+                if (!$anchor.length) {
+                    ucPageSpinner().stop();
+                    window.location.reload();
+                    return;
+                }
+
+                // Remove the stale widget region and its associated hidden fields so we
+                // don't end up with duplicate #ucCaptureContext elements after insert.
+                $('.unified-checkout-container.uc-save-card').remove();
+                $('#ucCaptureContext, #uc-client-library, #uc-client-library-integrity, #unifiedCheckoutPaymentAcceptanceLocation').remove();
+
+                // Sanitize (strips the fragment's <script> tags — the SDK and this file
+                // are already loaded on the page) and insert the fresh widget markup.
+                var sanitizedHtml = safeSanitizeTemplate(html);
+                var tempDiv = document.createElement('div');
+                tempDiv.innerHTML = sanitizedHtml;
+                if ($existing.length) {
+                    while (tempDiv.firstChild) {
+                        $anchor[0].parentNode.insertBefore(tempDiv.firstChild, $anchor[0]);
+                    }
+                } else {
+                    while (tempDiv.firstChild) {
+                        $anchor[0].insertBefore(tempDiv.firstChild, $anchor[0].firstChild);
+                    }
+                }
+
+                // Reset transient state from the failed attempt.
+                self.saveCardInstance = null;
+                self.saveCardTransientToken = null;
+                window.ucScriptLoading = false;
+
+                ucPageSpinner().stop();
+
+                // Only clear the error / re-init if we actually got a fresh context.
+                if ($('#ucCaptureContext').val()) {
+                    $('.uc-save-card-error').hide();
+                    self.initSaveCard();
+                }
+                // If no context came back, the error message stays visible with its
+                // reload link so the shopper can try again.
+            },
+            error: function () {
+                ucPageSpinner().stop();
+                // Could not refresh in place — fall back to full reload.
+                window.location.reload();
+            }
+        });
     }
 
 };
