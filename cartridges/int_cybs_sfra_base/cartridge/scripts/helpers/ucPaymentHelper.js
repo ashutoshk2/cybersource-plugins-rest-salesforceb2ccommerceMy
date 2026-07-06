@@ -162,10 +162,16 @@ function populateBasketAddressesFromPaymentDetails(basket, paymentDetails, Trans
     var shipment = basket.getDefaultShipment();
 
     TransactionObj.wrap(function () {
-        // Populate shipping address if shipTo exists in response
-        if (orderInfo.shipTo && !shipment.shippingAddress) {
+        // Populate shipping address from shipTo, falling back to billTo when the
+        // response carries no shipTo. E-wallet flows differ in what they return:
+        // Venmo sends shipTo but no billTo, PayPal sends billTo but no shipTo. This
+        // mirrors the billTo->shipTo fallback below so a shippable address is created
+        // in both cases. NOTE: SFRA requires shippingAddress.address1 to be non-empty
+        // (ensureValidShipments); if the wallet's address omits the street, the
+        // shipment is still invalid and the source address must be completed upstream.
+        var shipTo = orderInfo.shipTo || orderInfo.billTo;
+        if (shipTo && !shipment.shippingAddress) {
             var shippingAddress = shipment.createShippingAddress();
-            var shipTo = orderInfo.shipTo;
 
             if (shipTo.firstName) shippingAddress.setFirstName(shipTo.firstName);
             if (shipTo.lastName) shippingAddress.setLastName(shipTo.lastName);
@@ -180,10 +186,15 @@ function populateBasketAddressesFromPaymentDetails(basket, paymentDetails, Trans
             logger.info('populateBasketAddressesFromPaymentDetails: Shipping address populated');
         }
 
-        // Populate billing address if billTo exists in response
-        if (orderInfo.billTo && !basket.billingAddress) {
+        // Populate billing address from billTo, falling back to shipTo when the
+        // response carries no billTo. E-wallet flows (e.g. Venmo/EWALLET) return a
+        // shipping address from the wallet but no separate billing address, so the
+        // wallet's shipTo is treated as the payer-of-record for billing. Without this
+        // fallback the later "billing address exists" check fails with
+        // error.no.billing.address for those payment types.
+        var billTo = orderInfo.billTo || orderInfo.shipTo;
+        if (billTo && !basket.billingAddress) {
             var billingAddress = basket.createBillingAddress();
-            var billTo = orderInfo.billTo;
 
             if (billTo.firstName) billingAddress.setFirstName(billTo.firstName);
             if (billTo.lastName) billingAddress.setLastName(billTo.lastName);
@@ -202,10 +213,29 @@ function populateBasketAddressesFromPaymentDetails(basket, paymentDetails, Trans
             logger.info('populateBasketAddressesFromPaymentDetails: Billing address populated');
         }
 
-        // If shipping phone is empty but billing phone exists, copy it
+        // Venmo/e-wallet getPaymentDetails responses carry neither phoneNumber nor
+        // email, so the billing address and basket email above stay empty for the
+        // minicart flow. Fall back to the logged-in customer's profile so the order
+        // confirmation shows the shopper's real phone/email. Guests have no profile,
+        // so these remain empty and are suppressed at render time.
+        var customer = basket.getCustomer();
+        var profile = (customer && customer.profile) || null;
+        if (profile) {
+            var billingAddr = basket.billingAddress;
+            if (billingAddr && !billingAddr.phone && profile.phoneHome) {
+                billingAddr.setPhone(profile.phoneHome);
+            }
+            if (!basket.customerEmail && profile.email) {
+                basket.setCustomerEmail(profile.email);
+            }
+        }
+
+        // If shipping phone is empty but a phone is now available (billing or profile),
+        // copy it so the shipment carries a contact number too.
         var shippingAddr = shipment.shippingAddress;
-        if (shippingAddr && !shippingAddr.phone && orderInfo.billTo && orderInfo.billTo.phoneNumber) {
-            shippingAddr.setPhone(orderInfo.billTo.phoneNumber);
+        var fallbackPhone = (billTo && billTo.phoneNumber) || (profile && profile.phoneHome) || '';
+        if (shippingAddr && !shippingAddr.phone && fallbackPhone) {
+            shippingAddr.setPhone(fallbackPhone);
         }
     });
 }

@@ -25,6 +25,12 @@
         <input type="hidden" name="${pdict.csrf.tokenName}" value="${pdict.csrf.token}" />
         <input type="hidden" name="completeMandateJwt" id="completeMandateJwt" value="" />
         <input type="hidden" name="transientToken" id="transientToken" value="" />
+        <iscomment>
+            Reload endpoint for the "Reload and try again" link shown when a save fails.
+            Re-fetches a fresh UC widget + capture context so the shopper can retry
+            without a full page reload (which would clear the error message).
+        </iscomment>
+        <input type="hidden" id="uc-save-card-reload-url" value="${URLUtils.https('SecureAcceptance-CreateUCTokenSaveCard')}" />
 
         <div class="make-default-payment">
             <div class="form-group custom-control custom-checkbox">
