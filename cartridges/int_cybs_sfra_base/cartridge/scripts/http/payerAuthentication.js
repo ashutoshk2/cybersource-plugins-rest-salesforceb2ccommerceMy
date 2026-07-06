@@ -308,7 +308,12 @@ function paEnroll(billingDetails, shippingAddress, referenceInformationCode, tot
         session.privacy.iv = iv;
     }
 
+    var ucPaymentHelper = require('~/cartridge/scripts/helpers/ucPaymentHelper');
     var deviceInformation = new cybersourceRestApi.Ptsv2paymentsDeviceInformation();
+    // ipAddress is required whenever deviceInformation is sent. Default to the server-resolved
+    // shopper IP (the global `request` is shadowed by the local CreatePaymentRequest below);
+    // the client-reported browser IP overrides it below when present.
+    deviceInformation.ipAddress = ucPaymentHelper.getRemoteIpAddress();
 
     if (configObject.deviceFingerprintEnabled && configObject.fmeDmEnabled) {
         deviceInformation.fingerprintSessionId = session.privacy.dfID;
@@ -325,7 +330,9 @@ function paEnroll(billingDetails, shippingAddress, referenceInformationCode, tot
         deviceInformation.httpBrowserTimeDifference = browserData.httpBrowserTimeDifference ? browserData.httpBrowserTimeDifference.toString() : undefined;
         deviceInformation.userAgentBrowserValue = browserData.httpUserAgent;
         deviceInformation.httpAcceptContent = browserData.httpAcceptContent;
-        deviceInformation.ipAddress = browserData.ipAddress;
+        if (browserData.ipAddress) {
+            deviceInformation.ipAddress = browserData.ipAddress;
+        }
     }
 
     request.deviceInformation = deviceInformation;
@@ -491,8 +498,12 @@ function paConsumerAuthenticate(billingDetails, referenceInformationCode, total,
     var paymentInformation = new cybersourceRestApi.Ptsv2paymentsPaymentInformation();
     var request = new cybersourceRestApi.CreatePaymentRequest();
 
+    var ucPaymentHelper = require('~/cartridge/scripts/helpers/ucPaymentHelper');
     var deviceSessionId = new cybersourceRestApi.Ptsv2paymentsDeviceInformation();
     deviceSessionId.fingerprintSessionId = session.privacy.dfID;
+    // ipAddress is required by Visa Acceptance when deviceInformation is sent; resolve via
+    // helper because the local CreatePaymentRequest above shadows the global `request`.
+    deviceSessionId.ipAddress = ucPaymentHelper.getRemoteIpAddress();
 
     if (configObject.deviceFingerprintEnabled && configObject.fmeDmEnabled) {
         request.deviceInformation = deviceSessionId;

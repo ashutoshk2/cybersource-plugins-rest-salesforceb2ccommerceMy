@@ -234,7 +234,12 @@ _exports.prototype.getHttpSignature = function (resource, method, merchantKeyId,
         signatureString += 'digest: SHA-256=' + digest + '\n';
     }
 
-    signatureString += 'v-c-merchant-id: ' + merchantId;
+    // For a meta (portfolio/account) key the signature is computed over the portfolio
+    // owner MID, while the request sends the transacting child MID in v-c-merchant-id.
+    // Mirrors the JWT `iss` handling in getJWTToken. keyid/shared secret are already the
+    // meta key credentials (getMerchantKeyID/getMerchantsecretKey).
+    var signatureMerchantId = (configObject.metaKeyEnabled && configObject.metaKeyMerchantId) ? configObject.metaKeyMerchantId : merchantId;
+    signatureString += 'v-c-merchant-id: ' + signatureMerchantId;
 
     var data = new Bytes(signatureString, 'utf8');
 

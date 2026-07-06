@@ -1689,6 +1689,21 @@ function buildCaptureContextDeviceInformation() {
 }
 
 /**
+ * Return the shopper's remote IP address from the SFCC global request.
+ *
+ * Resolved here (a scope with no local `request`) on purpose: the http/*.js payment
+ * functions declare a local `var request = new ...CreatePaymentRequest()`, which shadows
+ * the SFCC global `request` for the whole function. Reading `request.httpRemoteAddress`
+ * there yields undefined (or crashes before assignment), so callers that need the IP for
+ * deviceInformation.ipAddress must go through this helper instead.
+ *
+ * @returns {string} the shopper's remote IP address
+ */
+function getRemoteIpAddress() {
+    return request.httpRemoteAddress;
+}
+
+/**
  * Build consumerAuthenticationInformation object for Capture Context API
  * 
  * Handles SCA (Strong Customer Authentication) challenge code behavior:
@@ -1871,6 +1886,7 @@ module.exports = {
     buildCardHolderName: buildCardHolderName,
     mapUcBillToToSfccAddress: mapUcBillToToSfccAddress,
     buildCaptureContextDeviceInformation: buildCaptureContextDeviceInformation,
+    getRemoteIpAddress: getRemoteIpAddress,
     buildConsumerAuthenticationInformation: buildConsumerAuthenticationInformation,
     buildDdcBackupDeviceInformation: buildDdcBackupDeviceInformation,
 

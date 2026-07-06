@@ -29,7 +29,7 @@
             </attribute-definition>
             <attribute-definition attribute-id="VisaAcceptance_CardTransactionType">
                 <display-name xml:lang="x-default">Transaction Type</display-name>
-                <description xml:lang="x-default">Transaction Type for Credit card and Unified Checkout</description>
+                <description xml:lang="x-default">Transaction Type (Authorization or Sale) for the Salesforce default card form (Direct API) only. For Unified Checkout, configure the transaction type in the Visa Acceptance Business Center (EBC).</description>
                 <type>enum-of-string</type>
                 <mandatory-flag>false</mandatory-flag>
                 <externally-managed-flag>false</externally-managed-flag>
@@ -60,7 +60,7 @@
             </attribute-definition>
             <attribute-definition attribute-id="VisaAcceptance_MetaKeyMerchantId">
                 <display-name xml:lang="x-default">Meta Key Portfolio Merchant ID</display-name>
-                <description xml:lang="x-default">The portfolio/account merchant ID that owns the Meta Key P12 certificate.</description>
+                <description xml:lang="x-default">The portfolio/account merchant ID that owns the Meta Key.</description>
                 <type>string</type>
                 <externally-managed-flag>false</externally-managed-flag>
             </attribute-definition>

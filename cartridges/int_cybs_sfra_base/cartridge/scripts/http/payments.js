@@ -29,6 +29,7 @@ function httpAuthorizeWithToken(cardData, customerEmail, referenceInformationCod
 
     var webhookActivationHelper = require('~/cartridge/scripts/helpers/webhookActivationHelper');
     webhookActivationHelper.activateWebhooks();
+    var ucPaymentHelper = require('~/cartridge/scripts/helpers/ucPaymentHelper');
 
     var instance = new cybersourceRestApi.PaymentsApi(configObject);
 
@@ -37,8 +38,10 @@ function httpAuthorizeWithToken(cardData, customerEmail, referenceInformationCod
 
     var deviceSessionId = new cybersourceRestApi.Ptsv2paymentsDeviceInformation();
     deviceSessionId.fingerprintSessionId = session.privacy.dfID;
-    // eslint-disable-next-line no-undef
-    deviceSessionId.ipAddress = session.privacy.ipAddress;
+    // Global `request` is shadowed by the local CreatePaymentRequest below; resolve the
+    // shopper IP via ucPaymentHelper so deviceInformation.ipAddress is populated (required
+    // by Visa Acceptance whenever deviceInformation is sent).
+    deviceSessionId.ipAddress = ucPaymentHelper.getRemoteIpAddress();
 
     var processingInformation = new cybersourceRestApi.Ptsv2paymentsProcessingInformation();
     processingInformation.commerceIndicator = configObject.CommerceIndicator.value;
@@ -156,7 +159,6 @@ function httpAuthorizeWithToken(cardData, customerEmail, referenceInformationCod
         paymentInformation.card = card;
         request.paymentInformation = paymentInformation;
     }
-    session.privacy.ipAddress = '';
     var result = '';
     instance.createPayment(request, function (data, error, response) { // eslint-disable-line no-unused-vars
         if (!error) {
@@ -206,6 +208,7 @@ function httpZeroDollarAuth(
     var errors = require('~/cartridge/scripts/util/errors');
     var webhookActivationHelper = require('~/cartridge/scripts/helpers/webhookActivationHelper');
     webhookActivationHelper.activateWebhooks();
+    var ucPaymentHelper = require('~/cartridge/scripts/helpers/ucPaymentHelper');
 
     var instance = new cybersourceRestApi.PaymentsApi(configObject);
 
@@ -214,6 +217,9 @@ function httpZeroDollarAuth(
 
     var deviceSessionId = new cybersourceRestApi.Ptsv2paymentsDeviceInformation();
     deviceSessionId.fingerprintSessionId = session.privacy.dfID;
+    // ipAddress is required by Visa Acceptance when deviceInformation is sent; resolve via
+    // helper because the local CreatePaymentRequest below shadows the global `request`.
+    deviceSessionId.ipAddress = ucPaymentHelper.getRemoteIpAddress();
 
 
     var processingInformation = new cybersourceRestApi.Ptsv2paymentsProcessingInformation();
@@ -427,6 +433,7 @@ function httpAuthorizeWithTransientToken(transientToken, customerEmail, referenc
 
     var webhookActivationHelper = require('~/cartridge/scripts/helpers/webhookActivationHelper');
     webhookActivationHelper.activateWebhooks();
+    var ucPaymentHelper = require('~/cartridge/scripts/helpers/ucPaymentHelper');
 
     var instance = new cybersourceRestApi.PaymentsApi(configObject);
 
@@ -435,6 +442,9 @@ function httpAuthorizeWithTransientToken(transientToken, customerEmail, referenc
 
     var deviceSessionId = new cybersourceRestApi.Ptsv2paymentsDeviceInformation();
     deviceSessionId.fingerprintSessionId = session.privacy.dfID;
+    // ipAddress is required by Visa Acceptance when deviceInformation is sent; resolve via
+    // helper because the local CreatePaymentRequest below shadows the global `request`.
+    deviceSessionId.ipAddress = ucPaymentHelper.getRemoteIpAddress();
 
     var processingInformation = new cybersourceRestApi.Ptsv2paymentsProcessingInformation();
 

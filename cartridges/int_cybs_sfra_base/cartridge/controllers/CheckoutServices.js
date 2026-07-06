@@ -464,13 +464,13 @@ server.post('PlaceOrderDirect', server.middleware.https, function (req, res, nex
                 var clientRefCode = jwtPayload.details
                     && jwtPayload.details.clientReferenceInformation
                     && jwtPayload.details.clientReferenceInformation.code;
-                if (clientRefCode) {
-                    paymentInstrument.paymentTransaction.custom.clientReferenceCode = clientRefCode;
-                }
+                // if (clientRefCode) {
+                //     paymentInstrument.paymentTransaction.custom.clientReferenceCode = clientRefCode;
+                // }
                 if (processorInfo && processorInfo.transactionId) {
                     paymentInstrument.paymentTransaction.custom.processorTransactionId = processorInfo.transactionId;
                 }
-                paymentInstrument.paymentTransaction.custom.authMethod = (configObject.authenticationType || '').toUpperCase();
+                // paymentInstrument.paymentTransaction.custom.authMethod = (configObject.authenticationType || '').toUpperCase();
                 paymentInstrument.paymentTransaction.custom.resultTimestamp = new Date().toISOString();
 
                 // Gateway transaction status (jwtPayload.status, e.g. AUTHORIZED / PENDING).
@@ -565,6 +565,34 @@ server.post('PlaceOrderDirect', server.middleware.https, function (req, res, nex
     var tokenSaved = ucPaymentHelper.saveTokenToWallet(jwtPayload, detailsForWallet, session.getCustomer(), transientToken);
     if (tokenSaved) {
         logger.info('PlaceOrderDirect: TMS token saved to customer wallet (method: {0})', detectedPaymentMethod);
+
+        // Maintain the default saved card, mirroring PaymentInstruments-SavePaymentDirect
+        // (My Account). saveTokenToWallet/upsertCreditCard only preserve an existing card's
+        // default flag on replace; they never promote a brand-new card, so the controller
+        // owns this invariant. Checkout has no "make default" checkbox, so the rule is simply:
+        // the first (only) saved card becomes the default, with ensureSingleDefault as a guard.
+        try {
+            var defaultPaymentHelper = require('~/cartridge/scripts/helpers/defaultPaymentHelper');
+            var CustomerMgr = require('dw/customer/CustomerMgr');
+            var checkoutCustomer = CustomerMgr.getCustomerByCustomerNumber(req.currentCustomer.profile.customerNo);
+            var defaultWallet = checkoutCustomer.getProfile().getWallet();
+            var savedCards = defaultPaymentHelper.getCreditCardInstruments(defaultWallet);
+            if (savedCards.length > 0) {
+                // Identify the card we just saved/updated by its instrumentIdentifier (robust
+                // against wallet ordering and against an upsert that replaced an existing card).
+                var savedTokenInfo = ucPaymentHelper.extractTokenInformation(jwtPayload);
+                var savedPI = (savedTokenInfo && savedTokenInfo.instrumentIdentifier)
+                    ? ucPaymentHelper.findCreditCardByInstrumentIdentifier(defaultWallet, savedTokenInfo.instrumentIdentifier.id)
+                    : null;
+                if (savedPI && savedCards.length === 1) {
+                    defaultPaymentHelper.setDefaultByUUID(defaultWallet, savedPI.UUID);
+                } else {
+                    defaultPaymentHelper.ensureSingleDefault(defaultWallet);
+                }
+            }
+        } catch (defErr) {
+            logger.warn('PlaceOrderDirect: default-card maintenance skipped: {0}', defErr.message || defErr);
+        }
     }
 
     // Save addresses to address book for logged in customers
