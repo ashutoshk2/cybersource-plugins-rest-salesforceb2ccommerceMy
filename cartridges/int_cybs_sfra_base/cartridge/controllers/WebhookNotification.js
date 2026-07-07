@@ -7,6 +7,7 @@ var Transaction = require('dw/system/Transaction');
 var Logger = require('dw/system/Logger');
 var OrderMgr = require('dw/order/OrderMgr');
 var configObject = require('*/cartridge/configuration/index');
+var secureResponseHelper = require('*/cartridge/scripts/helpers/secureResponseHelper');
 
 
 /**
@@ -165,7 +166,7 @@ function handleApmPaymentUpdate(payload, res, next) {
     if (!reconciliationId) {
         Logger.error('apmNotification: missing reconciliationId; cannot match an order.');
         res.setStatusCode(200);
-        res.json({ success: false });
+        secureResponseHelper.secureJsonResponse(res, { success: false });
         return next();
     }
 
@@ -175,7 +176,7 @@ function handleApmPaymentUpdate(payload, res, next) {
         // Ack so Visa Acceptance stops retrying rather than looping on a no-op.
         Logger.warn('apmNotification: no NOTCONFIRMED order for reconciliationId ' + reconciliationId + ' (status ' + status + '); acknowledging.');
         res.setStatusCode(200);
-        res.json({ success: true });
+        secureResponseHelper.secureJsonResponse(res, { success: true });
         return next();
     }
 
@@ -207,19 +208,19 @@ function handleApmPaymentUpdate(payload, res, next) {
     });
 
     res.setStatusCode(200);
-    res.json({ success: true });
+    secureResponseHelper.secureJsonResponse(res, { success: true });
     return next();
 }
 
 function handleDmNotification(req, res, next) {
     if (req.httpMethod === 'GET') {
         res.setStatusCode(200);
-        res.json({ success: true });
+        secureResponseHelper.secureJsonResponse(res, { success: true });
         return next();
     }
     if (!validateSignature(req, 'fraudManagement')) {
         res.setStatusCode(401);
-        res.json({ success: false });
+        secureResponseHelper.secureJsonResponse(res, { success: false });
         return next();
     }
 
@@ -244,7 +245,7 @@ function handleDmNotification(req, res, next) {
         var order = OrderMgr.getOrder(orderId);
         if (!order) {
             res.setStatusCode(503);
-            res.json({ success: false, message: 'Order not found, retrying...' });
+            secureResponseHelper.secureJsonResponse(res, { success: false, message: 'Order not found, retrying...' });
             return next();
         }
 
@@ -326,11 +327,11 @@ function handleDmNotification(req, res, next) {
         
         
         res.setStatusCode(200);
-        res.json({ success: true });
+        secureResponseHelper.secureJsonResponse(res, { success: true });
     } catch (e) {
         Logger.error('dmNotification error: ' + e.message);
         res.setStatusCode(200);
-        res.json({ success: false });
+        secureResponseHelper.secureJsonResponse(res, { success: false });
     }
     return next();
 }
@@ -339,7 +340,7 @@ function handleDmNotification(req, res, next) {
 server.use('dmNotification', handleDmNotification);
 server.use('novusDmNotification', handleDmNotification);
 server.use('tokenUpdate', function(req, res, next){
-    res.json({ success: true });
+    secureResponseHelper.secureJsonResponse(res, { success: true });
         return next();
 });
 // APM (Unified Checkout) Notifications
@@ -355,14 +356,14 @@ server.use('tokenUpdate', function(req, res, next){
 server.use('paymentNotification', function (req, res, next) {
     if (req.httpMethod === 'GET') {
         res.setStatusCode(200);
-        res.json({ success: true });
+        secureResponseHelper.secureJsonResponse(res, { success: true });
         return next();
     }
 
     if (!validateSignature(req, 'unifiedCheckout')) {
         Logger.error('paymentNotification: Signature validation failed');
         res.setStatusCode(401);
-        res.json({ success: false });
+        secureResponseHelper.secureJsonResponse(res, { success: false });
         return next();
     }
 
@@ -388,7 +389,7 @@ server.use('paymentNotification', function (req, res, next) {
 
             Logger.warn('paymentNotification: order ' + orderId + ' not found.');
             res.setStatusCode(200);
-            res.json({ success: true });
+            secureResponseHelper.secureJsonResponse(res, { success: true });
             return next();
         }
 
@@ -435,11 +436,11 @@ server.use('paymentNotification', function (req, res, next) {
         }
 
         res.setStatusCode(200);
-        res.json({ success: true });
+        secureResponseHelper.secureJsonResponse(res, { success: true });
     } catch (e) {
         Logger.error('paymentNotification error: ' + e.message);
         res.setStatusCode(200);
-        res.json({ success: false });
+        secureResponseHelper.secureJsonResponse(res, { success: false });
     }
     return next();
 });

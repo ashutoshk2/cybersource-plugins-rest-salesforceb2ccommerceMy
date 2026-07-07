@@ -69,14 +69,14 @@ if (configObject.cartridgeEnabled) {
         var selectedPaymentInstrumentId = req.querystring.piId || null;
         
         if (!selectedPaymentInstrumentId) {
-            res.json({ error: true, errorMessage: 'Payment instrument ID is required' });
+            secureResponseHelper.secureJsonResponse(res, { error: true, errorMessage: 'Payment instrument ID is required' });
             next();
             return;
         }
         
         // Validate format - basic alphanumeric check
         if (!/^[A-Za-z0-9]+$/.test(selectedPaymentInstrumentId)) {
-            res.json({ error: true, errorMessage: 'Invalid payment instrument ID format' });
+            secureResponseHelper.secureJsonResponse(res, { error: true, errorMessage: 'Invalid payment instrument ID format' });
             next();
             return;
         }
@@ -148,14 +148,14 @@ if (configObject.cartridgeEnabled) {
                 }
             }
             
-            res.json({
+            secureResponseHelper.secureJsonResponse(res, {
                 success: true,
                 savedCards: savedCards,
                 hasSavedCards: savedCards.length > 0
             });
         } catch (e) {
             Logger.error('[SecureAcceptance.js] GetSavedCards ERROR: {0}', e.message);
-            res.json({
+            secureResponseHelper.secureJsonResponse(res, {
                 success: false,
                 error: true,
                 errorMessage: 'Failed to retrieve saved cards',
@@ -201,7 +201,7 @@ if (configObject.cartridgeEnabled) {
                 ? UcCaptureContext.errorMessage 
                 : 'Failed to generate capture context for save card';
             Logger.error('[SecureAcceptance.js] CreateUCTokenSaveCard ERROR: {0}', errorMsg);
-            res.json({ error: true, errorMessage: errorMsg });
+            secureResponseHelper.secureJsonResponse(res, { error: true, errorMessage: errorMsg });
             next();
             return;
         }
