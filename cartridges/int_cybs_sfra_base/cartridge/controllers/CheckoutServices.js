@@ -300,15 +300,15 @@ server.post('PlaceOrderDirect', server.middleware.https, function (req, res, nex
     // });
 
     // Validate payment instruments
-    var validPayment = COHelpers.validatePayment(req, currentBasket);
-    if (validPayment.error) {
-        secureResponseHelper.secureJsonResponse(res, {
-            error: true,
-            errorStage: { stage: 'payment', step: 'paymentInstrument' },
-            errorMessage: Resource.msg('error.payment.not.valid', 'checkout', null)
-        });
-        return next();
-    }
+    // var validPayment = COHelpers.validatePayment(req, currentBasket);
+    // if (validPayment.error) {
+    //     secureResponseHelper.secureJsonResponse(res, {
+    //         error: true,
+    //         errorStage: { stage: 'payment', step: 'paymentInstrument' },
+    //         errorMessage: Resource.msg('error.payment.not.valid', 'checkout', null)
+    //     });
+    //     return next();
+    // }
 
     // Calculate payment transaction
     var calculatedPaymentTransactionTotal = COHelpers.calculatePaymentTransaction(currentBasket);

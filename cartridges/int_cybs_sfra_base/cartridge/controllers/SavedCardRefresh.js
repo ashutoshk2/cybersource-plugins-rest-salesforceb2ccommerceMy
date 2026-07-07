@@ -5,6 +5,7 @@ var csrfProtection = require('*/cartridge/scripts/middleware/csrf');
 var userLoggedIn = require('*/cartridge/scripts/middleware/userLoggedIn');
 var array = require('*/cartridge/scripts/util/array');
 var configObject = require('*/cartridge/configuration/index');
+var secureResponseHelper = require('~/cartridge/scripts/helpers/secureResponseHelper');
 
 /**
  * Finds a request-wrapped payment instrument by UUID within the given list.
@@ -36,7 +37,7 @@ server.post('Refresh', server.middleware.https, csrfProtection.validateAjaxReque
 
     // Gated by the VisaAcceptance_NetworkToken preference; no-op when disabled.
     if (!configObject.networkTokenizationEnabled) {
-        res.json({ success: false });
+        secureResponseHelper.secureJsonResponse(res, { success: false });
         return next();
     }
 
@@ -46,7 +47,7 @@ server.post('Refresh', server.middleware.https, csrfProtection.validateAjaxReque
     // IDOR guard: only ever look inside the logged-in customer's own wallet.
     var owned = findOwnInstrument(req.currentCustomer.wallet.paymentInstruments, piUuid);
     if (!owned) {
-        res.json({ success: false, notAvailable: true });
+        secureResponseHelper.secureJsonResponse(res, { success: false, notAvailable: true });
         return next();
     }
 
@@ -57,7 +58,7 @@ server.post('Refresh', server.middleware.https, csrfProtection.validateAjaxReque
     var rawPI = array.find(rawPIs, function (pi) { return pi.UUID === piUuid; });
 
     if (!rawPI) {
-        res.json({ success: false, notAvailable: true });
+        secureResponseHelper.secureJsonResponse(res, { success: false, notAvailable: true });
         return next();
     }
 
@@ -70,7 +71,7 @@ server.post('Refresh', server.middleware.https, csrfProtection.validateAjaxReque
         Logger.getLogger('VisaAcceptance', 'SavedCardRefresh').error('Refresh failed for piUuid={0}: {1}', piUuid, e.message || e);
         result = { success: false };
     }
-    res.json(result);
+    secureResponseHelper.secureJsonResponse(res, result);
     return next();
 });
 
@@ -85,7 +86,7 @@ server.get('List', server.middleware.https, userLoggedIn.validateLoggedInAjax, f
 
     // Gated by the VisaAcceptance_NetworkToken preference; no-op when disabled.
     if (!configObject.networkTokenizationEnabled) {
-        res.json({ success: false });
+        secureResponseHelper.secureJsonResponse(res, { success: false });
         return next();
     }
 
@@ -96,7 +97,7 @@ server.get('List', server.middleware.https, userLoggedIn.validateLoggedInAjax, f
         { customer: { customerPaymentInstruments: validCards, registeredUser: true } },
         'checkout/billing/storedPaymentInstrumentsList'
     );
-    res.json({ success: true, html: html, count: validCards.length });
+    secureResponseHelper.secureJsonResponse(res, { success: true, html: html, count: validCards.length });
     return next();
 });
 

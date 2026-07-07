@@ -2118,10 +2118,14 @@ var unifiedCheckout = {
             $('.uc-save-card-form').prepend($errorContainer);
         }
 
-        // Rebuild content: message text + reload link. Use .text()/DOM APIs (not
-        // string HTML) so the server-provided message can never inject markup.
+        // Rebuild content: message text + reload link. Build the message node with
+        // native DOM createElement + textContent (never string HTML / jQuery.text on
+        // an appended node) so the server-provided message can never inject markup.
         $errorContainer.empty();
-        $errorContainer.append($('<span class="uc-save-card-error-message"></span>').text(message));
+        var messageSpan = document.createElement('span');
+        messageSpan.className = 'uc-save-card-error-message';
+        messageSpan.textContent = message;
+        $errorContainer.append(messageSpan);
         $errorContainer.append(document.createTextNode(' '));
         var $reload = $('<a href="#" class="uc-save-card-reload">Reload and try again</a>');
         $reload.on('click', function (e) {
@@ -2152,7 +2156,7 @@ var unifiedCheckout = {
         // Re-enable the save button in case it was disabled during the failed attempt.
         $('#uc-save-card-button').prop('disabled', false);
 
-        // No dedicated reload endpoint rendered → fall back to a full page reload so
+        // No dedicated reload endpoint rendered â†’ fall back to a full page reload so
         // the shopper is never left stuck. (Full reload clears the message, but it is
         // the safe last resort when we cannot fetch a fresh context in place.)
         if (!reloadUrl) {
