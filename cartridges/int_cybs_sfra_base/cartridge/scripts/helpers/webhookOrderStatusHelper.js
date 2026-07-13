@@ -49,14 +49,29 @@ function hasCaptureSignal(eventType, details) {
 }
 
 /**
- * Read the capture-id ledger as a plain array. Stored as a comma-separated string (a plain
- * read-append-write value, like AmountPaid) rather than a set-of-string, whose Collection
- * read/write semantics dropped all but the first id in this runtime.
- * @param {Object} paymentTransaction PaymentTransaction
- * @returns {Array<string>} processed capture transaction ids
+ * Round a currency amount to cents (2 dp), ES5-safe. Currency sums must compare at 2-dp
+ * precision, otherwise float accumulation drifts just under/over the intended value and a
+ * legitimate full capture/refund is misjudged — e.g. capture sums 50 + 50 + 57.99 =
+ * 157.98999999998 (stuck "Partially Captured"), or a remaining refundable balance reads
+ * 53.379999999999995 and rejects a valid 53.38 refund. Shared by the capture accumulator here
+ * and the over-amount caps in the capture/refund http scripts.
+ * @param {number} n amount
+ * @returns {number} amount rounded to 2 decimals
  */
-function getProcessedIds(paymentTransaction) {
-    var raw = paymentTransaction.custom.captureTransactionIds;
+function round2(n) {
+    return Math.round(Number(n) * 100) / 100;
+}
+
+/**
+ * Parse a comma-separated transaction-id ledger into a trimmed, non-empty array. Shared by the
+ * capture ledger (captureTransactionIds) and the refund ledger (refundTransactionIds); both are
+ * stored as a comma-separated string (a plain read-append-write value, like AmountPaid) rather
+ * than a set-of-string, whose Collection read/write semantics dropped all but the first id in
+ * this runtime.
+ * @param {string} raw comma-separated id string (may be null/empty)
+ * @returns {Array<string>} trimmed, non-empty ids
+ */
+function parseIdList(raw) {
     var arr = [];
     if (raw) {
         var parts = String(raw).split(',');
@@ -68,6 +83,15 @@ function getProcessedIds(paymentTransaction) {
         }
     }
     return arr;
+}
+
+/**
+ * Read the capture-id ledger as a plain array.
+ * @param {Object} paymentTransaction PaymentTransaction
+ * @returns {Array<string>} processed capture transaction ids
+ */
+function getProcessedIds(paymentTransaction) {
+    return parseIdList(paymentTransaction.custom.captureTransactionIds);
 }
 
 /**
@@ -123,10 +147,6 @@ function applyCapturedAmount(order, paymentTransaction, transactionId, capturedA
         return { applied: false, status: null };
     }
 
-    // Round to cents (ES5-safe). Currency sums must compare at 2-dp precision, otherwise
-    // float accumulation (e.g. 50 + 50 + 57.99 = 157.98999999998) leaves cumulative just under
-    // the order total and the order stays "Partially Captured" after a full capture.
-    var round2 = function (n) { return Math.round(Number(n) * 100) / 100; };
     var orderTotal = round2(order.getTotalGrossPrice().getValue());
     var outcome = {};
     Transaction.wrap(function () {
@@ -264,5 +284,7 @@ module.exports = {
     applyTransactionOutcome: applyTransactionOutcome,
     applyCapturedAmount: applyCapturedAmount,
     handleWebhook: handleWebhook,
-    formatTransactionStatus: formatTransactionStatus
+    formatTransactionStatus: formatTransactionStatus,
+    parseIdList: parseIdList,
+    round2: round2
 };

@@ -649,7 +649,7 @@ function generateUcCaptureContext(isMiniCart, selectedPaymentInstrumentId) {
             allowedPaymentTypes.push('BANCONTACT');  // BE
             allowedPaymentTypes.push('MULTIBANCO');  // PT
             allowedPaymentTypes.push('MYBANK');      // IT
-            allowedPaymentTypes.push('TINKPAYBYBANK'); // GB
+            // allowedPaymentTypes.push('TINKPAYBYBANK'); // GB
             allowedPaymentTypes.push('PRZELEWY24');   // PL
             allowedPaymentTypes.push('DRAGONPAY');    // PH
             allowedPaymentTypes.push('KONBINI');      // JP

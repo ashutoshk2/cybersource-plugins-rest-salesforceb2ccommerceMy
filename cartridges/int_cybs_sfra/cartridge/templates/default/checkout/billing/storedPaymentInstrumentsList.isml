@@ -77,7 +77,7 @@
                     </isif>
                 </span>
                 <isif condition="${paymentInstrument.isDefault}">
-                    class="default-payment-badge">${Resource.msg('label.payment.default', 'payment', null)}</span>
+                    <span class="default-payment-badge">${Resource.msg('label.payment.default', 'payment', null)}</span>
                 </isif>
             </div>
             <isif condition="${!empty(displayedAccount)}">

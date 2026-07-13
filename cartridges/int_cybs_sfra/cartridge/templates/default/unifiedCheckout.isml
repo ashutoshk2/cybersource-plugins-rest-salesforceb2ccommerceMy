@@ -6,6 +6,7 @@
 <input type="hidden" id="checkout-stage-url" value="${URLUtils.https('Checkout-Begin', 'stage', 'payment')}" />
 <input type="hidden" id="get-saved-cards-url" value="${URLUtils.https('SecureAcceptance-GetSavedCards')}" />
 <input type="hidden" id="create-uc-token-with-card-url" value="${URLUtils.https('SecureAcceptance-CreateUCTokenWithCard')}" />
+<input type="hidden" id="set-uc-billing-address-url" value="${URLUtils.https('SecureAcceptance-SetUCBillingAddress')}" />
  
 <div class="unified-checkout-container">
     <div class="row">

@@ -3,6 +3,7 @@
 var server = require('server');
 var configObject = require('../configuration/index');
 var secureResponseHelper = require('~/cartridge/scripts/helpers/secureResponseHelper');
+var csrfProtection = require('*/cartridge/scripts/middleware/csrf');
 
 if (configObject.cartridgeEnabled) {
     /**
@@ -218,6 +219,63 @@ if (configObject.cartridgeEnabled) {
             });
             next();
         }
+    });
+
+    /**
+     * SetUCBillingAddress - Persist the checkout billing form to the basket.
+     *
+     * Unified Checkout builds the capture-context billTo from basket.billingAddress
+     * (see payments.js buildOrderInformation). SFRA only persists the billing form
+     * on CheckoutServices-SubmitPayment, but UC hides Place Order and never posts it,
+     * so a shopper-entered or edited billing address never reaches the basket and the
+     * regenerated capture context authorizes against the stale/default address.
+     *
+     * This action does ONLY the billing-address portion of SubmitPayment (validate +
+     * copy to basket) - no payment-instrument creation, no processor Handle hook - so
+     * the client can save the address and then regenerate the UC capture context.
+     */
+    server.post('SetUCBillingAddress', server.middleware.https, csrfProtection.validateAjaxRequest, function (req, res, next) {
+        var BasketMgr = require('dw/order/BasketMgr');
+        var Transaction = require('dw/system/Transaction');
+        var COHelpers = require('*/cartridge/scripts/checkout/checkoutHelpers');
+
+        var currentBasket = BasketMgr.getCurrentBasket();
+        if (!currentBasket) {
+            secureResponseHelper.secureJsonResponse(res, { error: true, errorMessage: 'Basket not found' });
+            next();
+            return;
+        }
+
+        var billingForm = server.forms.getForm('billing');
+        var billingFormErrors = COHelpers.validateBillingForm(billingForm.addressFields);
+        if (Object.keys(billingFormErrors).length) {
+            secureResponseHelper.secureJsonResponse(res, { error: true, fieldErrors: billingFormErrors });
+            next();
+            return;
+        }
+
+        var af = billingForm.addressFields;
+        Transaction.wrap(function () {
+            var billingAddress = currentBasket.billingAddress || currentBasket.createBillingAddress();
+            billingAddress.setFirstName(af.firstName.value);
+            billingAddress.setLastName(af.lastName.value);
+            billingAddress.setAddress1(af.address1.value);
+            billingAddress.setAddress2(af.address2.value);
+            billingAddress.setCity(af.city.value);
+            billingAddress.setPostalCode(af.postalCode.value);
+            if (Object.prototype.hasOwnProperty.call(af, 'states')) {
+                billingAddress.setStateCode(af.states.stateCode.value);
+            }
+            billingAddress.setCountryCode(af.country.value);
+            // Set phone unconditionally (unlike COHelpers.copyBillingAddressToBasket,
+            // which skips it when one exists) so an edited phone reaches the billTo.
+            if (billingForm.contactInfoFields && billingForm.contactInfoFields.phone) {
+                billingAddress.setPhone(billingForm.contactInfoFields.phone.value);
+            }
+        });
+
+        secureResponseHelper.secureJsonResponse(res, { success: true });
+        next();
     });
 }
 

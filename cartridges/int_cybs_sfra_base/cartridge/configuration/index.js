@@ -94,6 +94,14 @@ function getConfig(config) {
         },
         {
             route: 'CheckoutServices-SubmitPayment'
+        },
+        {
+            // Non-UC place-order path: SFRA CheckoutServices-PlaceOrder recalculates the
+            // basket (calculateTotals) right before createOrder/handlePayments. Without this
+            // route the recalc falls back to SFCC default tax, so the order, the authorization
+            // request, the payer-auth request, and the confirmation page all use the wrong tax.
+            // (UC PlaceOrderDirect is unaffected — it reconciles from the transient-token amount.)
+            route: 'CheckoutServices-PlaceOrder'
         }
         ],
         taxCookieId: '_taxvalue',

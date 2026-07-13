@@ -1249,6 +1249,31 @@ function buildLineItems(basket) {
                 typeOfSupply: '00',
                 taxAmount: formatAmount(lineItem.adjustedTax.value > 0 ? lineItem.adjustedTax.value : 0, currencyCode)
             };
+
+            // When product-level and/or order-level promotions apply to this line, switch the
+            // unit/line total from the list price to the DISCOUNTED prorated price and surface
+            // the discount (discountAmount/discountApplied, see ucv1api.json orderInformation
+            // .lineItems). proratedPrice folds in both the product-level adjustment and this
+            // line's prorated share of any order-level adjustment, so the reconciliation
+            // invariant above still holds: sum(line net totalAmount) + sum(line taxAmount)
+            // === amountDetails.totalAmount. Order-level discounts are therefore represented
+            // per line (not as amountDetails.discountAmount, which would double-count).
+            // Mirrors the non-UC path in util/mapper.js MapOrderLineItems.
+            if (lineItem.lineItemCtnr.priceAdjustments.length > 0 || lineItem.proratedPriceAdjustmentPrices.length > 0) {
+                itemObject.unitPrice = formatAmount(lineItem.proratedPrice.value / lineItem.quantityValue, currencyCode);
+                itemObject.totalAmount = formatAmount(lineItem.proratedPrice.value, currencyCode);
+
+                var discountTotal = 0;
+                var adjustmentEntries = lineItem.proratedPriceAdjustmentPrices.entrySet().iterator();
+                while (adjustmentEntries.hasNext()) {
+                    var entry = adjustmentEntries.next();
+                    discountTotal += Math.abs(entry.getValue().value);
+                }
+                if (discountTotal > 0) {
+                    itemObject.discountAmount = formatAmount(discountTotal, currencyCode);
+                    itemObject.discountApplied = true;
+                }
+            }
         } else if (lineItem instanceof dw.order.GiftCertificateLineItem) {
             // typeOfSupply '00' = goods.
             itemObject = {

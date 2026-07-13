@@ -39,6 +39,11 @@ var SUCCESS_STATUSES = ['COMPLETED', 'SETTLED'];
 // ERROR_REASONS / isInconclusive) — an error-reason FAILED is inconclusive, not a decline.
 var FAIL_STATUSES = ['DECLINED', 'REVERSED', 'FAILED', 'CANCELLED', 'VOIDED'];
 
+// Refund outcomes are written to cybsTransactionStatus by the refund flow
+// (paymentInstrumentUtils). The refresh endpoint reports the ORIGINAL payment transaction's
+// status, which knows nothing about refunds, so we must not overwrite a refund label with it.
+var REFUND_STATUSES = ['Refunded', 'Partially Refunded', 'Refund Failed'];
+
 // Error "reason" codes that mean the refresh call itself could not determine the payment
 // status (processor/lookup/config error) — NOT a real payment outcome. When present, the
 // response's top-level status (often FAILED) is not authoritative: e.g. Pay by Bank / TINK
@@ -150,9 +155,15 @@ function applyStatus(order, paymentTransaction, rawStatus) {
     var label = webhookOrderStatusHelper.formatTransactionStatus(rawStatus);
     var action = decideAction(rawStatus);
     var result = 'updated';
+    // Never let the original payment's refreshed status clobber a refund label already
+    // recorded by the refund flow (the refresh endpoint has no knowledge of refunds).
+    var currentStatus = paymentTransaction.custom.cybsTransactionStatus;
+    var preserveRefundStatus = REFUND_STATUSES.indexOf(currentStatus) !== -1;
 
     Transaction.wrap(function () {
-        paymentTransaction.custom.cybsTransactionStatus = label;
+        if (!preserveRefundStatus) {
+            paymentTransaction.custom.cybsTransactionStatus = label;
+        }
         paymentTransaction.custom.resultTimestamp = new Date().toISOString();
 
         if (action === 'PLACE') {

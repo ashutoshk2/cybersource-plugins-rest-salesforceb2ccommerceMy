@@ -251,6 +251,97 @@ var unifiedCheckout = {
         
         this.bindEvents();
         this.bindShippingAddressChangeEvents();
+        this.injectUpdateBillingButton();
+    },
+
+    /**
+     * Inject an "Update Billing Address" button below the billing address form on the
+     * checkout page. SFRA persists the billing form only via CheckoutServices-SubmitPayment
+     * (Place Order), which UC hides. The dropdown-select path already regenerates the
+     * capture context on change, but "New address"/"Update address" entry has no persist
+     * step, so the entered address never reaches the basket. This button gives the shopper
+     * an explicit save-then-regenerate for those paths. See saveBillingAddressAndRegenerate.
+     */
+    injectUpdateBillingButton: function () {
+        // Checkout page only - the minicart/cart express instance has no billing form.
+        if ($('#dwfrm_billing').length === 0 || $('.unified-checkout-container').length === 0) {
+            return;
+        }
+        if ($('#uc-update-billing-address-btn').length > 0) {
+            return; // already injected
+        }
+        // Anchor after the phone/contact block (the last billing-address field in SFRA),
+        // outside .unified-checkout-container so it survives capture-context regeneration.
+        var $anchor = $('.contact-info-block').first();
+        if ($anchor.length === 0) {
+            $anchor = $('.billing-address').first();
+        }
+        if ($anchor.length === 0) {
+            return;
+        }
+        var btnHtml =
+            '<div class="row mt-2 mb-3" id="uc-update-billing-address-row">' +
+                '<div class="col-12">' +
+                    '<button type="button" id="uc-update-billing-address-btn" class="btn btn-outline-primary btn-block">Update Billing Address</button>' +
+                '</div>' +
+            '</div>';
+        $anchor.after(btnHtml);
+
+        // Keep the button and the phone/contact block hidden until the shopper opts to
+        // edit ("Update Address") or add ("Add New") a billing address. Existing-address
+        // selection regenerates automatically via the dropdown change handler, so it
+        // needs neither. See the .btn-show-details/.btn-add-new handler in bindEvents.
+        $('#uc-update-billing-address-row').hide();
+        $('.contact-info-block').hide();
+    },
+
+    /**
+     * Persist the checkout billing form to the basket, then regenerate the UC capture
+     * context so the widget authorizes against the entered billing address.
+     */
+    saveBillingAddressAndRegenerate: function () {
+        var self = this;
+
+        var url = self.sanitizeUrl($('#set-uc-billing-address-url').val());
+        if (!url) {
+            console.error('[UC] SetUCBillingAddress URL missing or invalid');
+            return;
+        }
+
+        var $form = $('#dwfrm_billing');
+        if ($form.length === 0) {
+            console.error('[UC] Billing form not found');
+            return;
+        }
+
+        var $btn = $('#uc-update-billing-address-btn');
+        $btn.prop('disabled', true);
+        ucPageSpinner().start();
+
+        $.ajax({
+            url: url,
+            type: 'POST',
+            dataType: 'json',
+            data: $form.serialize(),
+            success: function (data) {
+                ucPageSpinner().stop();
+                $btn.prop('disabled', false);
+
+                if (data && data.error) {
+                    self.showValidationError(data.errorMessage || 'Please complete the billing address before continuing.');
+                    return;
+                }
+
+                // Address saved to basket - regenerate so billTo reflects it.
+                self.clearValidationErrors();
+                self.regenerateCaptureContextIfNeeded(true);
+            },
+            error: function () {
+                ucPageSpinner().stop();
+                $btn.prop('disabled', false);
+                self.showValidationError('Unable to update billing address. Please try again.');
+            }
+        });
     },
 
     // ============================================================================
@@ -1190,6 +1281,22 @@ var unifiedCheckout = {
                     self.regenerateCaptureContextIfNeeded(true);
                 }
             }, 800); // allow Checkout-SetBillingAddress to persist the new address first
+        });
+
+        // Reveal the phone field and "Update Billing Address" button when the shopper
+        // chooses to edit ("Update Address") or add ("Add New") a billing address.
+        $(document).on('click', '.btn-show-details, .btn-add-new', function () {
+            $('.contact-info-block').show();
+            $('#uc-update-billing-address-row').show();
+        });
+
+        // "Update Billing Address" button (injected by injectUpdateBillingButton).
+        // Persists the billing form to the basket, THEN regenerates the capture context.
+        // Needed for the "New address"/"Update address" paths, which SFRA never persists
+        // until Place Order (hidden under UC).
+        $(document).on('click', '#uc-update-billing-address-btn', function (e) {
+            e.preventDefault();
+            self.saveBillingAddressAndRegenerate();
         });
 
         // "Update Address" submit in the billing form — the shopper edited the billing
@@ -2170,6 +2277,7 @@ var unifiedCheckout = {
             url: reloadUrl,
             type: 'GET',
             dataType: 'html',
+            timeout: 10000, // Don't let a hung request leave the page spinner running forever.
             success: function (html) {
                 // The CreateUCTokenSaveCard endpoint renders the unifiedCheckoutSaveCard
                 // fragment: the widget container plus fresh #ucCaptureContext / client
@@ -2183,10 +2291,16 @@ var unifiedCheckout = {
                     return;
                 }
 
-                // Remove the stale widget region and its associated hidden fields so we
-                // don't end up with duplicate #ucCaptureContext elements after insert.
-                $('.unified-checkout-container.uc-save-card').remove();
-                $('#ucCaptureContext, #uc-client-library, #uc-client-library-integrity, #unifiedCheckoutPaymentAcceptanceLocation').remove();
+                // Capture the stale widget + its hidden fields NOW, by reference, so they
+                // can be removed AFTER the fresh markup is inserted. Removing them first
+                // detaches $existing, making $existing[0].parentNode null; the insertBefore
+                // below then throws, aborting this success handler before ucPageSpinner()
+                // .stop() runs — which is exactly what left the loader spinning forever
+                // after a failed save. Capturing by reference also lets us delete only the
+                // stale nodes, leaving the freshly-inserted #ucCaptureContext intact.
+                var $staleNodes = $existing.add(
+                    $('#ucCaptureContext, #uc-client-library, #uc-client-library-integrity, #unifiedCheckoutPaymentAcceptanceLocation')
+                );
 
                 // Sanitize (strips the fragment's <script> tags — the SDK and this file
                 // are already loaded on the page) and insert the fresh widget markup.
@@ -2194,14 +2308,19 @@ var unifiedCheckout = {
                 var tempDiv = document.createElement('div');
                 tempDiv.innerHTML = sanitizedHtml;
                 if ($existing.length) {
+                    // Insert fresh nodes immediately before the still-attached stale widget.
                     while (tempDiv.firstChild) {
-                        $anchor[0].parentNode.insertBefore(tempDiv.firstChild, $anchor[0]);
+                        $existing[0].parentNode.insertBefore(tempDiv.firstChild, $existing[0]);
                     }
                 } else {
                     while (tempDiv.firstChild) {
                         $anchor[0].insertBefore(tempDiv.firstChild, $anchor[0].firstChild);
                     }
                 }
+
+                // Now remove the stale widget region and its stale hidden fields (by
+                // reference) so we don't end up with duplicate #ucCaptureContext elements.
+                $staleNodes.remove();
 
                 // Reset transient state from the failed attempt.
                 self.saveCardInstance = null;
