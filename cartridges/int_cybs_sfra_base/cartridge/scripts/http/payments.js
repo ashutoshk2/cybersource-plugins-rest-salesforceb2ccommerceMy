@@ -663,9 +663,6 @@ function generateUcCaptureContext(isMiniCart, selectedPaymentInstrumentId) {
         requestObj.country = currentLocale.country;
         requestObj.locale = currentLocale.ID;
 
-        Logger.info('[payments.js] generateUcCaptureContext: allowedPaymentTypes = {0}, country = {1}, currency = {2}',
-            JSON.stringify(allowedPaymentTypes), currentLocale.country, currency);
-
         // Capture Mandate (see requestingCC.md 4.2)
         var captureMandate = new cybersourceRestApi.Upv1capturecontextsCaptureMandate();
         if (isMiniCart) {
@@ -737,8 +734,6 @@ function generateUcCaptureContext(isMiniCart, selectedPaymentInstrumentId) {
             // This displays only "Pay now VISA •••• 1111" button - no other payment options
             requestObj.allowedPaymentTypes = ['TMS_TOKEN'];
 
-            Logger.info('[payments.js] generateUcCaptureContext: Using ONLY selected payment instrument: {0}',
-                selectedPaymentInstrumentId);
         } else if (!isMiniCart && isRegisteredCustomer && customerProfile) {
             // No card selected - saving a NEW card during checkout. Enable token creation and,
             // when the account already has a TMS customer, associate the new card with it so all
@@ -752,9 +747,7 @@ function generateUcCaptureContext(isMiniCart, selectedPaymentInstrumentId) {
             if (existingCustomerId) {
                 requestObj.paymentConfigurations.TMS_TOKEN = requestObj.paymentConfigurations.TMS_TOKEN || {};
                 requestObj.paymentConfigurations.TMS_TOKEN.customer = { id: existingCustomerId };
-                Logger.info('[payments.js] generateUcCaptureContext: associating new-card save with existing TMS customer id {0}', existingCustomerId);
             }
-            Logger.info('[payments.js] generateUcCaptureContext: Fresh card entry mode - all payment methods available');
         }
 
 
@@ -798,11 +791,6 @@ function generateUcCaptureContext(isMiniCart, selectedPaymentInstrumentId) {
             requestObj.data.consumerAuthenticationInformation = consumerAuthInfo;
         }
 
-        // Log full capture context request for debugging
-        Logger.info('[payments.js] generateUcCaptureContext FULL REQUEST: allowedPaymentTypes={0}, paymentConfigurations={1}',
-            JSON.stringify(requestObj.allowedPaymentTypes),
-            JSON.stringify(requestObj.paymentConfigurations));
-
         // Generate Capture Context
         var instance = new cybersourceRestApi.UnifiedCheckoutCaptureContextApi(configObject);
         var response = {};
@@ -844,10 +832,8 @@ function generateUcCaptureContext(isMiniCart, selectedPaymentInstrumentId) {
 function generateUcCaptureContextSaveCard(billTo) {
     var Logger = require('dw/system/Logger');
     var ucPaymentHelper = require('~/cartridge/scripts/helpers/ucPaymentHelper');
-    var webhookActivationHelper = require('~/cartridge/scripts/helpers/webhookActivationHelper');
 
     try {
-        webhookActivationHelper.activateWebhooks();
         var configObject = require('../../configuration/index');
         var cybersourceRestApi = require('../../apiClient/index');
 
@@ -919,7 +905,6 @@ function generateUcCaptureContextSaveCard(billTo) {
             requestObj.paymentConfigurations = {
                 TMS_TOKEN: { customer: { id: existingCustomerId } }
             };
-            Logger.info('[payments.js] generateUcCaptureContextSaveCard: associating save with existing TMS customer id {0}', existingCustomerId);
         }
 
         // Transient Token Response Options
@@ -968,7 +953,6 @@ function generateUcCaptureContextSaveCard(billTo) {
             }
         });
 
-        Logger.info('[payments.js] generateUcCaptureContextSaveCard: Capture context generated successfully for Save Card flow');
         return response;
     } catch (error) {
         Logger.error('[payments.js] generateUcCaptureContextSaveCard ERROR - Type: {0}, Message: {1}',

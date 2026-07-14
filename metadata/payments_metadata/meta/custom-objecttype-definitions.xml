@@ -27,8 +27,9 @@
                 <externally-managed-flag>false</externally-managed-flag>
                 <min-length>0</min-length>
             </attribute-definition>
-            <attribute-definition attribute-id="SecurityKey">
-                <display-name xml:lang="x-default">Security Key</display-name>
+            <attribute-definition attribute-id="SecurityKeyId">
+                <display-name xml:lang="x-default">Security Key Id</display-name>
+                <description xml:lang="x-default">KMS keyId of the currently active signing key (globalConfiguration record); the key material lives on the VisaAcceptanceWebhookSecurityKey object keyed by this id.</description>
                 <type>string</type>
                 <localizable-flag>false</localizable-flag>
                 <mandatory-flag>false</mandatory-flag>
@@ -37,6 +38,15 @@
             </attribute-definition>
             <attribute-definition attribute-id="Status">
                 <display-name xml:lang="x-default">Status</display-name>
+                <type>string</type>
+                <localizable-flag>false</localizable-flag>
+                <mandatory-flag>false</mandatory-flag>
+                <externally-managed-flag>false</externally-managed-flag>
+                <min-length>0</min-length>
+            </attribute-definition>
+            <attribute-definition attribute-id="Product">
+                <display-name xml:lang="x-default">Product</display-name>
+                <description xml:lang="x-default">Fraud product this subscription was created for (decisionManager or fraudManagementEssentials); empty for the Unified Checkout and globalConfiguration records.</description>
                 <type>string</type>
                 <localizable-flag>false</localizable-flag>
                 <mandatory-flag>false</mandatory-flag>
@@ -66,10 +76,40 @@
                 <attribute attribute-id="ConfigId"/>
                 <attribute attribute-id="WebhookId"/>
                 <attribute attribute-id="WebhookUrl"/>
-                <attribute attribute-id="SecurityKey"/>
+                <attribute attribute-id="SecurityKeyId"/>
                 <attribute attribute-id="Status"/>
+                <attribute attribute-id="Product"/>
                 <attribute attribute-id="BaseUrl"/>
                 <attribute attribute-id="EgressPublicKey"/>
+            </attribute-group>
+        </group-definitions>
+    </custom-type>
+    <custom-type type-id="VisaAcceptanceWebhookSecurityKey">
+        <display-name xml:lang="x-default">Visa Acceptance Webhook Security Key</display-name>
+        <description xml:lang="x-default">Stores each webhook signing key minted in KMS, keyed by its keyId, so WebhookNotification can fetch the exact key named in a notification's v-c-signature header.</description>
+        <staging-mode>no-staging</staging-mode>
+        <storage-scope>organization</storage-scope>
+        <key-definition attribute-id="KeyId">
+            <display-name xml:lang="x-default">Key Id</display-name>
+            <type>string</type>
+            <min-length>0</min-length>
+        </key-definition>
+        <attribute-definitions>
+            <attribute-definition attribute-id="Key">
+                <display-name xml:lang="x-default">Key</display-name>
+                <description xml:lang="x-default">Base64 shared secret returned by KMS at key creation; HMAC-SHA256 signing key for webhook signature validation.</description>
+                <type>string</type>
+                <localizable-flag>false</localizable-flag>
+                <mandatory-flag>false</mandatory-flag>
+                <externally-managed-flag>false</externally-managed-flag>
+                <min-length>0</min-length>
+            </attribute-definition>
+        </attribute-definitions>
+        <group-definitions>
+            <attribute-group group-id="VisaAcceptanceWebhookSecurityKey">
+                <display-name xml:lang="x-default">Visa Acceptance Webhook Security Key</display-name>
+                <attribute attribute-id="KeyId"/>
+                <attribute attribute-id="Key"/>
             </attribute-group>
         </group-definitions>
     </custom-type>

@@ -23,9 +23,10 @@
 			<iframe id="step-up-iframe" name="step-up-iframe" class="stepup-iframe"></iframe>
 			<form id="step-up-form" target="step-up-iframe" method="post" action="${pdict.stepUpUrl}" class="hidden">
 				<input type="hidden" name="JWT" value="${pdict.jwtToken}" />
-				<input type="hidden" name="MD" value="${pdict.orderNo}" />
 				<isif condition="${pdict.isScaFlow}">
-					<input type="hidden" name="MD" value="SCA" />
+					<input type="hidden" name="MD" value="${pdict.orderNo},SCA" />
+				<iselse>
+					<input type="hidden" name="MD" value="${pdict.orderNo}" />
 				</isif>
 			</form>
 		</div>

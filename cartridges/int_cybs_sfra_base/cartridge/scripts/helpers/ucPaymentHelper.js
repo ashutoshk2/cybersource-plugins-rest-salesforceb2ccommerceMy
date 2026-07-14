@@ -368,11 +368,15 @@ function mapCardType(cardTypeCode) {
         '062': 'China UnionPay',
         '036': 'CartesBancaires',
         '054': 'Elo',
+        '040': 'UATP',
+        '044': 'Korean Card',
         '046': 'JCrew',
         '070': 'EFTPOS',
         '067': 'Meeza',
         '060': 'Mada',
         '058': 'Carnet',
+        '065': 'Korean Card',
+        '068': 'PayPak',
         '081': 'Jaywan'
     };
 
@@ -392,7 +396,21 @@ function mapCardType(cardTypeCode) {
         'DINERS': 'DinersClub',
         'DINERSCLUB': 'DinersClub',
         'MAESTRO': 'Maestro',
-        'UNIONPAY': 'China UnionPay'
+        'UNIONPAY': 'China UnionPay',
+        'CUP': 'China UnionPay',
+        'CARTESBANCAIRES': 'CartesBancaires',
+        'CARTES BANCAIRES': 'CartesBancaires',
+        'ELO': 'Elo',
+        'EFTPOS': 'EFTPOS',
+        'JCREW': 'JCrew',
+        'CARNET': 'Carnet',
+        'MADA': 'Mada',
+        'MEEZA': 'Meeza',
+        'JAYWAN': 'Jaywan',
+        'UATP': 'UATP',
+        'PAYPAK': 'PayPak',
+        'KCP': 'Korean Card',
+        'KSCP': 'Korean Card'
     };
 
     return nameMap[upperCode] || cardTypeCode;
@@ -1651,17 +1669,11 @@ function saveTokenToWallet(jwtPayload, cardDetails, customer, transientToken) {
     }
 
     var CustomerMgr = require('dw/customer/CustomerMgr');
-    var TRLHelper = require('~/cartridge/scripts/helpers/tokenRateLimiterHelper.js');
 
     try {
         var profile = customer.getProfile();
         var customerObj = CustomerMgr.getCustomerByCustomerNumber(profile.customerNo);
 
-        var isAllowed = TRLHelper.IsCustumerAllowedSinglePaymentInstrumentInsertion(customerObj);
-        if (!isAllowed.result) {
-            logger.warn('saveTokenToWallet: Rate limiter rejected');
-            return false;
-        }
 
         var wallet = customerObj.profile.wallet;
 
@@ -1687,16 +1699,6 @@ function saveTokenToWallet(jwtPayload, cardDetails, customer, transientToken) {
         var upsertResult = upsertCreditCard(wallet, serializedToken, cardDetails, tokenInfo.instrumentIdentifier.id);
         logger.info('saveTokenToWallet: Card {0}. InstrumentIdentifier: {1}',
             upsertResult.replacedExisting ? 'updated (replaced)' : 'saved', tokenInfo.instrumentIdentifier.id);
-
-        // Only a brand-new card counts against the rate limiter (a replace is not a new insertion).
-        if (!upsertResult.replacedExisting) {
-            if (isAllowed.resetTimer) {
-                TRLHelper.resetTimer(customerObj);
-            }
-            if (isAllowed.increaseCounter) {
-                TRLHelper.increaseCounter(customerObj);
-            }
-        }
 
         return true;
     } catch (e) {

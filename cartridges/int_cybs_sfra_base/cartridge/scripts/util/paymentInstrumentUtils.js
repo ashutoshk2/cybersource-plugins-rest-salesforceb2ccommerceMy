@@ -38,6 +38,12 @@ function UpdatePaymentTransactionCardauthReversal(paymentInstrument, order, resp
     Transaction.wrap(function () {
         if (responseObject.status === 'REVERSED') {
             order.paymentStatus = 0;
+            // Reflect the confirmed reversal in BM Orders-Payment "Visa Acceptance Transaction Status".
+            // Keyed on the gateway-confirmed REVERSED response so it is only set when the reversal
+            // actually succeeded; a failed reversal leaves the prior status intact.
+            if (paymentInstrument && paymentInstrument.paymentTransaction) {
+                paymentInstrument.paymentTransaction.custom.cybsTransactionStatus = 'Reversed';
+            }
         }
     });
 }

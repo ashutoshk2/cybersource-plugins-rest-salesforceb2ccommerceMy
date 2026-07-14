@@ -24,8 +24,12 @@ function mapCardType(cardTypeCode) {
         '042': 'Maestro',
         '062': 'China UnionPay',
         '036': 'CartesBancaires',
+        '040': 'UATP',
+        '044': 'Korean Card',
         '054': 'Elo',
         '046': 'JCrew',
+        '065': 'Korean Card',
+        '068': 'PayPak',
         '070': 'EFTPOS',
         '067': 'Meeza',
         '060': 'Mada',
@@ -51,7 +55,21 @@ function mapCardType(cardTypeCode) {
         'DINERS': 'DinersClub',
         'DINERSCLUB': 'DinersClub',
         'MAESTRO': 'Maestro',
-        'UNIONPAY': 'China UnionPay'
+        'UNIONPAY': 'China UnionPay',
+        'CUP': 'China UnionPay',
+        'CARTESBANCAIRES': 'CartesBancaires',
+        'CARTES BANCAIRES': 'CartesBancaires',
+        'ELO': 'Elo',
+        'EFTPOS': 'EFTPOS',
+        'JCREW': 'JCrew',
+        'CARNET': 'Carnet',
+        'MADA': 'Mada',
+        'MEEZA': 'Meeza',
+        'JAYWAN': 'Jaywan',
+        'UATP': 'UATP',
+        'PAYPAK': 'PayPak',
+        'KCP': 'Korean Card',
+        'KSCP': 'Korean Card'
     };
     
     return nameMap[upperCode] || cardTypeCode;
@@ -530,18 +548,11 @@ function saveTokenToWallet(jwtPayload, cardDetails, customer) {
     var CustomerMgr = require('dw/customer/CustomerMgr');
     var dwOrderPaymentInstrument = require('dw/order/PaymentInstrument');
     var mapper = require('~/cartridge/scripts/util/mapper.js');
-    var TRLHelper = require('~/cartridge/scripts/helpers/tokenRateLimiterHelper.js');
 
     try {
         var profile = customer.getProfile();
         var customerObj = CustomerMgr.getCustomerByCustomerNumber(profile.customerNo);
 
-        // Check rate limiter
-        var isAllowed = TRLHelper.IsCustumerAllowedSinglePaymentInstrumentInsertion(customerObj);
-        if (!isAllowed.result) {
-            logger.warn('saveTokenToWallet: Rate limiter rejected - customer exceeded token creation limit');
-            return false;
-        }
 
         var wallet = customerObj.profile.wallet;
         var paymentInstruments = wallet.getPaymentInstruments().toArray();
@@ -631,14 +642,6 @@ function saveTokenToWallet(jwtPayload, cardDetails, customer) {
             logger.info('saveTokenToWallet: Token saved successfully. InstrumentIdentifier: {0}',
                 tokenInfo.instrumentIdentifier.id);
         });
-
-        // Update rate limiter
-        if (isAllowed.resetTimer) {
-            TRLHelper.resetTimer(customerObj);
-        }
-        if (isAllowed.increaseCounter) {
-            TRLHelper.increaseCounter(customerObj);
-        }
 
         return true;
     } catch (e) {

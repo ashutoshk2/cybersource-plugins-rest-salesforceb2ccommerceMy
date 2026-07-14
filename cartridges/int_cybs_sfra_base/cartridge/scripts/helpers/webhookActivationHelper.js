@@ -2,7 +2,7 @@
 
 var CustomObjectMgr = require('dw/object/CustomObjectMgr');
 var cybersourceRestApi = require('../../apiClient/index');
-var Logger = require('dw/system/Logger').getLogger('cybs_webhooks', 'webhookActivationHelper');
+var Logger = require('dw/system/Logger').getLogger('webhookActivationHelper');
 
 /**
  * Force the BM-managed webhook subscriptions to ACTIVE from the storefront payment flow.
@@ -18,11 +18,14 @@ function activateWebhooks() {
         var configObject = require('../../configuration/index');
 
         var webhooksToActivate = [
-            { type: 'VisaAcceptanceWebhookSubscription', id: 'fraudManagement' },
-            { type: 'VisaAcceptanceWebhookSubscription', id: 'unifiedCheckout' }
+            { type: 'VisaAcceptanceWebhookSubscription', id: 'fraudManagement', enabled: configObject.fmeDmEnabled },
+            { type: 'VisaAcceptanceWebhookSubscription', id: 'unifiedCheckout', enabled: configObject.unifiedCheckoutEnabled }
         ];
 
         webhooksToActivate.forEach(function (item) {
+            if (!item.enabled) {
+                return;
+            }
             var obj = CustomObjectMgr.getCustomObject(item.type, item.id);
             var webhookId = obj ? obj.custom.WebhookId : null;
             if (!webhookId) {

@@ -166,17 +166,6 @@ if (configObject.tokenizationEnabled && configObject.cartridgeEnabled) {
             return next();
         }
 
-        // Token rate limiter check
-        var tokenRateLimiterHelper = require('~/cartridge/scripts/helpers/tokenRateLimiterHelper');
-        var isAllowed = tokenRateLimiterHelper.IsCustumerAllowedSinglePaymentInstrumentInsertion(customerObj);
-        if (!isAllowed.result) {
-            logger.warn('SavePaymentDirect: Rate limiter rejected');
-            secureResponseHelper.secureJsonResponse(res, {
-                error: true,
-                errorMessage: Resource.msg('error.rate.limit.exceeded', 'payment', 'Too many card save attempts. Please try again later.')
-            });
-            return next();
-        }
 
         // Extract card details from JWT and transient token
         var cardDetails = ucPaymentHelper.extractCardDetails(jwtPayload, transientToken, null);
@@ -207,7 +196,7 @@ if (configObject.tokenizationEnabled && configObject.cartridgeEnabled) {
         }
 
         // Save token to wallet
-        var saveResult = ucPaymentHelper.saveTokenToWallet(jwtPayload, cardDetails, customerObj);
+        var saveResult = ucPaymentHelper.saveTokenToWallet(jwtPayload, cardDetails, customerObj, transientToken);
         logger.info('SavePaymentDirect: saveTokenToWallet result={0}', saveResult);
 
         if (!saveResult) {
@@ -270,14 +259,6 @@ if (configObject.tokenizationEnabled && configObject.cartridgeEnabled) {
                 });
                 return next();
             }
-        }
-
-        // Update rate limiter
-        if (isAllowed.resetTimer) {
-            tokenRateLimiterHelper.resetTimer(customerObj);
-        }
-        if (isAllowed.increaseCounter) {
-            tokenRateLimiterHelper.increaseCounter(customerObj);
         }
 
         // Maintain the default saved card: first card or ticked checkbox becomes default.

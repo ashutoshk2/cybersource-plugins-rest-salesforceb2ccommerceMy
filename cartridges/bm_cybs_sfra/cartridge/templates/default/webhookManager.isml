@@ -20,16 +20,22 @@
         <div style="background:#fbeae9;border:1px solid #f0c6c2;border-left:3px solid #b3261e;color:#8a2018;padding:12px 14px;border-radius:6px;margin:0 0 10px;font-size:13px;line-height:1.5"><b>Egress MLE key required.</b> Unified Checkout webhooks use Response MLE. Upload your egress key-pair <code style="font-family:ui-monospace,Consolas,monospace;background:rgba(27,31,36,0.07);padding:1px 5px;border-radius:4px">.p12</code> under <b>Administration &gt; Operations &gt; Private Keys and Certificates</b>, set its alias in <b>Egress MLE Key Alias</b> below, save Advanced Settings, then re-synchronize.</div>
     </isif>
     <isif condition="${pdict.error === 'sync_failed'}">
-        <div style="background:#fbeae9;border:1px solid #f0c6c2;border-left:3px solid #b3261e;color:#8a2018;padding:12px 14px;border-radius:6px;margin:0 0 10px;font-size:13px;line-height:1.5"><b>Sync failed.</b> One or more webhooks could not be synchronized. Check the table below for products still showing <b>NOT SUBSCRIBED</b>, confirm the product is provisioned for your merchant, then review the <code style="font-family:ui-monospace,Consolas,monospace;background:rgba(27,31,36,0.07);padding:1px 5px;border-radius:4px">cybs_webhooks</code> custom log for details.</div>
+        <div style="background:#fbeae9;border:1px solid #f0c6c2;border-left:3px solid #b3261e;color:#8a2018;padding:12px 14px;border-radius:6px;margin:0 0 10px;font-size:13px;line-height:1.5"><b>Sync failed.</b> One or more webhooks could not be synchronized. Check the table below for products still showing <b>NOT SUBSCRIBED</b>, confirm the product is provisioned for your merchant, then review the <code style="font-family:ui-monospace,Consolas,monospace;background:rgba(27,31,36,0.07);padding:1px 5px;border-radius:4px">customerror</code> custom log for details.</div>
     </isif>
-    <isset name="fraudStatus" value="${pdict.subscriptions.fraudManagement ? pdict.subscriptions.fraudManagement.status : ''}" scope="page" />
-    <isset name="ucStatus" value="${pdict.subscriptions.unifiedCheckout ? pdict.subscriptions.unifiedCheckout.status : ''}" scope="page" />
-    <isif condition="${(fraudStatus && fraudStatus !== 'ACTIVE') || (ucStatus && ucStatus !== 'ACTIVE')}">
+    <isset name="fraudSub" value="${pdict.subscriptions.fraudManagement}" scope="page" />
+    <isset name="ucSub" value="${pdict.subscriptions.unifiedCheckout}" scope="page" />
+    <!-- "Not active" is only meaningful when a subscription actually EXISTS; a non-active status on an
+         existing subscription is what this warns about. When no subscription exists, the "Configuration
+         mismatch" banner below is the correct (and only) message. -->
+    <isset name="fraudNotActive" value="${fraudSub && fraudSub.status && fraudSub.status !== 'ACTIVE'}" scope="page" />
+    <isset name="ucNotActive" value="${ucSub && ucSub.status && ucSub.status !== 'ACTIVE'}" scope="page" />
+    <isif condition="${fraudNotActive || ucNotActive}">
         <div style="background:#fdf3d7;border:1px solid #ecd9a4;border-left:3px solid #9a6700;color:#7a5200;padding:12px 14px;border-radius:6px;margin:0 0 10px;font-size:13px;line-height:1.5"><b>Webhook not active.</b> A subscription is not <b>ACTIVE</b> at Visa Acceptance (see the Webhook Status column). A webhook only delivers when ACTIVE; it moves to ACTIVE after a successful health check from Visa Acceptance. If it stays INACTIVE, PENDING REVIEW, or SUSPENDED, confirm Visa Acceptance can reach the webhook URL.</div>
     </isif>
 
-    <isset name="dmMismatch" value="${pdict.config.dmEnabled && !pdict.subscriptions.fraudManagement}" scope="page" />
-    <isset name="ucMismatch" value="${pdict.config.secureIntegrationMethod === 'Unified_Checkout' && !pdict.subscriptions.unifiedCheckout}" scope="page" />
+    <!-- "Configuration mismatch" covers the not-subscribed case: feature enabled but no subscription exists. -->
+    <isset name="dmMismatch" value="${pdict.config.dmEnabled && !fraudSub}" scope="page" />
+    <isset name="ucMismatch" value="${pdict.config.secureIntegrationMethod === 'Unified_Checkout' && !ucSub}" scope="page" />
     <isif condition="${dmMismatch || ucMismatch}">
         <div style="background:#fbeae9;border:1px solid #f0c6c2;border-left:3px solid #b3261e;color:#8a2018;padding:12px 14px;border-radius:6px;margin:0 0 10px;font-size:13px;line-height:1.5"><b>Configuration mismatch.</b> Some features are enabled in Site Preferences but have no active webhook subscription. Click <b>Synchronize Webhooks</b> below to prevent order-processing issues.</div>
     </isif>
@@ -83,10 +89,6 @@
         </table>
         <div style="text-align:right;margin:14px 0 30px"><button type="submit" onclick="return confirm('Updating these settings will re-sync active webhooks. Continue?')" style="background:#f6f8fa;color:#24292f;border:1px solid #d0d7de;padding:9px 18px;border-radius:6px;font-size:13px;font-weight:500;cursor:pointer">Update Advanced Settings</button></div>
     </form>
-
-    <isif condition="${pdict.external && pdict.external.length > 0}">
-        <div style="background:#fdf3d7;border:1px solid #ecd9a4;border-left:3px solid #9a6700;color:#7a5200;padding:12px 14px;border-radius:6px;margin:8px 0 0;font-size:13px;line-height:1.5"><b>Untracked webhooks.</b> Found <b>${pdict.external.length}</b> untracked webhook(s). Manage them manually in Business Center to avoid duplicate notifications.</div>
-    </isif>
 
 </div>
 <!-- END GENAI -->

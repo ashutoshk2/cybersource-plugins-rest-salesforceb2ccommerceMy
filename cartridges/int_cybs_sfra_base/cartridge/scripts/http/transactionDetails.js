@@ -51,6 +51,34 @@ function getCapturedAmount(transactionId) {
     return result;
 }
 
+/**
+ * Retrieve a transaction's clientReferenceInformation.code (the SFCC order number) via
+ * GET /tss/v2/transactions/{id}. APM (payments.payments.updated) notifications frequently omit the
+ * order number and carry a payment id that does not match the auth transactionID stored on the order,
+ * so the order can only be resolved by asking the gateway which order this transaction belongs to.
+ *
+ * @param {string} transactionId Visa Acceptance transaction (request) id
+ * @returns {string|null} clientReferenceInformation.code (order number) or null on any failure
+ */
+function getClientReferenceCode(transactionId) {
+    if (!transactionId) {
+        return null;
+    }
+    var instance = new cybersourceRestApi.TransactionDetailsApi(configObject);
+    var result = null;
+    instance.getTransaction(transactionId, function (data, error) {
+        if (error || !data) {
+            Logger.error('[transactionDetails.js] getTransaction failed for ( {0} ): {1}', transactionId, error);
+            return;
+        }
+        if (data.clientReferenceInformation && data.clientReferenceInformation.code) {
+            result = String(data.clientReferenceInformation.code);
+        }
+    });
+    return result;
+}
+
 module.exports = {
-    getCapturedAmount: getCapturedAmount
+    getCapturedAmount: getCapturedAmount,
+    getClientReferenceCode: getClientReferenceCode
 };
