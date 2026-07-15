@@ -11,23 +11,99 @@ var page = module.superModule;
 server.extend(page);
 
 if (configObject.tokenizationEnabled && configObject.cartridgeEnabled) {
-    server.prepend('DeletePayment', userLoggedIn.validateLoggedInAjax, function (req, res, next) {
+    /**
+     * PaymentInstruments-DeletePayment : Deletes a saved card.
+     *
+     * Fully replaces the base handler (rather than prepend/append) so we can guard the
+     * default card and own the whole flow in one place:
+     *   1. Refuse to delete the default card while other saved cards remain — the shopper
+     *      must promote another card to default first, so we never silently move the
+     *      default to an arbitrary card or leave the wallet without one.
+     *   2. Remove the TMS token at CyberSource, then the local wallet instrument.
+     *   3. Keep exactly one default among any remaining cards.
+     *
+     * SFRA's middleware chain only short-circuits on redirect/error, so a prepend cannot
+     * cleanly return a JSON warning without the base delete still running — hence replace.
+     */
+    server.replace('DeletePayment', server.middleware.get, userLoggedIn.validateLoggedInAjax, function (req, res, next) {
+        var CustomerMgr = require('dw/customer/CustomerMgr');
+        var Transaction = require('dw/system/Transaction');
+        var Resource = require('dw/web/Resource');
+        var accountHelpers = require('*/cartridge/scripts/helpers/accountHelpers');
+        var defaultPaymentHelper = require('~/cartridge/scripts/helpers/defaultPaymentHelper');
         var tokenManagement = require('../scripts/http/tokenManagement');
         var mapper = require('~/cartridge/scripts/util/mapper.js');
-        var array = require('*/cartridge/scripts/util/array');
+
+        var data = res.getViewData();
+        if (data && !data.loggedin) {
+            res.json();
+            return next();
+        }
+
         var UUID = req.querystring.UUID;
-        var paymentInstruments = req.currentCustomer.wallet.paymentInstruments;
-        var paymentToDelete = array.find(paymentInstruments, function (item) {
-            return UUID === item.UUID;
-        });
-        if (paymentToDelete) {
-            var paymentToken = paymentToDelete.raw.getCreditCardToken();
-            var tokenInformation = mapper.deserializeTokenInformation(paymentToken);
-            if (tokenInformation.paymentInstrument.id) {
-                // eslint-disable-next-line no-undef
-                tokenManagement.httpDeleteCustomerPaymentInstrument(session.getCustomer().getProfile().custom.customerID, tokenInformation.paymentInstrument.id);
+        var customer = CustomerMgr.getCustomerByCustomerNumber(req.currentCustomer.profile.customerNo);
+        var wallet = customer.getProfile().getWallet();
+        var cards = defaultPaymentHelper.getCreditCardInstruments(wallet);
+
+        var paymentToDelete = null;
+        for (var i = 0; i < cards.length; i++) {
+            if (cards[i].UUID === UUID) {
+                paymentToDelete = cards[i];
+                break;
             }
         }
+
+        // Guard: block deleting the default card while other saved cards remain.
+        // (When it is the only card, deletion is allowed — nothing to default to.)
+        // Returned as { error: true } with HTTP 200 to match the cartridge's other
+        // AJAX error responses; the client surfaces the message in the delete modal.
+        if (paymentToDelete && defaultPaymentHelper.isDefault(paymentToDelete) && cards.length > 1) {
+            res.json({
+                error: true,
+                defaultCard: true,
+                message: Resource.msg('msg.payment.default.delete', 'payment', null)
+            });
+            return next();
+        }
+
+        this.on('route:BeforeComplete', function () {
+            if (!paymentToDelete) {
+                res.json({ UUID: UUID });
+                return;
+            }
+
+            // Remove the TMS token at CyberSource (best-effort; still remove locally).
+            try {
+                var paymentToken = paymentToDelete.getCreditCardToken();
+                var tokenInformation = mapper.deserializeTokenInformation(paymentToken);
+                if (tokenInformation.paymentInstrument.id) {
+                    tokenManagement.httpDeleteCustomerPaymentInstrument(customer.getProfile().custom.customerID, tokenInformation.paymentInstrument.id);
+                }
+            } catch (e) {
+                require('dw/system/Logger').getLogger('VisaAcceptance', 'DeletePayment')
+                    .warn('DeletePayment: TMS token cleanup skipped: {0}', e.message || e);
+            }
+
+            Transaction.wrap(function () {
+                wallet.removePaymentInstrument(paymentToDelete);
+            });
+
+            // Keep exactly one default among any remaining cards.
+            defaultPaymentHelper.ensureSingleDefault(wallet);
+
+            // Send account edited email
+            accountHelpers.sendAccountEditedEmail(customer.profile);
+
+            if (wallet.getPaymentInstruments().length === 0) {
+                res.json({
+                    UUID: UUID,
+                    message: Resource.msg('msg.no.saved.payments', 'payment', null)
+                });
+            } else {
+                res.json({ UUID: UUID });
+            }
+        });
+
         return next();
     });
     server.prepend('List', userLoggedIn.validateLoggedIn, function (req, res, next) {
@@ -72,23 +148,6 @@ if (configObject.tokenizationEnabled && configObject.cartridgeEnabled) {
                 defaultPaymentHelper.setDefaultByUUID(wallet, uuid);
             }
             res.redirect(URLUtils.url('PaymentInstruments-List'));
-        });
-        return next();
-    });
-
-    /**
-     * Appends to PaymentInstruments-DeletePayment so that deleting the default card
-     * promotes another saved card to default (keeps exactly one default when cards remain).
-     */
-    server.append('DeletePayment', userLoggedIn.validateLoggedInAjax, function (req, res, next) {
-        var CustomerMgr = require('dw/customer/CustomerMgr');
-        var defaultPaymentHelper = require('~/cartridge/scripts/helpers/defaultPaymentHelper');
-        this.on('route:BeforeComplete', function (req1) {
-            var customer = CustomerMgr.getCustomerByCustomerNumber(
-                req1.currentCustomer.profile.customerNo
-            );
-            var wallet = customer.getProfile().getWallet();
-            defaultPaymentHelper.ensureSingleDefault(wallet);
         });
         return next();
     });

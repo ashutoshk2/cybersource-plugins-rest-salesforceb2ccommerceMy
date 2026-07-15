@@ -43,6 +43,8 @@
                             data-id="${paymentInstrument.UUID}"
                             data-card="${paymentInstrument.maskedCreditCardNumber}"
                             data-url="${pdict.actionUrl}"
+                            data-default="${paymentInstrument.isDefault ? 'true' : 'false'}"
+                            data-default-warning="${Resource.msg('msg.payment.default.delete','payment',null)}"
                             aria-label="${Resource.msg('label.payment.deletepayment','payment',null)}">
                             &times;
                         </button>
