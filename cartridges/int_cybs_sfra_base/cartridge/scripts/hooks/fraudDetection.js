@@ -29,7 +29,7 @@ function fraudDetection(basket) { // eslint-disable-line no-unused-vars
         }
     }
 
-    if (decision === 'AUTHORIZED_PENDING_REVIEW') {
+    if (decision === 'AUTHORIZED_PENDING_REVIEW' || decision === 'PENDING_REVIEW') {
         status = 'review';
     } else if (decision === 'REJECT') { //  Reject state shouldn't happen with CS. The CC auth returns an error when decision is REJECT, so it shouldn't get to this point.
         status = 'fail';

@@ -23,6 +23,7 @@ function Handle(basket, paymentInformation) {
     var logger = Logger.getLogger('VisaAcceptance', 'PaymentProcessor');
     var serverErrors = [];
     var VENMO = 'VENMO';
+    var paymentDetails = (paymentInformation && paymentInformation.paymentDetails) || null;
 
     try {
         Transaction.wrap(function () {
@@ -40,6 +41,16 @@ function Handle(basket, paymentInformation) {
                 basket.totalGrossPrice
             );
 
+            if (!basket.getCustomerEmail() && paymentDetails) {
+                var orderInfo = paymentDetails.orderInformation;
+                var email = (paymentDetails.buyerInformation && paymentDetails.buyerInformation.email)
+                    || (orderInfo && orderInfo.shipTo && orderInfo.shipTo.email)
+                    || (orderInfo && orderInfo.billTo && orderInfo.billTo.email)
+                    || '';
+                if (email) {
+                    basket.setCustomerEmail(email);
+                }
+            }
         });
 
         return {

@@ -1,11 +1,6 @@
 'use strict';
 /**
  * Helper functions for Unified Checkout payment processing
- * Includes:
- * - Token processing and address population
- * - completeMandate helpers for PlaceOrderDirect flow
- * - Capture context building helpers
- * - TMS token saving helpers
  */
 
 var Transaction = require('dw/system/Transaction');
@@ -702,6 +697,7 @@ var METHOD_TO_PROCESSOR_ID = {
     BANK_TRANSFER: 'bank_transfer',
     DW_APPLE_PAY: 'payments_applepay',
     DW_GOOGLE_PAY: 'payments_googlepay',
+    DW_PAZE: 'payments_paze',
     CLICK_TO_PAY: 'payments_click_to_pay',
     PAYPAL: 'payments_paypal',
     VENMO: 'payments_venmo',
@@ -1008,15 +1004,6 @@ function setInstrumentCustomAttribute(paymentInstrument, attributeName, value) {
 /**
  * Check if authorization/capture status is valid for order placement
  * Handles both AUTH and CAPTURE (sale) transaction types
- * 
- * AUTH statuses:
- * - AUTHORIZED: Authorization successful
- * - AUTHORIZED_PENDING_REVIEW: Authorization successful, pending fraud review
- * 
- * CAPTURE (sale) statuses:
- * - CAPTURED: Capture/sale successful
- * - PARTIAL_CAPTURED: Partial capture successful
- * - PENDING: Transaction pending (some capture flows)
  *
  * PENDING is also the normal terminal state for asynchronous/redirect alternate
  * payment methods (PPRO bank transfers, some BNPL). The order is placed but left
@@ -1031,6 +1018,7 @@ function isValidAuthorizationStatus(status) {
         // AUTH statuses
         'AUTHORIZED',
         'AUTHORIZED_PENDING_REVIEW',
+        'PENDING_REVIEW',
         // CAPTURE (sale) statuses
         'CAPTURED',
         'PARTIAL_CAPTURED',
@@ -1265,7 +1253,7 @@ function buildLineItems(basket) {
                 unitPrice: formatAmount(lineItem.basePrice.value, currencyCode),
                 totalAmount: formatAmount(lineItem.basePrice.value * lineItem.quantityValue, currencyCode),
                 typeOfSupply: '00',
-                taxAmount: formatAmount(lineItem.adjustedTax.value > 0 ? lineItem.adjustedTax.value : 0, currencyCode)
+                taxAmount: formatAmount(lineItem.adjustedTax.value > 0 ? lineItem.adjustedTax.value / lineItem.quantityValue : 0, currencyCode)
             };
 
             // When product-level and/or order-level promotions apply to this line, switch the
