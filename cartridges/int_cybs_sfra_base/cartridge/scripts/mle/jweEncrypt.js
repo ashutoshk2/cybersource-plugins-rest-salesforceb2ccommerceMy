@@ -21,6 +21,7 @@ function getJWE(payload) {
     var joseHeader = {
         "alg": "RSA-OAEP",
         "enc": "A256GCM",
+        "cty": "JWT",
         "iat": currentTimestamp,
         "kid": kid,
     }

@@ -421,12 +421,18 @@ _exports.prototype.callApi = function (path, httpMethod, pathParams, queryParams
         }
         payload = JSON.stringify(bodyParam);
 
-        var isMLEEnabled = configObject.mleEnabled;
-
-        if (isMLEEnabled && isMLESupportedByCybsForApi == true) {
-            var encryptPayload = require('*/cartridge/scripts/mle/jweEncrypt.js');
-            payload = encryptPayload.getJWE(payload);
-
+        // MLE runs for every MLE-capable endpoint (no BM enable flag). It is gated only on the
+        // encryption cert config being present; if the alias or serial number is missing we log
+        // and abort rather than send an unencrypted request.
+        if (isMLESupportedByCybsForApi == true) {
+            if (!empty(configObject.mleCertificateAlias) && !empty(configObject.mleCertificateSerialNumber)) {
+                var encryptPayload = require('*/cartridge/scripts/mle/jweEncrypt.js');
+                payload = encryptPayload.getJWE(payload);
+            } else {
+                var mleErrorMessage = 'MLE required for ' + path + ' but VisaAcceptance_CertificateAlias and/or VisaAcceptance_CertificateSerialNo site preference is missing. Aborting request.';
+                require('dw/system/Logger').getLogger('VisaAcceptance', 'mle').error(mleErrorMessage);
+                throw new Error(mleErrorMessage);
+            }
         }
         // Unprefixed base64 SHA-256 digest of the (possibly MLE-encrypted) payload.
         // HTTP signature adds the "SHA-256=" prefix for its digest header; JWT uses the
@@ -490,3 +496,4 @@ _exports.prototype.callApi = function (path, httpMethod, pathParams, queryParams
 module.exports = {
     instance: new _exports()
 };
+ 

@@ -1,4 +1,4 @@
-/* eslint-disable no-plusplus */
+/* eslint-disable no-plusplus */ 
 
 'use strict';
 
@@ -119,6 +119,48 @@ function isTaxStale(basket, taxResult) {
 }
 
 /**
+ * Calculate sales tax using ONLY the default tax jurisdiction, ignoring any shipping address on
+ * the basket. Used on cart/minicart (non-checkout, non-Apple-Pay) routes: the DW Apple Pay express
+ * flow leaves its shipping address on the shared cart basket, and TaxMgr would otherwise tax that
+ * address's jurisdiction (0% in RefArch) and drop the cart total. Mirrors app_storefront_base
+ * `scripts/hooks/taxes.js` calculateTaxes but pins the jurisdiction to the default.
+ * @param {dw.order.Basket} basket - current basket
+ * @returns {Object} - SFRA-shaped tax result { taxes: [...], custom: {} }
+ */
+function calculateDefaultJurisdictionTaxes(basket) {
+    var TaxMgr = require('dw/order/TaxMgr');
+    var collections = require('*/cartridge/scripts/util/collections');
+
+    var taxJurisdictionId = TaxMgr.defaultTaxJurisdictionID;
+    // No default jurisdiction configured — defer to the base implementation.
+    if (!taxJurisdictionId) {
+        return BasketCalculationHelpers.calculateTaxes(basket);
+    }
+
+    var taxes = [];
+    collections.forEach(basket.getAllLineItems(), function (lineItem) {
+        var taxClassId = lineItem.taxClassID;
+        // do not touch line items with a fixed tax rate
+        if (taxClassId === TaxMgr.customRateTaxClassID) {
+            return;
+        }
+        if (!taxClassId) {
+            taxClassId = TaxMgr.defaultTaxClassID;
+        }
+        if (!taxClassId) {
+            return;
+        }
+        var taxRate = TaxMgr.getTaxRate(taxClassId, taxJurisdictionId);
+        if (!taxRate && taxRate !== 0) {
+            return;
+        }
+        taxes.push({ uuid: lineItem.UUID, value: taxRate, amount: false });
+    });
+
+    return { taxes: taxes, custom: {} };
+}
+
+/**
  * Calculate sales taxes
  * @param {dw.order.Basket} basket - current basket
  * @returns {Object} - object describing taxes that needs to be applied
@@ -128,28 +170,35 @@ function calculateTaxes(basket) {
     // eslint-disable-next-line no-shadow
     var configObject = require('../../configuration/index');
     var mapper = require('~/cartridge/scripts/util/mapper.js');
-    // If Rest Tax Calculation Service is not Enabled fall back into
-    // base cartridge's implementation
-    if (!configObject.taxServiceEnabled) {
-        return BasketCalculationHelpers.calculateTaxes(basket);
-    }
 
     var allowedRoutes = configObject.calculateTaxOnRoute;
     var currentAction = helpers.getCurrentRouteAction();
+    var isApplePay = currentAction.toLowerCase().indexOf('__SYSTEM__ApplePay'.toLowerCase()) >= 0;
 
     var allowedRouteResult = allowedRoutes.filter(function (el) {
         return el.route === currentAction;
     });
-
-    var isApplePay = currentAction.toLowerCase().indexOf('__SYSTEM__ApplePay'.toLowerCase()) >= 0;
     var allowedRoute;
     if (isApplePay && basket.billingAddress) {
         allowedRoute = true;
     } else {
-        allowedRouteResult = allowedRoutes.filter(function (el) {
-            return el.route === currentAction;
-        });
         allowedRoute = allowedRoutes.length > 0 ? allowedRouteResult[0] : null;
+    }
+
+    // Cart / minicart / PDP / etc. — any non-checkout route that is NOT the Apple Pay express flow —
+    // must ALWAYS show the SFCC default-jurisdiction tax, independent of the CyberSource tax-service
+    // config: this is a pre-checkout display concern, not a CyberSource-tax concern. The DW Apple Pay
+    // express flow leaves its shipping address on the shared cart basket; without this the cart would
+    // tax that address's jurisdiction (0% in RefArch) instead of the default and the total would drop.
+    // Apple Pay routes fall through so the sheet/order still use the real shipping-address tax.
+    if (!allowedRoute && !isApplePay) {
+        return calculateDefaultJurisdictionTaxes(basket);
+    }
+
+    // From here we are on a checkout or Apple Pay route. If the CyberSource tax calculation service
+    // is not enabled, fall back to the base (address-based) SFCC implementation for those routes.
+    if (!configObject.taxServiceEnabled) {
+        return BasketCalculationHelpers.calculateTaxes(basket);
     }
 
     var calculatedTaxValue = retrieveTaxResult();
@@ -243,3 +292,4 @@ for (var i = 0; i < keys.length; i++) {
 }
 
 module.exports = BasketCalculationHelpersOverride;
+ 

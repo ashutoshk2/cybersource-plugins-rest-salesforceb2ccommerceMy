@@ -122,7 +122,6 @@ function getConfig(config) {
         isSCAEnabled: config.isSCAEnabled || customPreferences.PayerAuthentication.Preferences.IsSCAEnabled.getValue(),
 
         //MLE
-        mleEnabled: config.mleEnabled || customPreferences.MLE.Preferences.EnableMLE.getValue(),
         mleCertificateSerialNumber: config.mleCertificateSerialNumber || customPreferences.MLE.Preferences.MLECertificateSerialNumber.getValue(),
         mleCertificateAlias: config.mleCertificateAlias || customPreferences.MLE.Preferences.MLECertificateAlias.getValue(),
         egressMleCertificateAlias: config.egressMleCertificateAlias ||customPreferences.MLE.Preferences.EgressMLECertificateAlias.getValue(),

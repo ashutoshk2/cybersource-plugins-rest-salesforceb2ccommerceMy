@@ -614,17 +614,6 @@ SecureIntegrationConfiguration:{
     display_name: 'Message-Level Encryption Configration',
     Preferences: {
         /** @type {CustomPreference} */
-        EnableMLE: {
-            id: 'VisaAcceptance_MLEEnabled',
-            display_name: 'Enable Message-Level Encryption',
-            description: 'Enable or Disable Message-Level Encryption.',
-            type: Types.boolean,
-            default: false,
-            flags: {
-                mandatory: false
-            }
-        },
-        /** @type {CustomPreference} */
         MLECertificateSerialNumber: {
             id: 'VisaAcceptance_CertificateSerialNo',
             display_name: 'Certificate Serial Number',

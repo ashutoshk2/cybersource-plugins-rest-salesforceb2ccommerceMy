@@ -646,7 +646,7 @@ function generateUcCaptureContext(isMiniCart, selectedPaymentInstrumentId) {
 
             // Alternative Payment Methods (APMs) - locale/currency specific
             allowedPaymentTypes.push('IDEAL');       // NL
-            allowedPaymentTypes.push('BANCONTACT');  // BE
+            // allowedPaymentTypes.push('BANCONTACT');  // BE
             allowedPaymentTypes.push('MULTIBANCO');  // PT
             allowedPaymentTypes.push('MYBANK');      // IT
             // allowedPaymentTypes.push('TINKPAYBYBANK'); // GB
