@@ -96,12 +96,11 @@
                 <mandatory-flag>false</mandatory-flag>
                 <externally-managed-flag>false</externally-managed-flag>
             </attribute-definition>
-            <attribute-definition attribute-id="refundStatus">
-                <display-name xml:lang="x-default">Refund Status</display-name>
-                <type>string</type>
+            <attribute-definition attribute-id="refundTransactionIds">
+                <display-name xml:lang="x-default">Refund Transaction IDs</display-name>
+                <type>text</type>
                 <mandatory-flag>false</mandatory-flag>
                 <externally-managed-flag>false</externally-managed-flag>
-                <min-length>0</min-length>
             </attribute-definition>
         </custom-attribute-definitions>
         <group-definitions>
@@ -123,7 +122,7 @@
                 <attribute attribute-id="resultTimestamp"/>
                 <attribute attribute-id="refundedAmount"/>
                 <attribute attribute-id="remainingRefundable"/>
-                <attribute attribute-id="refundStatus"/>
+                <attribute attribute-id="refundTransactionIds"/>
             </attribute-group>
         </group-definitions>
     </type-extension>
