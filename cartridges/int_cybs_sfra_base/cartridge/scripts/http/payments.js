@@ -693,16 +693,6 @@ function generateUcCaptureContext(isMiniCart, selectedPaymentInstrumentId) {
         // attaches to the existing customer instead of minting a new one (mirrors Non-UC).
         var existingCustomerId = ucPaymentHelper.getExistingTmsCustomerId(customer);
 
-        // Payment Configurations - Initialize with digital wallet configs
-        // This is required for Google Pay, Click to Pay, etc. to appear
-        requestObj.paymentConfigurations = {
-            GOOGLEPAY: {
-                allowedAuthMethods: ['PAN_ONLY', 'CRYPTOGRAM_3DS']
-            },
-            CLICKTOPAY: {
-                autoCheckEnrollment: true
-            }
-        };
         // Complete Mandate - UC v1: TMS token configuration only.
         // completeMandate.type (transaction type) is EBC-managed and must NOT be
         // sent in ISV Phase 1 - only completeMandate.tms is permitted (see requestingCC.md).
