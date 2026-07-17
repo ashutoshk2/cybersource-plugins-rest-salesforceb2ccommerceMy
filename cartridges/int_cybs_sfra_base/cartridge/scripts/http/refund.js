@@ -7,16 +7,26 @@ var Constants = require('../../apiClient/constants');
 
 var auditLogger = Logger.getLogger('VisaAcceptance', 'refund');
 
+// endpoint selector values posted from refundServiceForm.isml.
+// 'payments' -> /pts/v2/payments/{id}/refunds  (eCheck and APMs)
+// 'captures' -> /pts/v2/captures/{id}/refunds  (all other payments)
+var REFUND_VIA_PAYMENTS = 'payments';
+
 /**
  * *
- * @param {*} transactionId capture id (the {id} the refund is issued against) *
+ * @param {*} transactionId the id the refund is issued against — a payment id when
+ *   refunding via /payments/{id}/refunds (eCheck/APMs) or a capture id when refunding
+ *   via /captures/{id}/refunds (other payments) *
  * @param {*} referenceInformationCode merchant order reference (order number) *
  * @param {*} total refund amount *
  * @param {*} currency currency code *
+ * @param {*} refundEndpointType 'payments' for eCheck/APMs (refund the payment) or
+ *   'captures'/undefined for other payments (refund the capture) *
  * @returns {*} *
  */
-function httpRefundPayment(transactionId, referenceInformationCode, total, currency) {
+function httpRefundPayment(transactionId, referenceInformationCode, total, currency, refundEndpointType) {
     var instance = new cybersourceRestApi.RefundApi(configObject);
+    var refundViaPayments = String(refundEndpointType) === REFUND_VIA_PAYMENTS;
 
     var clientReferenceInformation = new cybersourceRestApi.Ptsv2paymentsClientReferenceInformation();
     clientReferenceInformation.code = referenceInformationCode;
@@ -35,7 +45,11 @@ function httpRefundPayment(transactionId, referenceInformationCode, total, curre
     var orderInformation = new cybersourceRestApi.Ptsv2paymentsidrefundsOrderInformation();
     orderInformation.amountDetails = amountDetails;
 
-    var request = new cybersourceRestApi.RefundCaptureRequest();
+    // Both endpoints take the same clientReferenceInformation/orderInformation shape;
+    // only the request class and the API method (and therefore the URL) differ.
+    var request = refundViaPayments
+        ? new cybersourceRestApi.RefundPaymentRequest()
+        : new cybersourceRestApi.RefundCaptureRequest();
     request.clientReferenceInformation = clientReferenceInformation;
     request.orderInformation = orderInformation;
 
@@ -84,7 +98,7 @@ function httpRefundPayment(transactionId, referenceInformationCode, total, curre
 
     var result = '';
     // eslint-disable-next-line consistent-return
-    instance.refundCapture(request, transactionId, function (data, error, response) { // eslint-disable-line no-unused-vars
+    var refundCallback = function (data, error, response) { // eslint-disable-line no-unused-vars
         if (!error) {
             result = data;
             try {
@@ -107,7 +121,15 @@ function httpRefundPayment(transactionId, referenceInformationCode, total, curre
                 referenceInformationCode, JSON.stringify(data));
             throw new Error(data);
         }
-    });
+    };
+
+    if (refundViaPayments) {
+        // eCheck and APMs: refund the payment — /pts/v2/payments/{id}/refunds
+        instance.refundPayment(request, transactionId, refundCallback);
+    } else {
+        // Other payments: refund the capture — /pts/v2/captures/{id}/refunds
+        instance.refundCapture(request, transactionId, refundCallback);
+    }
     return result;
 }
 

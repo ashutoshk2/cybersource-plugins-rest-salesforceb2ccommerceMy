@@ -259,12 +259,16 @@ server.post(
             var paymentTotal = session.forms.generictestinterfaceform.grandtotalamount.value;
             // eslint-disable-next-line no-undef
             var currency = session.forms.generictestinterfaceform.currency.value;
+            // 'payments' -> refund via /payments/{id}/refunds (eCheck & APMs);
+            // 'captures' -> refund via /captures/{id}/refunds (other payments).
+            // eslint-disable-next-line no-undef
+            var refundEndpointType = session.forms.generictestinterfaceform.refundEndpointType.value;
 
             var serviceResponse;
             var refundReply;
             var refundReplyTitle;
             var refundObj = require('~/cartridge/scripts/http/refund.js');
-            serviceResponse = refundObj.httpRefundPayment(requestID, merchantRefCode, paymentTotal, currency);
+            serviceResponse = refundObj.httpRefundPayment(requestID, merchantRefCode, paymentTotal, currency, refundEndpointType);
 
             refundReplyTitle = 'Refund Service Reply';
             refundReply = 'RefundReply';

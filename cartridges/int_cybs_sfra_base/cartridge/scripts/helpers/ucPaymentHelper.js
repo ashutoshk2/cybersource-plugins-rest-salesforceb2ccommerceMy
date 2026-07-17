@@ -1219,6 +1219,21 @@ function formatAmount(amount, currencyCode) {
 }
 
 /**
+ * Sum the absolute discount from a collection of price adjustments (coupons/promotions).
+ * @param {dw.util.Collection} priceAdjustments - adjustments on a line item or the basket
+ * @returns {number} total discount amount (positive), 0 when none
+ */
+function sumPriceAdjustments(priceAdjustments) {
+    var total = 0;
+    if (!priceAdjustments) return total;
+    var it = priceAdjustments.iterator();
+    while (it.hasNext()) {
+        total += Math.abs(it.next().price.value);
+    }
+    return total;
+}
+
+/**
  * Build line items array from basket for capture context
  * @param {dw.order.Basket} basket - Current basket
  * @returns {Array} - Array of line item objects
@@ -1256,29 +1271,11 @@ function buildLineItems(basket) {
                 taxAmount: formatAmount(lineItem.adjustedTax.value > 0 ? lineItem.adjustedTax.value / lineItem.quantityValue : 0, currencyCode)
             };
 
-            // When product-level and/or order-level promotions apply to this line, switch the
-            // unit/line total from the list price to the DISCOUNTED prorated price and surface
-            // the discount (discountAmount/discountApplied, see ucv1api.json orderInformation
-            // .lineItems). proratedPrice folds in both the product-level adjustment and this
-            // line's prorated share of any order-level adjustment, so the reconciliation
-            // invariant above still holds: sum(line net totalAmount) + sum(line taxAmount)
-            // === amountDetails.totalAmount. Order-level discounts are therefore represented
-            // per line (not as amountDetails.discountAmount, which would double-count).
-            // Mirrors the non-UC path in util/mapper.js MapOrderLineItems.
-            if (lineItem.lineItemCtnr.priceAdjustments.length > 0 || lineItem.proratedPriceAdjustmentPrices.length > 0) {
-                itemObject.unitPrice = formatAmount(lineItem.proratedPrice.value / lineItem.quantityValue, currencyCode);
-                itemObject.totalAmount = formatAmount(lineItem.proratedPrice.value, currencyCode);
-
-                var discountTotal = 0;
-                var adjustmentEntries = lineItem.proratedPriceAdjustmentPrices.entrySet().iterator();
-                while (adjustmentEntries.hasNext()) {
-                    var entry = adjustmentEntries.next();
-                    discountTotal += Math.abs(entry.getValue().value);
-                }
-                if (discountTotal > 0) {
-                    itemObject.discountAmount = formatAmount(discountTotal, currencyCode);
-                    itemObject.discountApplied = true;
-                }
+            // Product-level coupon applied to THIS line -> discountAmount. totalAmount stays
+            // the list price (basePrice x qty); discountAmount carries the reduction.
+            var productDiscount = sumPriceAdjustments(lineItem.priceAdjustments);
+            if (productDiscount > 0) {
+                itemObject.discountAmount = formatAmount(productDiscount, currencyCode);
             }
         } else if (lineItem instanceof dw.order.GiftCertificateLineItem) {
             // typeOfSupply '00' = goods.
@@ -1293,7 +1290,10 @@ function buildLineItems(basket) {
                 taxAmount: formatAmount(0, currencyCode)
             };
         } else if (lineItem instanceof dw.order.ShippingLineItem) {
-            if (lineItem.adjustedPrice.value === 0) {
+            // Use the list (pre-discount) shipping price; a shipping-method coupon rides in
+            // discountAmount. When no discount applies, basePrice === adjustedPrice. Skip a
+            // line that costs nothing before any discount.
+            if (lineItem.basePrice.value === 0) {
                 continue;
             }
             // typeOfSupply '01' = shipping/services.
@@ -1302,11 +1302,17 @@ function buildLineItems(basket) {
                 productName: lineItem.ID || 'SHIPPING',
                 productDescription: 'SHIPPING',
                 quantity: 1,
-                unitPrice: formatAmount(lineItem.adjustedPrice.value, currencyCode),
-                totalAmount: formatAmount(lineItem.adjustedPrice.value, currencyCode),
+                unitPrice: formatAmount(lineItem.basePrice.value, currencyCode),
+                totalAmount: formatAmount(lineItem.basePrice.value, currencyCode),
                 typeOfSupply: '01',
                 taxAmount: formatAmount(lineItem.adjustedTax ? lineItem.adjustedTax.value : 0, currencyCode)
             };
+            // ShippingLineItem exposes no priceAdjustments collection; the shipping-method
+            // discount is the reduction from the list (base) price to the adjusted price.
+            var shippingDiscount = lineItem.basePrice.value - lineItem.adjustedPrice.value;
+            if (shippingDiscount > 0) {
+                itemObject.discountAmount = formatAmount(shippingDiscount, currencyCode);
+            }
         } else if (lineItem instanceof dw.order.ProductShippingLineItem) {
             // typeOfSupply '01' = shipping/services.
             itemObject = {
@@ -1402,6 +1408,12 @@ function buildOrderInformation(basket) {
             taxAmount: formatAmount(totalTax, currencyCode)
         }
     };
+
+    // Order-level coupon (whole-basket discount) -> top-level discountAmount.
+    var orderDiscount = sumPriceAdjustments(basket.priceAdjustments);
+    if (orderDiscount > 0) {
+        orderInformation.amountDetails.discountAmount = formatAmount(orderDiscount, currencyCode);
+    }
 
     // Populate billTo/shipTo whenever the basket has them, for both checkout and
     // Express Pay flows, so the capture-context mirrors the data Visa Acceptance needs to

@@ -86,12 +86,14 @@ function parseIdList(raw) {
 }
 
 /**
- * Read the capture-id ledger as a plain array.
- * @param {Object} paymentTransaction PaymentTransaction
+ * Read the capture-id ledger as a plain array. The ledger lives on the Order (order.custom),
+ * NOT the PaymentTransaction, because BM Orders > Payment renders every populated
+ * PaymentTransaction custom attribute and there is no metadata way to hide it there.
+ * @param {Object} order dw.order.Order
  * @returns {Array<string>} processed capture transaction ids
  */
-function getProcessedIds(paymentTransaction) {
-    return parseIdList(paymentTransaction.custom.captureTransactionIds);
+function getProcessedIds(order) {
+    return parseIdList(order.custom.captureTransactionIds);
 }
 
 /**
@@ -131,7 +133,7 @@ function applyNonCaptureStatus(order, paymentTransaction, status) {
  * @returns {Object} { applied, status }
  */
 function applyCapturedAmount(order, paymentTransaction, transactionId, capturedAmount, currency) {
-    var processed = getProcessedIds(paymentTransaction);
+    var processed = getProcessedIds(order);
     if (transactionId && processed.indexOf(transactionId) !== -1) {
         Logger.info('webhookOrderStatusHelper: capture txn {0} already applied; skipping (idempotent).', transactionId);
         return { applied: false, status: paymentTransaction.custom.cybsTransactionStatus };
@@ -150,17 +152,20 @@ function applyCapturedAmount(order, paymentTransaction, transactionId, capturedA
     var orderTotal = round2(order.getTotalGrossPrice().getValue());
     var outcome = {};
     Transaction.wrap(function () {
-        var prevPaid = Number(paymentTransaction.custom.AmountPaid) || 0;
+        // Ledger totals + capture-id list live on the Order (hidden from BM Orders > Payment);
+        // only cybsTransactionStatus stays on the PaymentTransaction (it is the visible
+        // "Visa Acceptance Transaction Status" merchants read on the Payment tab).
+        var prevPaid = Number(order.custom.AmountPaid) || 0;
         var cumulative = round2(prevPaid + Number(capturedAmount));
         var remaining = round2(orderTotal - cumulative);
         if (remaining < 0) { remaining = 0; }
 
-        paymentTransaction.custom.AmountPaid = cumulative;
-        paymentTransaction.custom.remainingToCapture = remaining;
+        order.custom.AmountPaid = cumulative;
+        order.custom.remainingToCapture = remaining;
 
         if (transactionId) {
             processed.push(transactionId);
-            paymentTransaction.custom.captureTransactionIds = processed.join(',');
+            order.custom.captureTransactionIds = processed.join(',');
         }
 
         if (cumulative >= orderTotal) {
@@ -195,7 +200,7 @@ function applyCapturedAmount(order, paymentTransaction, transactionId, capturedA
  * @returns {Object} { applied, status }
  */
 function applyCapture(order, paymentTransaction, transactionId, fetchCapturedAmount) {
-    if (transactionId && getProcessedIds(paymentTransaction).indexOf(transactionId) !== -1) {
+    if (transactionId && getProcessedIds(order).indexOf(transactionId) !== -1) {
         return { applied: false, status: paymentTransaction.custom.cybsTransactionStatus };
     }
     var fetched = fetchCapturedAmount ? fetchCapturedAmount(transactionId) : null;

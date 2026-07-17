@@ -61,6 +61,19 @@
                  </div>
              </div>
          </div>
+         <div class="col-md-8">
+             <div class="form-group">
+              <label class="form-control-label" for="refundEndpointType">${Resource.msg('service_refundendpointtype','cybersource','Payment type')}</label>
+                 <div class="refundEndpointType-wrapper">
+                     <select class="form-control" id="refundEndpointType"
+                         name="${pdict.refundServiceForm.refundEndpointType.htmlName}">
+                         <isloop items="${pdict.refundServiceForm.refundEndpointType.options}" var="endpointOption">
+                             <option value="${endpointOption.htmlValue}" ${endpointOption.selected ? 'selected="selected"' : ''}>${endpointOption.label}</option>
+                         </isloop>
+                     </select>
+                 </div>
+             </div>
+         </div>
      </div>
     </div>
     <fieldset>
