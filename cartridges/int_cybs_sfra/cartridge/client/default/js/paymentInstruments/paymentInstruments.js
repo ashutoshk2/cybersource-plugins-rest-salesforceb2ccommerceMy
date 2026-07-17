@@ -81,10 +81,21 @@ base.removePayment = function () {
                     }
                     $('#uuid-' + data.UUID).remove();
                     if (data.message) {
-                        var toInsert = '<div class="row justify-content-center h3 no-saved-payments"><p>'
-                            + data.message
-                            + '</p></div>';
-                        $('.paymentInstruments').empty().append(toInsert);
+                        // Render the "no saved payments" message with native DOM APIs.
+                        // The untrusted server message is assigned via textContent (which does
+                        // no HTML parsing) and the node is inserted with native appendChild
+                        // (no HTML-string parsing) — so the value is always treated as text and
+                        // can never be interpreted as markup. Avoiding jQuery .append()/.text()
+                        // here also keeps static analysis from flagging a DOM XSS path.
+                        var $container = $('.paymentInstruments').empty();
+                        if ($container.length) {
+                            var noPayments = document.createElement('div');
+                            noPayments.className = 'row justify-content-center h3 no-saved-payments';
+                            var messageEl = document.createElement('p');
+                            messageEl.textContent = data.message;
+                            noPayments.appendChild(messageEl);
+                            $container[0].appendChild(noPayments);
+                        }
                     }
                 },
                 error: function (err) {

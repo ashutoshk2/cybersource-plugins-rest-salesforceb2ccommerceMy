@@ -17,10 +17,13 @@
         <div style="background:#fbeae9;border:1px solid #f0c6c2;border-left:3px solid #b3261e;color:#8a2018;padding:12px 14px;border-radius:6px;margin:0 0 10px;font-size:13px;line-height:1.5"><b>Fraud product not provisioned.</b> Fraud screening was enabled but neither Decision Manager nor Fraud Management Essentials is provisioned for this merchant. The feature has been automatically disabled. Please contact support to have a fraud product provisioned.</div>
     </isif>
     <isif condition="${pdict.error === 'egress_key_required'}">
-        <div style="background:#fbeae9;border:1px solid #f0c6c2;border-left:3px solid #b3261e;color:#8a2018;padding:12px 14px;border-radius:6px;margin:0 0 10px;font-size:13px;line-height:1.5"><b>Egress MLE key required.</b> Unified Checkout webhooks use Response MLE. Upload your egress key-pair <code style="font-family:ui-monospace,Consolas,monospace;background:rgba(27,31,36,0.07);padding:1px 5px;border-radius:4px">.p12</code> under <b>Administration &gt; Operations &gt; Private Keys and Certificates</b>, set its alias in <b>Egress MLE Key Alias</b> below, save Advanced Settings, then re-synchronize.</div>
+        <div style="background:#fbeae9;border:1px solid #f0c6c2;border-left:3px solid #b3261e;color:#8a2018;padding:12px 14px;border-radius:6px;margin:0 0 10px;font-size:13px;line-height:1.5"><b>Egress MLE key required.</b> Unified Checkout webhooks use Response MLE. Upload your egress key-pair <code style="font-family:ui-monospace,Consolas,monospace;background:rgba(27,31,36,0.07);padding:1px 5px;border-radius:4px">.p12 under <b>Administration &gt; Operations &gt; Private Keys and Certificates</b>, set its alias in <b>Egress MLE Key Alias</b> below, save Advanced Settings, then re-synchronize.</div>
     </isif>
     <isif condition="${pdict.error === 'sync_failed'}">
         <div style="background:#fbeae9;border:1px solid #f0c6c2;border-left:3px solid #b3261e;color:#8a2018;padding:12px 14px;border-radius:6px;margin:0 0 10px;font-size:13px;line-height:1.5"><b>Sync failed.</b> One or more webhooks could not be synchronized. Check the table below for products still showing <b>NOT SUBSCRIBED</b>, confirm the product is provisioned for your merchant, then review the <code style="font-family:ui-monospace,Consolas,monospace;background:rgba(27,31,36,0.07);padding:1px 5px;border-radius:4px">customerror</code> custom log for details.</div>
+    </isif>
+    <isif condition="${pdict.error === 'unexpected'}">
+        <div style="background:#fbeae9;border:1px solid #f0c6c2;border-left:3px solid #b3261e;color:#8a2018;padding:12px 14px;border-radius:6px;margin:0 0 10px;font-size:13px;line-height:1.5"><b>Unexpected error.</b> The action could not be completed<isif condition="${pdict.errorDetail}">: <isprint value="${pdict.errorDetail}" encoding="htmlcontent"/></isif>. Review the <code style="font-family:ui-monospace,Consolas,monospace;background:rgba(27,31,36,0.07);padding:1px 5px;border-radius:4px">customerror</code> custom log for the full stack trace.</div>
     </isif>
     <isset name="fraudSub" value="${pdict.subscriptions.fraudManagement}" scope="page" />
     <isset name="ucSub" value="${pdict.subscriptions.unifiedCheckout}" scope="page" />
@@ -54,13 +57,15 @@
             </thead>
             <tbody>
                 <tr>
-                    <td style="padding:13px 14px;border-bottom:1px solid #eaecef;font-weight:600">Fraud Management<br/><span style="font-weight:400;font-size:11.5px;color:#656d76">Decision Manager &amp; Fraud Management Essentials</span></td>
+                    <td style="padding:13px 14px;border-bottom:1px solid #eaecef;font-weight:600">Fraud Management
+<span style="font-weight:400;font-size:11.5px;color:#656d76">Decision Manager &amp; Fraud Management Essentials</span></td>
                     <td style="padding:13px 14px;border-bottom:1px solid #eaecef;color:#57606a">${pdict.config.dmEnabled ? 'Enabled' : 'Disabled'}</td>
                     <td style="padding:13px 14px;border-bottom:1px solid #eaecef;font-weight:600">${pdict.subscriptions.fraudManagement ? pdict.subscriptions.fraudManagement.status || 'ACTIVE' : 'NOT SUBSCRIBED'}</td>
                     <td style="padding:13px 14px;border-bottom:1px solid #eaecef;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;color:#57606a;word-break:break-all">${pdict.subscriptions.fraudManagement ? pdict.subscriptions.fraudManagement.webhookId : '-'}</td>
                 </tr>
                 <tr>
-                    <td style="padding:13px 14px;font-weight:600">Unified Checkout<br/><span style="font-weight:400;font-size:11.5px;color:#656d76">Order transaction results</span></td>
+                    <td style="padding:13px 14px;font-weight:600">Unified Checkout
+<span style="font-weight:400;font-size:11.5px;color:#656d76">Order transaction results</span></td>
                     <td style="padding:13px 14px;color:#57606a">${pdict.config.secureIntegrationMethod === 'Unified_Checkout' ? 'Enabled' : 'Disabled'}</td>
                     <td style="padding:13px 14px;font-weight:600">${pdict.subscriptions.unifiedCheckout ? pdict.subscriptions.unifiedCheckout.status || 'ACTIVE' : 'NOT SUBSCRIBED'}</td>
                     <td style="padding:13px 14px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;color:#57606a;word-break:break-all">${pdict.subscriptions.unifiedCheckout ? pdict.subscriptions.unifiedCheckout.webhookId : '-'}</td>
@@ -93,3 +98,4 @@
 </div>
 <!-- END GENAI -->
 </isdecorate>
+ </code>

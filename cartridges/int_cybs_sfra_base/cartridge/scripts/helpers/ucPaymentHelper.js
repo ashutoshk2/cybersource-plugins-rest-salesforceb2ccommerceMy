@@ -1370,7 +1370,11 @@ function buildCompleteMandate(configObject, isTokenizationEnabled, isRegisteredC
  * @returns {Object} - transientTokenResponseOptions object for the capture-context request
  */
 function buildTransientTokenResponseOptions(configObject) {
-    var mode = configObject && configObject.unifiedCheckoutAllowedCardPrefix;
+    var rawMode = configObject && configObject.unifiedCheckoutAllowedCardPrefix;
+    // getCustomPreferenceValue returns a Java-backed value (typeof "object"), which is never
+    // strictly equal to a native JS string literal. Coerce to a native string before comparing,
+    // guarding null/undefined/empty so we don't produce the literal "null"/"undefined".
+    var mode = (rawMode === null || rawMode === undefined || rawMode === '') ? '' : String(rawMode);
     if (mode === 'Six') {
         // Omit includeCardPrefix so Visa Acceptance returns the default 6-digit BIN.
         return {};

@@ -59,7 +59,10 @@ function httpAuthReversal(requestId, referenceInformationCode, total, currency) 
                 var CardHelper = require('~/cartridge/scripts/helpers/CardHelper');
                 var paymentInstrument = CardHelper.getNonGCPaymemtInstument(order);
                 var PaymentInstrumentUtils = require('~/cartridge/scripts/util/paymentInstrumentUtils');
-                PaymentInstrumentUtils.UpdatePaymentTransactionCardauthReversal(paymentInstrument, order, result);
+                // Pass the KNOWN reversed amount/currency (what we requested) so the note never
+                // depends on the reversal response echoing amountDetails, which Visa Acceptance
+                // does not reliably populate (mirrors the capture flow).
+                PaymentInstrumentUtils.UpdatePaymentTransactionCardauthReversal(paymentInstrument, order, result, total, currency);
             } catch (e) {
                 Logger.error('[authReversal.js] Error in httpAuthReversal request ( {0} )', e.message);
                 return { error: true, errorMsg: e.message };

@@ -107,6 +107,7 @@ function UpdatePaymentTransactionRefund(paymentInstrument, order, responseObject
                 + ' | Total Refunded: ' + refundedAmount
                 + ' | Remaining: ' + remainingRefundable
                 + ' | Status: ' + status
+                + ' | Refund Transaction ID: ' + (refundId || '')
             );
         }
     });

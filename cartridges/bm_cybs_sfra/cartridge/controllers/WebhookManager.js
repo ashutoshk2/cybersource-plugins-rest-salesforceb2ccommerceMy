@@ -12,6 +12,9 @@ server.get('Show', server.middleware.https, function (req, res, next) {
     
     viewData.info = req.querystring.info;
     
+
+    viewData.errorDetail = req.querystring.errorDetail;
+
     secureResponseHelper.secureRender(res, 'webhookManager', viewData);
     return next();
 });
@@ -20,10 +23,23 @@ server.post('Save', server.middleware.https, function (req, res, next) {
     var action = req.form.action;
     var syncResults = null;
 
+    // Sync/Advanced call out to KMS and the webhook API. Those helpers report expected failures via
+    // { success: false, error }, but a lower layer (e.g. the SDK ApiClient) can still throw outright.
+    // Catch it here so BM renders the page with a surfaced error banner instead of a raw 500; the full
+    // exception (message + stack) is written to the customerror log for diagnosis.
+    try {
     if (action === 'sync') {
         syncResults = webhookSubscription.syncWithPreferences();
     } else if (action === 'advanced') {
         syncResults = webhookSubscription.updateAdvanced(req.form.egressMleAlias, req.form.egressPublicKey);
+        }
+    } catch (e) {
+        require('dw/system/Logger').getLogger('VisaAcceptance', 'webhook').error(
+            'WebhookManager-Save action "' + action + '" threw: ' + e.message + '\n' + (e.stack || '')
+        );
+        var errorDetail = String(e.message || 'Unknown error').substring(0, 300);
+        res.redirect(require('dw/web/URLUtils').url('WebhookManager-Show', 'error', 'unexpected', 'errorDetail', errorDetail).toString());
+        return next();
     }
 
     var redirectArgs = ['WebhookManager-Show'];
@@ -72,3 +88,4 @@ server.post('Save', server.middleware.https, function (req, res, next) {
 });
 
 module.exports = server.exports();
+ 

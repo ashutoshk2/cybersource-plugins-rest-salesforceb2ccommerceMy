@@ -177,7 +177,8 @@ function applyCapturedAmount(order, paymentTransaction, transactionId, capturedA
             'Amount: ' + Number(capturedAmount) + ' ' + (orderCurrency || '')
             + ' | Total Captured: ' + cumulative
             + ' | Remaining: ' + remaining
-            + ' | Status: ' + outcome.status);
+            + ' | Status: ' + outcome.status
+            + ' | Capture Transaction ID: ' + (transactionId || ''));
     });
     outcome.applied = true;
     return outcome;

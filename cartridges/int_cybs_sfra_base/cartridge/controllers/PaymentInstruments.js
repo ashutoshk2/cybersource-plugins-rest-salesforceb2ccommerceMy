@@ -36,7 +36,7 @@ if (configObject.tokenizationEnabled && configObject.cartridgeEnabled) {
 
         var data = res.getViewData();
         if (data && !data.loggedin) {
-            res.json();
+            secureResponseHelper.secureJsonResponse(res, {});
             return next();
         }
 
@@ -58,7 +58,7 @@ if (configObject.tokenizationEnabled && configObject.cartridgeEnabled) {
         // Returned as { error: true } with HTTP 200 to match the cartridge's other
         // AJAX error responses; the client surfaces the message in the delete modal.
         if (paymentToDelete && defaultPaymentHelper.isDefault(paymentToDelete) && cards.length > 1) {
-            res.json({
+            secureResponseHelper.secureJsonResponse(res, {
                 error: true,
                 defaultCard: true,
                 message: Resource.msg('msg.payment.default.delete', 'payment', null)
@@ -68,7 +68,7 @@ if (configObject.tokenizationEnabled && configObject.cartridgeEnabled) {
 
         this.on('route:BeforeComplete', function () {
             if (!paymentToDelete) {
-                res.json({ UUID: UUID });
+                secureResponseHelper.secureJsonResponse(res, { UUID: UUID });
                 return;
             }
 
@@ -95,12 +95,12 @@ if (configObject.tokenizationEnabled && configObject.cartridgeEnabled) {
             accountHelpers.sendAccountEditedEmail(customer.profile);
 
             if (wallet.getPaymentInstruments().length === 0) {
-                res.json({
+                secureResponseHelper.secureJsonResponse(res, {
                     UUID: UUID,
                     message: Resource.msg('msg.no.saved.payments', 'payment', null)
                 });
             } else {
-                res.json({ UUID: UUID });
+                secureResponseHelper.secureJsonResponse(res, { UUID: UUID });
             }
         });
 

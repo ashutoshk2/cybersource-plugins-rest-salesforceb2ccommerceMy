@@ -64,12 +64,13 @@ function httpRefundPayment(transactionId, referenceInformationCode, total, curre
     // total is known on the order's payment transaction, reject an over-refund (full,
     // single partial, or the running total of multiple partials) before the gateway call.
     if (order && paymentInstrument && paymentInstrument.paymentTransaction) {
-        var txnCustom = paymentInstrument.paymentTransaction.custom;
-        // Round to cents before comparing: capturedTotal/refundedAmount are float-accumulated
-        // over multiple partial captures/refunds, so the raw remaining balance can read
-        // 53.379999999999995 and wrongly reject a legitimate 53.38 refund.
-        var capturedTotal = round2(txnCustom.AmountPaid || 0);
-        var remainingRefundable = round2(capturedTotal - (txnCustom.refundedAmount || 0));
+        // Capture/refund ledger lives on the Order (hidden from BM Orders > Payment), not on the
+        // payment transaction. Round to cents before comparing: capturedTotal/refundedAmount are
+        // float-accumulated over multiple partial captures/refunds, so the raw remaining balance
+        // can read 53.379999999999995 and wrongly reject a legitimate 53.38 refund.
+        var orderCustom = order.custom;
+        var capturedTotal = round2(orderCustom.AmountPaid || 0);
+        var remainingRefundable = round2(capturedTotal - (orderCustom.refundedAmount || 0));
         var requestedRefund = round2(Number(total));
         if (capturedTotal > 0 && requestedRefund > remainingRefundable) {
             var capMsg = 'Refund amount (' + requestedRefund + ') exceeds remaining refundable balance ('

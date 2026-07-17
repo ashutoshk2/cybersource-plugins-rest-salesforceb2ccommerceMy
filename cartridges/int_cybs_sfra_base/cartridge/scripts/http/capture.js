@@ -55,7 +55,8 @@ function httpCapturePayment(requestId, referenceInformationCode, total, currency
         // transaction carries no authorized amount (e.g. wallet flows that don't set it).
         var authAmount = (pt.amount && pt.amount.available) ? pt.amount.getValue() : 0;
         var authorizedTotal = round2(authAmount > 0 ? authAmount : order.getTotalGrossPrice().getValue());
-        var alreadyCaptured = round2(pt.custom.AmountPaid || 0);
+        // Captured-total ledger lives on the Order (hidden from BM Orders > Payment), not on pt.custom.
+        var alreadyCaptured = round2(order.custom.AmountPaid || 0);
         var remainingCapturable = round2(authorizedTotal - alreadyCaptured);
         var requestedCapture = round2(Number(total));
         if (authorizedTotal > 0 && requestedCapture > remainingCapturable) {

@@ -378,7 +378,7 @@
             </attribute-definition>
             <attribute-definition attribute-id="VisaAcceptance_UnifiedCheckout_ExpressPay">
                 <display-name xml:lang="x-default">Enable Express Pay</display-name>
-                <description xml:lang="x-default">Split Unified Checkout into separate wallet and non-wallet instances.</description>
+                <description xml:lang="x-default">Enable Wallet/Express Payments on cart and minicart.</description>
                 <type>boolean</type>
                 <externally-managed-flag>false</externally-managed-flag>
                 <default-value>false</default-value>
