@@ -263,6 +263,35 @@ function calculateTaxes(basket) {
         basketItem.updateTax(rate);
     }
 
+    // MapOrderLineItems omits zero-priced shipping line items from the CyberSource tax request
+    // (see mapper.js ShippingLineItem branch), so they never appear in the response processed
+    // above and get no entry in `taxes`. Base calculate.calculateTax resets any line item that is
+    // absent from this list to an unavailable tax via updateTax(null), which makes
+    // basket.updateTotals() report NOT_AVAILABLE total tax / grand total (rendered as "-" in the
+    // order summary). Backfill a zero tax for those items so the totals stay available. Mirrors the
+    // zero-tax backfill calculateAdjustments.js already applies to basket price adjustments.
+    var collections = require('*/cartridge/scripts/util/collections');
+    var taxedUuids = {};
+    for (var t = 0; t < taxes.length; t++) {
+        taxedUuids[taxes[t].uuid] = true;
+    }
+    collections.forEach(basket.getAllLineItems(), function (lineItem) {
+        // eslint-disable-next-line no-undef
+        var isZeroPricedShipping = lineItem instanceof dw.order.ShippingLineItem && lineItem.adjustedPrice.value === 0;
+        if (isZeroPricedShipping && !taxedUuids[lineItem.UUID]) {
+            taxes.push({
+                amount: true,
+                uuid: lineItem.UUID,
+                value: new Money(0, currency),
+                quantity: null,
+                normalized: {
+                    currency: currency,
+                    taxAmount: 0
+                }
+            });
+        }
+    });
+
     // Format required by SFRA to update basket
     var taxResult = {
         custom: {},
