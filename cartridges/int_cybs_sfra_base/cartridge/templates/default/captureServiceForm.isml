@@ -4,14 +4,14 @@
 <html xmlns="http://www.w3.org/1999/xhtml">
 <head>
 <link href="//maxcdn.bootstrapcdn.com/bootstrap/3.3.0/css/bootstrap.min.css" rel="stylesheet" id="bootstrap-css">
-<title>${Resource.msg('test.unittestpagetitle','cybersource',null)}</title>
+<title>${Resource.msg('test.unittestpagetitle','visaacceptance',null)}</title>
 </head>
 <body>
 <iscomment>
  Capture service form
 </iscomment>
 <div id="CaptureForm" class="capture_form container" >
- <h1>${Resource.msg('test.captureserviceform','cybersource',null)}</h1>
+ <h1>${Resource.msg('test.captureserviceform','visaacceptance',null)}</h1>
  <form class="capture_form" action="${pdict.continueUrl}" method="post" id="generic-form-submit">
    <input type="hidden" name="${pdict.csrf.tokenName}" value="${pdict.csrf.token}"/>
    <fieldset>
@@ -19,7 +19,7 @@
      <div class="row">
          <div class="col-md-8">
              <div class="form-group">
-                 <label class="form-control-label" for="merchantReferenceCode">${Resource.msg('service_merchantrefcode','cybersource',null)}</label>
+                 <label class="form-control-label" for="merchantReferenceCode">${Resource.msg('service_merchantrefcode','visaacceptance',null)}</label>
                  <div class="merchantReferenceCode-wrapper">
                      <input type="text" class="form-control" id="merchantReferenceCode"
                          name="${pdict.captureServiceForm.merchantReferenceCode.htmlName}"
@@ -30,7 +30,7 @@
          </div>
          <div class="col-md-8">
              <div class="form-group">
-              <label class="form-control-label" for="authRequestID">${Resource.msg('service_requestId','cybersource',null)}</label>
+              <label class="form-control-label" for="authRequestID">${Resource.msg('service_requestId','visaacceptance',null)}</label>
                  <div class="authRequestID-wrapper">
                      <input type="text" class="form-control" id="authRequestID"
                          name="${pdict.captureServiceForm.authRequestID.htmlName}"
@@ -41,7 +41,7 @@
          </div>
          <div class="col-md-8">
              <div class="form-group">
-              <label class="form-control-label" for="currency">${Resource.msg('service_currency','cybersource',null)}</label>
+              <label class="form-control-label" for="currency">${Resource.msg('service_currency','visaacceptance',null)}</label>
                  <div class="currency-wrapper">
                      <input type="text" class="form-control" id="currency"
                          name="${pdict.captureServiceForm.currency.htmlName}"
@@ -52,7 +52,7 @@
          </div>
          <div class="col-md-8">
              <div class="form-group">
-              <label class="form-control-label" for="grandtotalamount">${Resource.msg('service_amount','cybersource',null)}</label>
+              <label class="form-control-label" for="grandtotalamount">${Resource.msg('service_amount','visaacceptance',null)}</label>
                  <div class="grandtotalamount-wrapper">
                      <input type="text" class="form-control" id="grandtotalamount"
                          name="${pdict.captureServiceForm.grandtotalamount.htmlName}"
@@ -65,7 +65,7 @@
     </div>
     <fieldset>  
    <div class="actions clearfix">
-    <button id="dialogApplyBtn" name="${pdict.captureServiceForm.submit}" type="submit" value="${Resource.msg('test.submit','cybersource',null)}"><span>${Resource.msg('test.submit','cybersource',null)}</span></button>
+    <button id="dialogApplyBtn" name="${pdict.captureServiceForm.submit}" type="submit" value="${Resource.msg('test.submit','visaacceptance',null)}"><span>${Resource.msg('test.submit','visaacceptance',null)}</span></button>
    </div>
  </form>
 </div>

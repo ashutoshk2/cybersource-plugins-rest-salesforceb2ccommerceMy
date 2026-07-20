@@ -18,7 +18,7 @@
 <iscomment>Modal for Step-Up Authentication</iscomment>
 <div id="stepup-modal-overlay" class="stepup-modal-overlay">
 	<div class="stepup-modal-content">
-		<h3 class="stepup-modal-title">${Resource.msg('payment.authentication.title', 'cybersource', 'Payment Authentication')}</h3>
+		<h3 class="stepup-modal-title">${Resource.msg('payment.authentication.title', 'visaacceptance', 'Payment Authentication')}</h3>
 		<div class="stepup-iframe-container">
 			<iframe id="step-up-iframe" name="step-up-iframe" class="stepup-iframe"></iframe>
 			<form id="step-up-form" target="step-up-iframe" method="post" action="${pdict.stepUpUrl}" class="hidden">
