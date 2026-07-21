@@ -9,7 +9,7 @@
 	<field formid="paymenttype" type="string" mandatory="true" binding="paymenttype" max-length="50" />
 	<field formid="refundEndpointType" type="string" mandatory="true" binding="refundEndpointType" max-length="50" >
 		<options>
-			<option optionid="payments" value="payments" label="eCheck and APMs"/>
+			<option optionid="payments" value="payments" label="eCheck"/>
 			<option optionid="captures" value="captures" label="Other payments"/>
 		</options>
 	</field>
