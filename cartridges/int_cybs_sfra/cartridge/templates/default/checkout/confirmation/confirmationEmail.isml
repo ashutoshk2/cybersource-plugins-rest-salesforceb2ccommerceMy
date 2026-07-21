@@ -114,7 +114,7 @@
 						<div>
 							${payment.maskedCreditCardNumber}
 						</div>
-					<iselseif condition="${payment.paymentMethod === 'ALT_PAYMENT_METHOD' || payment.paymentMethod === 'PAYPAL' || payment.paymentMethod === 'VENMO'}">
+					<iselseif condition="${payment.paymentMethod === 'PAYPAL' || payment.paymentMethod === 'VENMO'}">
 						<isif condition="${!empty(payment.paymentDetails)}">
 							<div>
 								${payment.paymentDetails}

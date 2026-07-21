@@ -38,8 +38,6 @@ function activateWebhooks() {
             instance.notificationSubscriptionsV2WebhooksWebhookIdStatusPut(webhookId, { updateStatus: request }, function (data, error) {
                 if (error) {
                     Logger.error('Failed to activate webhook ' + item.id + ' (' + webhookId + '): ' + error);
-                } else {
-                    Logger.debug('Successfully activated webhook ' + item.id + ' (' + webhookId + ')');
                 }
             });
         });

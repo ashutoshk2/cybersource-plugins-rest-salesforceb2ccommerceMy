@@ -295,7 +295,7 @@ function handlePayments(order, orderNumber) {
  * @param {string} [orderNo] - Explicit order number to assign. Pass the Visa Acceptance
  *        clientReferenceInformation.code from the completeMandate JWT here: it is the
  *        authoritative reference the transaction/webhooks use, and it survives a
- *        redirect APM (iDEAL/Multibanco) flow that may have dropped session.privacy.
+ *        redirect flow that may have dropped session.privacy.
  *        Falls back to the reserved session.privacy.ucOrderNo when not supplied.
  * @returns {dw.order.Order} The order object created from the current basket
  */

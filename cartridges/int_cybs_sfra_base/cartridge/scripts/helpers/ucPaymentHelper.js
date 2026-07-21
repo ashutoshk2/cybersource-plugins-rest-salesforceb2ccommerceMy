@@ -177,8 +177,6 @@ function populateBasketAddressesFromPaymentDetails(basket, paymentDetails, Trans
             if (shipTo.country) shippingAddress.setCountryCode(shipTo.country);
             if (shipTo.administrativeArea) shippingAddress.setStateCode(shipTo.administrativeArea);
             if (shipTo.phoneNumber) shippingAddress.setPhone(shipTo.phoneNumber);
-
-            logger.info('populateBasketAddressesFromPaymentDetails: Shipping address populated');
         }
 
         // Populate billing address from billTo, falling back to shipTo when the
@@ -204,8 +202,6 @@ function populateBasketAddressesFromPaymentDetails(basket, paymentDetails, Trans
             if (billTo.email && !basket.customerEmail) {
                 basket.setCustomerEmail(billTo.email);
             }
-
-            logger.info('populateBasketAddressesFromPaymentDetails: Billing address populated');
         }
 
         // Venmo/e-wallet getPaymentDetails responses carry neither phoneNumber nor
@@ -334,8 +330,6 @@ function applyAmountDetailsFromPaymentDetails(basket, paymentDetails, Transactio
         basket.updateTotals();
     });
 
-    logger.info('applyAmountDetailsFromPaymentDetails: applied token taxAmount {0}; basket totalGrossPrice now {1}',
-        tokenTaxAmount, basket.totalGrossPrice.value);
     return true;
 }
 
@@ -443,29 +437,12 @@ function decodeJwtPayload(token) {
 // Payment Method Detection Functions
 // ============================================================================
 
-// Prefix of the processingInformation.paymentSolution string Visa Acceptance returns for
-// PPRO online bank-transfer APMs on the completeMandate result JWT - e.g.
-// 'BankTransfer Payment Ideal' (iDEAL), 'BankTransfer Payment Multibanco' (Multibanco).
-// These carry no paymentType descriptor, so this prefix is what identifies them. They
-// are NOT card payments even though the scheme code is echoed into card.type.
-var BANK_TRANSFER_PAYMENT_SOLUTION_PREFIX = 'BankTransfer Payment';
-
-
 var UC_PAYMENT_TYPE_TO_METHOD = {
     PANENTRY: 'CREDIT_CARD',
     CHECK: 'BANK_TRANSFER',
     PAYPAL: 'PAYPAL',
     VENMO: 'VENMO',
     PAZE: 'DW_PAZE',
-    IDEAL: 'ALT_PAYMENT_METHOD',
-    BANCONTACT: 'ALT_PAYMENT_METHOD',
-    MULTIBANCO: 'ALT_PAYMENT_METHOD',
-    MYBANK: 'ALT_PAYMENT_METHOD',
-    TINKPAYBYBANK: 'ALT_PAYMENT_METHOD',
-    PRZELEWY24: 'ALT_PAYMENT_METHOD',
-    P24: 'ALT_PAYMENT_METHOD',
-    DRAGONPAY: 'ALT_PAYMENT_METHOD',
-    KONBINI: 'ALT_PAYMENT_METHOD',
     // Wallet safety-net (primary path is the auth-JWT paymentSolution code).
     APPLEPAY: 'DW_APPLE_PAY',
     GOOGLEPAY: 'DW_GOOGLE_PAY',
@@ -498,30 +475,16 @@ function resolveMethodFromTransient(transientToken) {
 /**
  * Detect payment method from completeMandate JWT.
  *
- * Order of checks:
- * 1. paymentInformation.bank present → BANK_TRANSFER (eCheck has no paymentSolution code)
- * 2. transient-token metadata.paymentType → owned methods (alternate payment methods,
- *    eCheck, PayPal, Venmo) via UC_PAYMENT_TYPE_TO_METHOD. The single, uniform signal for
- *    everything owned here; returns null (defer) for card / wallet / Click to Pay.
- * 3. alternate payment method (getApmDescriptor, result JWT) → ALT_PAYMENT_METHOD —
- *    fallback when the transient token is absent.
- * 4. processingInformation.paymentSolution code → DW_GOOGLE_PAY / DW_APPLE_PAY / CLICK_TO_PAY
- * 5. Default → CREDIT_CARD
  *
  * @param {Object} jwtPayload - Decoded completeMandate JWT payload
  * @param {string} [transientToken] - Transient token JWT from the SDK; the primary signal
- *        for the alternate payment methods / eCheck / PayPal / Venmo.
+ *        for eCheck / PayPal / Venmo.
  * @returns {string} - Payment method ID
  */
 function detectPaymentMethod(jwtPayload, transientToken) {
     var details = jwtPayload && jwtPayload.details;
     var paymentInfo = details && details.paymentInformation;
 
-    // eCheck/ACH first: a bank object means ACH, never a redirect bank-transfer APM.
-    // NOTE: PPRO online bank transfers (iDEAL, Bancontact, Multibanco, ...) do NOT
-    // populate paymentInformation.bank in real payloads - they are identified by
-    // paymentType below. (If a live PPRO result is ever found to populate .bank, add a
-    // routingNumber guard here so only true eCheck maps to BANK_TRANSFER.)
     if (paymentInfo && paymentInfo.bank) {
         return 'BANK_TRANSFER';
     }
@@ -532,29 +495,11 @@ function detectPaymentMethod(jwtPayload, transientToken) {
         return altMethod;
     }
 
-    // Fallback (transient token absent / unmapped): the result JWT's
-    // details.paymentInformation.paymentType. Owned APMs normally resolve from the
-    // transient token in step 2 above; this only runs when that signal is missing.
-    // Validated against real payloads: iDEAL {name:'ppro',type:'bank transfer',
-    // method:'IDLPP'}, Multibanco {method:'MLTBT'}, AFFIRM {name:'INVOICE',
-    // method:{name:'AFFIRM'}}. Cards and wallets never carry paymentType. This is
-    // checked BEFORE the card branch because real APM payloads ALSO echo the scheme code
-    // into paymentInformation.card.type (e.g. 'IDLPP'/'MLTBT'), misread as a card otherwise.
     var apm = getApmDescriptor(jwtPayload);
-    if (apm) {
-        // eWallet APMs with dedicated routes: PayPal, Venmo. paymentType.name is
-        // 'eWallet' and method.name is 'payPal' or 'venmo' (case varies). Other
-        // eWallets (e.g. Paze pending real-payload confirmation) fall through to
-        // the generic ALT_PAYMENT_METHOD bucket below.
-        if ((apm.name || '').toLowerCase() === 'ewallet') {
-            var methodLower = (apm.method || '').toLowerCase();
-            if (methodLower === 'paypal') return 'PAYPAL';
-            if (methodLower === 'venmo') return 'VENMO';
-        }
-        // All other APMs (iDEAL, Multibanco, Bancontact, MyBank, P24, DragonPay,
-        // Tink, Afterpay, Konbini, ...) are routed through one generic processor;
-        // the scheme is recorded from getApmDescriptor by the alt_payment hook.
-        return 'ALT_PAYMENT_METHOD';
+    if (apm && (apm.name || '').toLowerCase() === 'ewallet') {
+        var methodLower = (apm.method || '').toLowerCase();
+        if (methodLower === 'paypal') return 'PAYPAL';
+        if (methodLower === 'venmo') return 'VENMO';
     }
 
 
@@ -575,42 +520,20 @@ function detectPaymentMethod(jwtPayload, transientToken) {
         return 'CREDIT_CARD';
     }
 
-    // Resilience fallback: an unknown non-card paymentSolution with no card -> APM
-    if (paymentSolution) {
-        return 'ALT_PAYMENT_METHOD';
-    }
-
     return 'CREDIT_CARD';
 }
 
 
 /**
- * Extract the alternate-payment-method descriptor from a completeMandate JWT.
- *
- * Two cases:
- * 1. An explicit details.paymentInformation.paymentType descriptor (BNPL, Tink, etc.).
- *    method is normalized whether it is a string (e.g. 'IDLPP') or an object
- *    (e.g. { name: 'AFFIRM' }).
- * 2. PPRO bank transfers (iDEAL, Multibanco, ...): the real result JWT has NO
- *    paymentType - they are identified by the processingInformation.paymentSolution
- *    string starting with 'BankTransfer Payment' (e.g. 'BankTransfer Payment Ideal',
- *    'BankTransfer Payment Multibanco'), and the scheme code ('IDLPP'/'MLTBT') is read
- *    from paymentInformation.card.type. These are NOT card payments.
- * 3. Bare result JWT (e.g. Tink Pay by Bank): the result JWT has no payment data, so
- *    the scheme is taken from the transient token - metadata.paymentType (e.g.
- *    'TINKPAYBYBANK') as the method, and content.paymentInformation.paymentType.name
- *    as the descriptor name.
+ * Extract the eWallet descriptor from a completeMandate JWT.
  *
  * @param {Object} jwtPayload - Decoded completeMandate JWT payload
- * @param {string} [transientToken] - Transient token JWT from the SDK; used for Case 3
- *        when the result JWT carries no payment-type information.
  * @returns {Object|null} - { name, method } both strings, or null for a card/wallet
  */
-function getApmDescriptor(jwtPayload, transientToken) {
+function getApmDescriptor(jwtPayload) {
     var details = jwtPayload && jwtPayload.details;
     var paymentInfo = details && details.paymentInformation;
 
-    // Case 1: explicit paymentType descriptor.
     var paymentType = paymentInfo && paymentInfo.paymentType;
     if (paymentType) {
         var name = paymentType.name || '';
@@ -623,55 +546,17 @@ function getApmDescriptor(jwtPayload, transientToken) {
         }
     }
 
-    // Case 2: PPRO bank transfers (iDEAL, Multibanco, ...) - no paymentType, identified
-    // by the 'BankTransfer Payment ...' paymentSolution string.
-    var processingInfo = details && details.processingInformation;
-    var paymentSolution = processingInfo && processingInfo.paymentSolution;
-    if (typeof paymentSolution === 'string' && paymentSolution.indexOf(BANK_TRANSFER_PAYMENT_SOLUTION_PREFIX) === 0) {
-        var schemeCode = (paymentInfo && paymentInfo.card && paymentInfo.card.type) || '';
-        return { name: paymentSolution, method: schemeCode };
-    }
-
-    // Case 3: bare result JWT (e.g. Tink Pay by Bank). The scheme lives in the
-    // transient token: metadata.paymentType is the specific code (e.g. 'TINKPAYBYBANK'),
-    // content.paymentInformation.paymentType.name is the category label (e.g. 'INVOICE').
-    if (transientToken) {
-        var transientPayload = decodeJwtPayload(transientToken);
-        var transientMethod = (transientPayload && transientPayload.metadata && transientPayload.metadata.paymentType) || '';
-        if (transientMethod && transientMethod.toString().toUpperCase() !== 'CARD') {
-            var contentPaymentInfo = transientPayload.content && transientPayload.content.paymentInformation;
-            var contentPaymentType = contentPaymentInfo && contentPaymentInfo.paymentType && contentPaymentInfo.paymentType.name;
-            var transientName = (contentPaymentType && (contentPaymentType.value || contentPaymentType)) || '';
-            return { name: transientName || transientMethod, method: transientMethod };
-        }
-    }
-
     return null;
 }
 
 /**
- * Resolve a customer-facing display name for an alternate payment method, used on the
- * confirmation / email payment section. Maps the scheme code (e.g. 'IDLPP') to a clean
- * brand name (e.g. 'iDEAL'); falls back to the descriptor name, then the raw code.
+ * Resolve a customer-facing display name for an eWallet payment method
  *
  * @param {Object} apmDescriptor - { name, method } from getApmDescriptor
- * @returns {string} - Display name (e.g. 'iDEAL')
+ * @returns {string} - Display name (e.g. 'PayPal')
  */
 function getApmDisplayName(apmDescriptor) {
     var displayNames = {
-        // Legacy JWT scheme codes (fallback path).
-        IDLPP: 'iDEAL',
-        MLTBT: 'Multibanco',
-        // UC transient-token metadata.paymentType vocabulary (primary path).
-        IDEAL: 'iDEAL',
-        BANCONTACT: 'Bancontact',
-        MULTIBANCO: 'Multibanco',
-        MYBANK: 'MyBank',
-        TINKPAYBYBANK: 'Tink Pay By Bank',
-        PRZELEWY24: 'Przelewy24',
-        P24: 'Przelewy24',
-        DRAGONPAY: 'DragonPay',
-        KONBINI: 'Konbini',
         PAZE: 'Paze',
         PAYPAL: 'PayPal',
         VENMO: 'Venmo'
@@ -700,8 +585,7 @@ var METHOD_TO_PROCESSOR_ID = {
     DW_PAZE: 'payments_paze',
     CLICK_TO_PAY: 'payments_click_to_pay',
     PAYPAL: 'payments_paypal',
-    VENMO: 'payments_venmo',
-    ALT_PAYMENT_METHOD: 'alt_payment'
+    VENMO: 'payments_venmo'
 };
 
 /**
@@ -1023,13 +907,6 @@ function isValidAuthorizationStatus(status) {
         'CAPTURED',
         'PARTIAL_CAPTURED',
         'PENDING',
-
-        // Alternate payment method (PPRO / BNPL) non-decline outcomes. Validated
-        // against real payloads: iDEAL/Multibanco -> PENDING, Tink -> SETTLE_INITIATED,
-        // AFFIRM -> AUTHORIZED / PENDING / COMPLETED. PENDING and SETTLE_INITIATED
-        // orders are placed NOTCONFIRMED and reconciled by the webhook;
-        // COMPLETED / SETTLED are already settled. Cards never use these statuses, so
-        // there is no card-flow regression.
         'COMPLETED',
         'SETTLED',
         'SETTLE_INITIATED'
@@ -1646,23 +1523,19 @@ function upsertCreditCard(wallet, serializedToken, cardDetails, instrumentIdenti
  */
 function saveTokenToWallet(jwtPayload, cardDetails, customer, transientToken) {
     if (!didConsumerOptToSaveCard(transientToken)) {
-        logger.debug('saveTokenToWallet: Consumer did not opt to save card (transient token saveCard !== true)');
         return false;
     }
 
     if (!didUserRequestSaveCard(jwtPayload)) {
-        logger.debug('saveTokenToWallet: User did not opt to save card');
         return false;
     }
 
     if (!customer || !customer.isAuthenticated() || !customer.getProfile()) {
-        logger.debug('saveTokenToWallet: Customer not authenticated');
         return false;
     }
 
     var tokenInfo = extractTokenInformation(jwtPayload);
     if (!tokenInfo) {
-        logger.debug('saveTokenToWallet: No token information in JWT response');
         return false;
     }
 
@@ -1701,8 +1574,6 @@ function saveTokenToWallet(jwtPayload, cardDetails, customer, transientToken) {
         }
 
         var upsertResult = upsertCreditCard(wallet, serializedToken, cardDetails, tokenInfo.instrumentIdentifier.id);
-        logger.info('saveTokenToWallet: Card {0}. InstrumentIdentifier: {1}',
-            upsertResult.replacedExisting ? 'updated (replaced)' : 'saved', tokenInfo.instrumentIdentifier.id);
 
         return true;
     } catch (e) {
@@ -1730,7 +1601,6 @@ function setDefaultShippingMethod(basket, TransactionObj) {
             TransactionObj.wrap(function () {
                 shipment.setShippingMethod(defaultMethod);
             });
-            logger.info('setDefaultShippingMethod: Default shipping method set: {0}', defaultMethod.ID);
         }
     }
 }
@@ -1792,20 +1662,11 @@ function buildConsumerAuthenticationInformation(configObject) {
         logger.info('buildConsumerAuthenticationInformation: SCA required flag detected, setting challengeCode=04');
         // Clear the flag after using it (one-time use per retry)
         session.privacy.scaRequired = false;
+        session.privacy.scaChallenged = true;
         return consumerAuthInfo;
     }
     // Otherwise, omit the field entirely
     return null;
-}
-
-/**
- * Set SCA required flag in session
- * Call this when a 478/SCA-required response is received to trigger
- * challengeCode=04 on the next capture context generation
- */
-function setSCARequiredFlag() {
-    session.privacy.scaRequired = true;
-    logger.info('setSCARequiredFlag: SCA required flag set for next capture context');
 }
 
 /**
@@ -1952,7 +1813,6 @@ module.exports = {
     buildDdcBackupDeviceInformation: buildDdcBackupDeviceInformation,
 
     // SCA (Strong Customer Authentication) handling
-    setSCARequiredFlag: setSCARequiredFlag,
     isSCARequired: isSCARequired,
     getSCAErrorMessage: getSCAErrorMessage,
 

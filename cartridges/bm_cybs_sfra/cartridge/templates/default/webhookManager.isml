@@ -16,9 +16,6 @@
     <isif condition="${pdict.error === 'no_fraud_product'}">
         <div style="background:#fbeae9;border:1px solid #f0c6c2;border-left:3px solid #b3261e;color:#8a2018;padding:12px 14px;border-radius:6px;margin:0 0 10px;font-size:13px;line-height:1.5"><b>Fraud product not provisioned.</b> Fraud screening was enabled but neither Decision Manager nor Fraud Management Essentials is provisioned for this merchant. The feature has been automatically disabled. Please contact support to have a fraud product provisioned.</div>
     </isif>
-    <isif condition="${pdict.error === 'egress_key_required'}">
-        <div style="background:#fbeae9;border:1px solid #f0c6c2;border-left:3px solid #b3261e;color:#8a2018;padding:12px 14px;border-radius:6px;margin:0 0 10px;font-size:13px;line-height:1.5"><b>Egress MLE key required.</b> Unified Checkout webhooks use Response MLE. Upload your egress key-pair <code style="font-family:ui-monospace,Consolas,monospace;background:rgba(27,31,36,0.07);padding:1px 5px;border-radius:4px">.p12 under <b>Administration &gt; Operations &gt; Private Keys and Certificates</b>, set its alias in <b>Egress MLE Key Alias</b> below, save Advanced Settings, then re-synchronize.</div>
-    </isif>
     <isif condition="${pdict.error === 'sync_failed'}">
         <div style="background:#fbeae9;border:1px solid #f0c6c2;border-left:3px solid #b3261e;color:#8a2018;padding:12px 14px;border-radius:6px;margin:0 0 10px;font-size:13px;line-height:1.5"><b>Sync failed.</b> One or more webhooks could not be synchronized. Check the table below for products still showing <b>NOT SUBSCRIBED</b>, confirm the product is provisioned for your merchant, then review the <code style="font-family:ui-monospace,Consolas,monospace;background:rgba(27,31,36,0.07);padding:1px 5px;border-radius:4px">customerror</code> custom log for details.</div>
     </isif>
@@ -77,9 +74,6 @@
 
     <form action="${pdict.actionUrl}" method="POST">
         <input type="hidden" name="action" value="advanced"/>
-        <!-- Egress public-cert input removed: backend derives the cert from the .p12 (egressMleAlias)
-             and registers it with KMS. This hidden field carries the stored value as a fallback. -->
-        <input type="hidden" name="egressPublicKey" value="${pdict.config.egressPublicKey}"/>
         <div style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:0.04em;color:#57606a;margin:0 0 9px">Advanced Configuration</div>
         <table style="width:100%;border-collapse:collapse;border:1px solid #d0d7de;border-radius:8px;overflow:hidden;font-size:13px">
             <tbody>

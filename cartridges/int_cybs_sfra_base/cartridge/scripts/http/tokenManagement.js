@@ -92,8 +92,6 @@ function httpUCCreateToken(ucTransientToken, customerEmail, billingAddress, refe
     var logger = Logger.getLogger('VisaAcceptance', 'UC-TokenManagement');
     
     try {
-        logger.info('Creating UC token for reference: {0}', referenceCode);
-        
         var payments = require('~/cartridge/scripts/http/payments.js');
         var result = payments.httpZeroDollarAuthWithTransientToken(
             ucTransientToken,
@@ -104,7 +102,6 @@ function httpUCCreateToken(ucTransientToken, customerEmail, billingAddress, refe
         );
         
         if (result.status === STATUSCODES.AUTHORIZED || result.status === 'AUTHORIZED_PENDING_REVIEW') {
-            logger.info('UC token created successfully for reference: {0}', referenceCode);
             return {result:result.tokenInformation,
                 success:true
             };

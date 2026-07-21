@@ -12,7 +12,7 @@ var configObject = require('~/cartridge/configuration/index.js');
  * Paze (Early Warning Services' US bank wallet) is a card-backed digital wallet: it
  * returns a network-tokenized card, exactly like Google Pay / Apple Pay. It is therefore
  * handled as a wallet card flow (instrument keyed DW_PAZE, card details extracted with
- * isDigitalWallet=true) rather than the generic non-card ALT_PAYMENT_METHOD bucket.
+ * isDigitalWallet=true) rather than a non-card payment bucket.
  *
  * Authorization is performed client-side by the UC SDK; this hook only creates the
  * instrument and stores the card details.

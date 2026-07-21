@@ -27,15 +27,6 @@
                 <externally-managed-flag>false</externally-managed-flag>
                 <min-length>0</min-length>
             </attribute-definition>
-            <attribute-definition attribute-id="SecurityKeyId">
-                <display-name xml:lang="x-default">Security Key Id</display-name>
-                <description xml:lang="x-default">KMS keyId of the currently active signing key (globalConfiguration record); the key material lives on the VisaAcceptanceWebhookSecurityKey object keyed by this id.</description>
-                <type>string</type>
-                <localizable-flag>false</localizable-flag>
-                <mandatory-flag>false</mandatory-flag>
-                <externally-managed-flag>false</externally-managed-flag>
-                <min-length>0</min-length>
-            </attribute-definition>
             <attribute-definition attribute-id="Status">
                 <display-name xml:lang="x-default">Status</display-name>
                 <type>string</type>
@@ -61,14 +52,6 @@
                 <externally-managed-flag>false</externally-managed-flag>
                 <min-length>0</min-length>
             </attribute-definition>
-            <attribute-definition attribute-id="EgressPublicKey">
-                <display-name xml:lang="x-default">Egress Public Key</display-name>
-                <type>text</type>
-                <localizable-flag>false</localizable-flag>
-                <mandatory-flag>false</mandatory-flag>
-                <externally-managed-flag>false</externally-managed-flag>
-                <min-length>0</min-length>
-            </attribute-definition>
         </attribute-definitions>
         <group-definitions>
             <attribute-group group-id="VisaAcceptanceWebhookSubscription">
@@ -76,11 +59,9 @@
                 <attribute attribute-id="ConfigId"/>
                 <attribute attribute-id="WebhookId"/>
                 <attribute attribute-id="WebhookUrl"/>
-                <attribute attribute-id="SecurityKeyId"/>
                 <attribute attribute-id="Status"/>
                 <attribute attribute-id="Product"/>
                 <attribute attribute-id="BaseUrl"/>
-                <attribute attribute-id="EgressPublicKey"/>
             </attribute-group>
         </group-definitions>
     </custom-type>
@@ -104,12 +85,22 @@
                 <externally-managed-flag>false</externally-managed-flag>
                 <min-length>0</min-length>
             </attribute-definition>
+            <attribute-definition attribute-id="MerchantId">
+                <display-name xml:lang="x-default">Merchant Id</display-name>
+                <description xml:lang="x-default">Merchant ID (VisaAcceptance_MerchantID) this signing key was minted for. Used to reuse the key while the MID is unchanged and, after a MID change, mint a fresh key and delete the previous MID's keys.</description>
+                <type>string</type>
+                <localizable-flag>false</localizable-flag>
+                <mandatory-flag>false</mandatory-flag>
+                <externally-managed-flag>false</externally-managed-flag>
+                <min-length>0</min-length>
+            </attribute-definition>
         </attribute-definitions>
         <group-definitions>
             <attribute-group group-id="VisaAcceptanceWebhookSecurityKey">
                 <display-name xml:lang="x-default">Visa Acceptance Webhook Security Key</display-name>
                 <attribute attribute-id="KeyId"/>
                 <attribute attribute-id="Key"/>
+                <attribute attribute-id="MerchantId"/>
             </attribute-group>
         </group-definitions>
     </custom-type>

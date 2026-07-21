@@ -48,11 +48,6 @@
         <processor-id>PAYMENTS_PAZE</processor-id>
     </payment-method>
  
-    <payment-method method-id="ALT_PAYMENT_METHOD">
-        <name xml:lang="x-default">Alternate Payment Method</name>
-        <enabled-flag>true</enabled-flag>
-        <processor-id>ALT_PAYMENT</processor-id>
-    </payment-method>
     <payment-method method-id="PAYPAL">
         <name xml:lang="x-default">PayPal</name>
         <enabled-flag>true</enabled-flag>

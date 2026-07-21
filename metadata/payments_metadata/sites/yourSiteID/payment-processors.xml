@@ -63,15 +63,6 @@
             <production/>
         </preferences>
     </payment-processor>
-    <payment-processor processor-id="ALT_PAYMENT">
-        <description>Generic processor for Unified Checkout alternate payment methods (PPRO bank transfers, BNPL, PayPal, Venmo, Paze).</description>
-        <preferences>
-            <all-instances/>
-            <development/>
-            <staging/>
-            <production/>
-        </preferences>
-    </payment-processor>
     <payment-processor processor-id="PAYMENTS_PAZE">
         <description>Payment processor for Paze (card-backed digital wallet)</description>
         <preferences>

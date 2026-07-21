@@ -70,10 +70,6 @@ function httpRefundPayment(transactionId, referenceInformationCode, total, curre
     var order = OrderMgr.getOrder(referenceInformationCode);
     var paymentInstrument = order ? CardHelper.getNonGCPaymemtInstument(order) : null;
 
-    // Audit log: refund attempt.
-    auditLogger.info('[refund.js] Refund attempt: order {0}, capture {1}, amount {2} {3}',
-        referenceInformationCode, transactionId, total, currency);
-
     // Cap: never refund more than the remaining refundable balance. When the captured
     // total is known on the order's payment transaction, reject an over-refund (full,
     // single partial, or the running total of multiple partials) before the gateway call.
@@ -105,9 +101,6 @@ function httpRefundPayment(transactionId, referenceInformationCode, total, curre
                 if (order && paymentInstrument) {
                     PaymentInstrumentUtils.UpdatePaymentTransactionRefund(paymentInstrument, order, result);
                 }
-                // Audit log: successful outcome.
-                auditLogger.info('[refund.js] Refund outcome SUCCESS: order {0}, status {1}',
-                    referenceInformationCode, result.status);
             } catch (e) {
                 Logger.error('[refund.js] Error in httpRefundPayment request ( {0} )', e.message);
                 return { error: true, errorMsg: e.message };

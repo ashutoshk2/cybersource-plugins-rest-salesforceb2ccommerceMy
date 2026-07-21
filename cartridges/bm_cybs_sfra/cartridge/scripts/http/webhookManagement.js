@@ -19,8 +19,25 @@ function retrieveWebhooks(productId) {
             result.data = data;
         } else if (parseInt(error, 10) === 404) {
             // 404 = no subscriptions for this product yet; treat as an empty list.
-            // (error may be a number or a numeric string, so normalize before comparing.)
             result.data = [];
+        } else {
+            result.error = error;
+        }
+    });
+
+    return result;
+}
+
+function getWebhookById(webhookId) {
+    var instance = new cybersourceRestApi.ManageWebhooksApi(configObject);
+    var result = { data: null, error: null };
+
+    instance.getWebhookSubscriptionById(webhookId, function (data, error) {
+        if (!error) {
+            result.data = data;
+        } else if (parseInt(error, 10) === 404) {
+            // 404 = the webhook no longer exists; treat as "not found" (data stays null, no error).
+            result.data = null;
         } else {
             result.error = error;
         }
@@ -157,6 +174,7 @@ function findProductsToSubscribe() {
 
 module.exports = {
     retrieveWebhooks: retrieveWebhooks,
+    getWebhookById: getWebhookById,
     createSecurityKey: createSecurityKey,
     uploadAsymmetricKey: uploadAsymmetricKey,
     createSubscription: createSubscription,
