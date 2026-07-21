@@ -716,7 +716,11 @@ function generateUcCaptureContext(isMiniCart, selectedPaymentInstrumentId) {
                 paymentInstruments: [{ id: selectedPaymentInstrumentId }]
             };
 
-            // Add TMS_TOKEN to paymentConfigurations
+            // Add TMS_TOKEN to paymentConfigurations. The request model does not
+            // initialize paymentConfigurations, so create it before setting TMS_TOKEN
+            // (otherwise this dereference throws "Cannot read property TMS_TOKEN from
+            // undefined" and the capture context is never generated).
+            requestObj.paymentConfigurations = requestObj.paymentConfigurations || {};
             requestObj.paymentConfigurations.TMS_TOKEN = tmsConfig;
             requestObj.captureMandate.showAcceptedNetworkIcons = false;
 
@@ -735,6 +739,11 @@ function generateUcCaptureContext(isMiniCart, selectedPaymentInstrumentId) {
                 tokenTypes: ucPaymentHelper.buildTmsTokenTypes(existingCustomerId)
             };
             if (existingCustomerId) {
+                // The request model does not initialize paymentConfigurations; create it
+                // before touching TMS_TOKEN so this branch does not throw "Cannot read
+                // property TMS_TOKEN from undefined" (which aborts capture-context
+                // generation for a registered shopper who already has a TMS customer).
+                requestObj.paymentConfigurations = requestObj.paymentConfigurations || {};
                 requestObj.paymentConfigurations.TMS_TOKEN = requestObj.paymentConfigurations.TMS_TOKEN || {};
                 requestObj.paymentConfigurations.TMS_TOKEN.customer = { id: existingCustomerId };
             }
