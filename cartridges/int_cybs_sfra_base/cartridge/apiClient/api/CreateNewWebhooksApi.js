@@ -141,12 +141,6 @@
 
 
 
-        // MLE intentionally OFF for this endpoint. The Cybersource API spec does not enable
-        // message-level encryption on the webhook / KMS-egress endpoints (mleForRequest is unset,
-        // i.e. false), and the official Cybersource REST client defaults these operations to
-        // non-MLE. Setting this true would MLE-encrypt the request body and make ApiClient require
-        // the MLE certificate preferences, aborting the call when they are not configured. Only
-        // revisit if a future SDK/spec revision marks these endpoints optional or mandatory.
         var isMLESupportedByCybsForApi = false;
         return this.apiClient.callApi(
           '/notification-subscriptions/v2/webhooks', 'POST',
@@ -199,12 +193,6 @@
       var returnType = InlineResponse2015;
 
 
-        // MLE intentionally OFF for this endpoint. The Cybersource API spec does not enable
-        // message-level encryption on the webhook / KMS-egress endpoints (mleForRequest is unset,
-        // i.e. false), and the official Cybersource REST client defaults these operations to
-        // non-MLE. Setting this true would MLE-encrypt the request body and make ApiClient require
-        // the MLE certificate preferences, aborting the call when they are not configured. Only
-        // revisit if a future SDK/spec revision marks these endpoints optional or mandatory.
         var isMLESupportedByCybsForApi = false;
         return this.apiClient.callApi(
           '/kms/egress/v2/keys-sym', 'POST',

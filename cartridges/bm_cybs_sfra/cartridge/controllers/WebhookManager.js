@@ -31,6 +31,7 @@ server.post('Save', server.middleware.https, function (req, res, next) {
     if (action === 'sync') {
         syncResults = webhookSubscription.syncWithPreferences();
     } else if (action === 'advanced') {
+        syncResults = webhookSubscription.updateAdvanced(req.form.egressMleAlias);
         syncResults = webhookSubscription.updateAdvanced(req.form.egressMleAlias, req.form.egressPublicKey);
         }
     } catch (e) {
@@ -54,16 +55,6 @@ server.post('Save', server.middleware.https, function (req, res, next) {
         redirectArgs.push('error', 'no_fraud_product');
         hasError = true;
     }
-
-    // UC subscribe failed because the Egress Public Key is missing.
-    // Don't auto-disable the integration method (merchant may still be in setup);
-    // just surface the error so the merchant uploads the key and re-syncs.
-    if (!hasError && syncResults && syncResults.uc && syncResults.uc.success === false && syncResults.uc.error === 'EGRESS_KEY_REQUIRED') {
-        redirectArgs.push('error', 'egress_key_required');
-        hasError = true;
-    }
-
-    
     // Surface any other sync failure (API_ERROR, KEY_ERROR, ACTIVATION_ERROR,
     // PRODUCT_NOT_ENABLED, …) so a failed subscribe is not reported as "successful".
     if (!hasError && syncResults) {

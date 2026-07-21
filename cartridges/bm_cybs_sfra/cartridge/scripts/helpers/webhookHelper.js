@@ -28,9 +28,6 @@ function deriveEgressCertificateB64(alias) {
             Logger.error('deriveEgressCertificateB64: getEncodedCertificate returned empty/non-base64 for alias "' + alias + '".');
             return '';
         }
-        try {
-            Logger.info('deriveEgressCertificateB64: derived egress certificate from alias "' + alias + '" (subject=' + cert.getSubjectDN() + ', serial=' + cert.getSerialNumber() + ', b64len=' + clean.length + ').');
-        } catch (logErr) { /* identity logging is best-effort */ }
         return clean;
     } catch (e) {
         Logger.error('deriveEgressCertificateB64 failed for alias "' + alias + '": ' + ((e && e.message) || e) + '. Verify the RSA .p12 is imported under Administration > Operations > Private Keys and Certificates with this exact alias.');

@@ -113,7 +113,6 @@ server.post('PlaceOrderDirect', server.middleware.https, function (req, res, nex
             if (paymentDetails && paymentDetails.orderInformation) {
                 // Populate addresses from API response
                 ucPaymentHelper.populateBasketAddressesFromPaymentDetails(currentBasket, paymentDetails, Transaction);
-                logger.info('PlaceOrderDirect: Addresses populated from getPaymentDetails API (minicart/cart flow)');
 
                 // Set default shipping method if not present
                 ucPaymentHelper.setDefaultShippingMethod(currentBasket, Transaction);
@@ -139,27 +138,34 @@ server.post('PlaceOrderDirect', server.middleware.https, function (req, res, nex
         // Check if SCA (Strong Customer Authentication) is required
         // Expanded SCA detection for new Visa Acceptance response patterns
         var isSCARequired = false;
+        var scaExhausted = false;
         var processorInfo = jwtPayload.details && jwtPayload.details.processorInformation;
         var reasonCode = processorInfo && processorInfo.responseCode;
         var reason = jwtPayload.reason;
         var message = jwtPayload.message;
         var outcome = jwtPayload.outcome;
         // SCA required indicators: response 478, authentication_required status, or new Visa Acceptance patterns
-        if (
+        var scaDetected = (
             reasonCode === '478' ||
             authStatus === 'AUTHENTICATION_REQUIRED' ||
             authStatus === 'PENDING_AUTHENTICATION' ||
             (reason && reason === 'CUSTOMER_AUTHENTICATION_REQUIRED') ||
             (message && typeof message === 'string' && message.toLowerCase().indexOf('strong customer authentication required') !== -1)
-        ) {
-            isSCARequired = true;
-            ucPaymentHelper.setSCARequiredFlag();
-            logger.info('PlaceOrderDirect: SCA required detected (reasonCode: {0}, status: {1}, reason: {2}, outcome: {3}). Flag set for retry.', reasonCode, authStatus, reason, outcome);
+        );
+        if (scaDetected) {
+            if (session.privacy.scaChallenged) {
+                scaExhausted = true;
+                session.privacy.scaRequired = false;
+                session.privacy.scaChallenged = false;
+            } else {
+                isSCARequired = true;
+                session.privacy.scaRequired = true;
+            }
         }
 
         // Return appropriate error message
         var errorMessage;
-        if (isSCARequired) {
+        if (isSCARequired || scaExhausted) {
             errorMessage = ucPaymentHelper.getSCAErrorMessage();
         } else {
             errorMessage = ucPaymentHelper.getAuthorizationErrorMessage(authStatus) || Resource.msg('error.technical', 'checkout', null);
@@ -172,6 +178,9 @@ server.post('PlaceOrderDirect', server.middleware.https, function (req, res, nex
         });
         return next();
     }
+
+    session.privacy.scaRequired = false;
+    session.privacy.scaChallenged = false;
 
     // Validate order
     var validationOrderStatus = hooksHelper('app.validate.order', 'validateOrder', currentBasket, require('*/cartridge/scripts/hooks/validateOrder').validateOrder);
@@ -324,8 +333,7 @@ server.post('PlaceOrderDirect', server.middleware.https, function (req, res, nex
     // as the SFCC order number. That code is the merchant reference the transaction was
     // created against and the key the webhooks reconcile on (OrderMgr.getOrder(code)),
     // so the order number MUST equal it. It is taken from the JWT (authoritative) rather
-    // than session.privacy.ucOrderNo, which a redirect APM (iDEAL/Multibanco) flow may
-    // have dropped.
+    // than session.privacy.ucOrderNo, which a redirect flow may have dropped.
     var clientReferenceCode = jwtPayload.details &&
         jwtPayload.details.clientReferenceInformation &&
         jwtPayload.details.clientReferenceInformation.code;
@@ -375,16 +383,14 @@ server.post('PlaceOrderDirect', server.middleware.https, function (req, res, nex
 
 
                 var isApmFlow = (
-                    detectedPaymentMethod === 'ALT_PAYMENT_METHOD' ||
                     detectedPaymentMethod === 'PAYPAL' ||
                     detectedPaymentMethod === 'VENMO'
                 );
                 if (isApmFlow) {
-                    // Alternate payment methods (PPRO bank transfers, BNPL, PayPal,
-                    // Venmo, Paze, ...) carry no card/bank-account data. Record the
+                    // PayPal / Venmo carry no card/bank-account data. Record the
                     // scheme descriptor instead of card details.
-                    var apmDescriptor = ucPaymentHelper.getApmDescriptor(jwtPayload, transientToken) || { name: '', method: '' };
-                    // Customer-facing scheme name (e.g. 'iDEAL') for the confirmation /
+                    var apmDescriptor = ucPaymentHelper.getApmDescriptor(jwtPayload) || { name: '', method: '' };
+                    // Customer-facing scheme name (e.g. 'PayPal') for the confirmation /
                     // email payment section. paymentDetails is the reliably-imported
                     // PaymentTransaction attribute, so it must carry the readable label -
                     // the optional apm* instrument attributes may be absent in metadata.
@@ -485,10 +491,6 @@ server.post('PlaceOrderDirect', server.middleware.https, function (req, res, nex
                     paymentInstrument.paymentTransaction.custom.cybsTransactionStatus =
                         webhookOrderStatusHelper.formatTransactionStatus(authStatus);
                 }
-
-
-                logger.info('PlaceOrderDirect: Payment instrument updated - TransactionID: {0}, PaymentDetails: {1}, PaymentMethod: {2}',
-                    transactionId, paymentInstrument.paymentTransaction.custom.paymentDetails, paymentInstrument.paymentMethod);
             }
         });
     } catch (e) {
@@ -534,7 +536,6 @@ server.post('PlaceOrderDirect', server.middleware.https, function (req, res, nex
         Transaction.wrap(function () {
             order.setConfirmationStatus(order.CONFIRMATION_STATUS_NOTCONFIRMED);
         });
-        logger.info('PlaceOrderDirect: Order {0} left NOTCONFIRMED pending APM settlement (status PENDING)', order.orderNo);
     }
 
 
@@ -568,8 +569,6 @@ server.post('PlaceOrderDirect', server.middleware.https, function (req, res, nex
     }
     var tokenSaved = ucPaymentHelper.saveTokenToWallet(jwtPayload, detailsForWallet, session.getCustomer(), transientToken);
     if (tokenSaved) {
-        logger.info('PlaceOrderDirect: TMS token saved to customer wallet (method: {0})', detectedPaymentMethod);
-
         // Maintain the default saved card, mirroring PaymentInstruments-SavePaymentDirect
         // (My Account). saveTokenToWallet/upsertCreditCard only preserve an existing card's
         // default flag on replace; they never promote a brand-new card, so the controller
@@ -616,8 +615,6 @@ server.post('PlaceOrderDirect', server.middleware.https, function (req, res, nex
 
     // Reset multi-shipping flag
     req.session.privacyCache.set('usingMultiShipping', false);
-
-    logger.info('PlaceOrderDirect: Order placed successfully. OrderNo: {0}, TransactionID: {1}', order.orderNo, transactionId);
 
     // Return success
     secureResponseHelper.secureJsonResponse(res, {

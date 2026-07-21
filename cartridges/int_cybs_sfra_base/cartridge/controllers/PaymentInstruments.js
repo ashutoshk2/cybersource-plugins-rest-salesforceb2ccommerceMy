@@ -256,7 +256,6 @@ if (configObject.tokenizationEnabled && configObject.cartridgeEnabled) {
 
         // Save token to wallet
         var saveResult = ucPaymentHelper.saveTokenToWallet(jwtPayload, cardDetails, customerObj, transientToken);
-        logger.info('SavePaymentDirect: saveTokenToWallet result={0}', saveResult);
 
         if (!saveResult) {
             // If saveTokenToWallet returns false, token may not be in JWT
@@ -292,16 +291,12 @@ if (configObject.tokenizationEnabled && configObject.cartridgeEnabled) {
                     // update it instead of creating a duplicate (mirrors saveTokenToWallet).
                     // Upsert de-dupes by instrumentIdentifier and REPLACES an existing card
                     // (SFCC masks persisted instruments permanently, so we cannot mutate them).
-                    var upsertResult = ucPaymentHelper.upsertCreditCard(
+                    ucPaymentHelper.upsertCreditCard(
                         wallet,
                         serializedToken,
                         cardDetails,
                         tokenInfo.instrumentIdentifier.id
                     );
-
-                    logger.info('SavePaymentDirect: Card {0} via fallback upsert. InstrumentIdentifier: {1}',
-                        upsertResult.replacedExisting ? 'updated (replaced)' : 'saved',
-                        tokenInfo.instrumentIdentifier.id);
                 } else {
                     logger.error('SavePaymentDirect: No token information in JWT response');
                     secureResponseHelper.secureJsonResponse(res, {
@@ -351,7 +346,6 @@ if (configObject.tokenizationEnabled && configObject.cartridgeEnabled) {
             if (sfccAddress && sfccAddress.address1 && sfccAddress.postalCode && sfccAddress.city && addressBook) {
                 if (!addressHelpers.checkIfAddressStored(sfccAddress, addressBook.addresses)) {
                     addressHelpers.saveAddress(sfccAddress, req.currentCustomer, addressHelpers.generateAddressName(sfccAddress));
-                    logger.info('SavePaymentDirect: billing address added to address book for customer {0}', customerNo);
                 }
             }
         } catch (addrErr) {
@@ -360,8 +354,6 @@ if (configObject.tokenizationEnabled && configObject.cartridgeEnabled) {
 
         // Send account edited email
         accountHelpers.sendAccountEditedEmail(customerObj.profile);
-
-        logger.info('SavePaymentDirect: Card saved successfully for customer {0}', customerNo);
 
         secureResponseHelper.secureJsonResponse(res, {
             success: true,

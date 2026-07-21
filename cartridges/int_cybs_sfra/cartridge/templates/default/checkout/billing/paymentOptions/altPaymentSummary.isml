@@ -1,10 +1,3 @@
-<iscomment>
-    Summary partial for Unified Checkout alternate payment methods (iDEAL, Multibanco,
-    Tink Pay by Bank, BNPL, ...). These carry no card/bank-account data; the human-readable
-    scheme name is recorded on the payment transaction as paymentDetails at order placement
-    (see CheckoutServices-PlaceOrderDirect / ucPaymentHelper.getApmDisplayName). Gated on its
-    own data so a missing value suppresses the line rather than rendering an empty element.
-</iscomment>
 <div class="alt-payment-method">
     <isif condition="${!empty(payment.paymentDetails)}">
         <span>${payment.paymentDetails}</span>

@@ -532,8 +532,6 @@ function httpAuthorizeWithTransientToken(transientToken, customerEmail, referenc
         request.processingInformation.capture = true;
     }
 
-    logger.debug('{0} Authorization Request for order {1}', isEcheck ? 'eCheck' : 'Credit Card', referenceInformationCode);
-
     var response = '';
     instance.createPayment(request, function (data, error, responseData) { // eslint-disable-line no-unused-vars
         if (!error) {
@@ -543,8 +541,6 @@ function httpAuthorizeWithTransientToken(transientToken, customerEmail, referenc
                 ['AUTHORIZED', 'AUTHORIZED_PENDING_REVIEW'];
 
             if (validStatuses.indexOf(data.status) !== -1) {
-                logger.info('{0} authorization successful for order {1}, status: {2}, ID: {3}',
-                    isEcheck ? 'eCheck' : 'Credit Card', referenceInformationCode, data.status, data.id);
                 response = data;
                 return data;
             }
@@ -643,16 +639,6 @@ function generateUcCaptureContext(isMiniCart, selectedPaymentInstrumentId) {
             allowedPaymentTypes.push('PANENTRY');
             allowedPaymentTypes.push('CLICKTOPAY');
             allowedPaymentTypes.push('CHECK');
-
-            // Alternative Payment Methods (APMs) - locale/currency specific
-            allowedPaymentTypes.push('IDEAL');       // NL
-            // allowedPaymentTypes.push('BANCONTACT');  // BE
-            allowedPaymentTypes.push('MULTIBANCO');  // PT
-            allowedPaymentTypes.push('MYBANK');      // IT
-            // allowedPaymentTypes.push('TINKPAYBYBANK'); // GB
-            allowedPaymentTypes.push('PRZELEWY24');   // PL
-            allowedPaymentTypes.push('DRAGONPAY');    // PH
-            allowedPaymentTypes.push('KONBINI');      // JP
         }
 
         requestObj.allowedPaymentTypes = allowedPaymentTypes;
@@ -752,6 +738,18 @@ function generateUcCaptureContext(isMiniCart, selectedPaymentInstrumentId) {
         // BIN return mode is driven by BM dropdown VisaAcceptance_UnifiedCheckout_AllowedCardPrefix
         // (None -> includeCardPrefix:false, Six -> omitted, Eight -> includeCardPrefix:true).
         requestObj.transientTokenResponseOptions = ucPaymentHelper.buildTransientTokenResponseOptions(configObject);
+
+        if (!isMiniCart) {
+            var shipAddr = basket.defaultShipment ? basket.defaultShipment.shippingAddress : null;
+            var shippingCountry = shipAddr && shipAddr.countryCode ? shipAddr.countryCode.value : null;
+            if (!empty(shippingCountry)) {
+                var billingAddr = basket.billingAddress;
+                var billingCountry = billingAddr && billingAddr.countryCode ? billingAddr.countryCode.value : null;
+                if (empty(billingCountry)) {
+                    require('*/cartridge/scripts/checkout/checkoutHelpers').copyBillingAddressToBasket(shipAddr, basket);
+                }
+            }
+        }
 
         // Order Information (with addresses and line items)
         requestObj.data = {
@@ -1211,10 +1209,6 @@ function decodeCompleteMandateJwt(jwt) {
         );
 
         if (isValid) {
-            logger.info('decodeCompleteMandateJwt: JWT signature validated successfully. Status: {0}, TransactionID: {1}',
-                parsedPayload.status || 'N/A',
-                parsedPayload.id || 'N/A'
-            );
             return parsedPayload;
         } else {
             logger.error('decodeCompleteMandateJwt: JWT signature validation failed');
