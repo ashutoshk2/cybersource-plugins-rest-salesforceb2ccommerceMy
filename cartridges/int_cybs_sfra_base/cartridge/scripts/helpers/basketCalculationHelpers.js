@@ -1,4 +1,4 @@
-/* eslint-disable no-plusplus */ 
+/* eslint-disable no-plusplus */
 
 'use strict';
 
@@ -119,6 +119,52 @@ function isTaxStale(basket, taxResult) {
 }
 
 /**
+ * Correct check that a stored tax result still applies to the basket, used for the Checkout-Begin
+ * payment render. Returns true only when EVERY basket line item is represented in the cached tax by
+ * UUID and, for product line items, the same quantity.
+ *
+ * This exists because `isTaxStale` has a quantity-comparison bug (it compares the stored string
+ * quantity against a dw.value.Quantity object, so it reports any product basket as stale). That
+ * always-stale behavior is relied on by the allowed checkout routes to force a fresh tax service call,
+ * so isTaxStale is intentionally left as-is; this helper gives the render path a correct answer without
+ * changing that.
+ * @param {dw.order.Basket} basket - current basket
+ * @param {Object} taxResult - stored SFRA-shaped tax result { taxes: [...] }
+ * @returns {boolean} - true when the cached tax covers the basket exactly
+ */
+function cachedTaxMatchesBasket(basket, taxResult) {
+    if (!taxResult || !taxResult.taxes) {
+        return false;
+    }
+    var collections = require('*/cartridge/scripts/util/collections');
+    var taxByUuid = {};
+    for (var j = 0; j < taxResult.taxes.length; j++) {
+        taxByUuid[taxResult.taxes[j].uuid] = taxResult.taxes[j];
+    }
+    var allMatch = true;
+    collections.forEach(basket.getAllLineItems(), function (lineItem) {
+        if (!allMatch) {
+            return;
+        }
+        var tax = taxByUuid[lineItem.UUID];
+        if (!tax) {
+            allMatch = false;
+            return;
+        }
+        // eslint-disable-next-line no-undef
+        if (lineItem instanceof dw.order.ProductLineItem) {
+            var qty = (lineItem.quantity && lineItem.quantity.value != null)
+                ? lineItem.quantity.value.toString()
+                : null;
+            if (String(tax.quantity) !== String(qty)) {
+                allMatch = false;
+            }
+        }
+    });
+    return allMatch;
+}
+
+/**
  * Calculate sales tax using ONLY the default tax jurisdiction, ignoring any shipping address on
  * the basket. Used on cart/minicart (non-checkout, non-Apple-Pay) routes: the DW Apple Pay express
  * flow leaves its shipping address on the shared cart basket, and TaxMgr would otherwise tax that
@@ -174,6 +220,12 @@ function calculateTaxes(basket) {
     var allowedRoutes = configObject.calculateTaxOnRoute;
     var currentAction = helpers.getCurrentRouteAction();
     var isApplePay = currentAction.toLowerCase().indexOf('__SYSTEM__ApplePay'.toLowerCase()) >= 0;
+    // Checkout-Begin is the full-page checkout render; the case that matters is the stage=payment
+    // reload after a FAILED order (billingAddress is set). The CyberSource tax computed during checkout
+    // is still cached and — as the basket line items are unchanged — still valid, so at render we just
+    // RETURN it (never a tax API call during a page render). Gated on billingAddress so pre-payment /
+    // initial-shipping loads keep their default-jurisdiction display.
+    var isCheckoutBeginPayment = currentAction === 'Checkout-Begin' && !!basket.billingAddress;
 
     var allowedRouteResult = allowedRoutes.filter(function (el) {
         return el.route === currentAction;
@@ -191,7 +243,9 @@ function calculateTaxes(basket) {
     // express flow leaves its shipping address on the shared cart basket; without this the cart would
     // tax that address's jurisdiction (0% in RefArch) instead of the default and the total would drop.
     // Apple Pay routes fall through so the sheet/order still use the real shipping-address tax.
-    if (!allowedRoute && !isApplePay) {
+    // Checkout-Begin at the payment step (billingAddress set) also skips this branch so it can return
+    // the cached CyberSource tax below; a pre-payment Checkout-Begin still shows default-jurisdiction.
+    if (!allowedRoute && !isApplePay && !isCheckoutBeginPayment) {
         return calculateDefaultJurisdictionTaxes(basket);
     }
 
@@ -202,6 +256,19 @@ function calculateTaxes(basket) {
     }
 
     var calculatedTaxValue = retrieveTaxResult();
+
+    // Checkout-Begin payment render (e.g. the reload after a failed order): return the CyberSource tax
+    // already cached during checkout when it still matches the basket, otherwise fall back to base SFCC
+    // — never a tax API call at render. We use cachedTaxMatchesBasket (a correct UUID + quantity check)
+    // rather than isTaxStale, which has a quantity-comparison bug that reports every product basket as
+    // stale; that always-stale behavior is relied on by the allowed checkout routes to force
+    // recalculation, so it is deliberately left unchanged here.
+    if (isCheckoutBeginPayment) {
+        if (calculatedTaxValue && cachedTaxMatchesBasket(basket, calculatedTaxValue)) {
+            return calculatedTaxValue;
+        }
+        return BasketCalculationHelpers.calculateTaxes(basket);
+    }
 
     var isServiceTaxResponseStale = isTaxStale(basket, calculatedTaxValue);
 
@@ -263,22 +330,24 @@ function calculateTaxes(basket) {
         basketItem.updateTax(rate);
     }
 
-    // MapOrderLineItems omits zero-priced shipping line items from the CyberSource tax request
-    // (see mapper.js ShippingLineItem branch), so they never appear in the response processed
-    // above and get no entry in `taxes`. Base calculate.calculateTax resets any line item that is
-    // absent from this list to an unavailable tax via updateTax(null), which makes
-    // basket.updateTotals() report NOT_AVAILABLE total tax / grand total (rendered as "-" in the
-    // order summary). Backfill a zero tax for those items so the totals stay available. Mirrors the
-    // zero-tax backfill calculateAdjustments.js already applies to basket price adjustments.
+    // The loop above only produces entries for the taxable line items sent to CyberSource (products,
+    // non-zero shipping, surcharges, gift certificates). Every OTHER line item in the basket — a
+    // zero-priced shipping line item, and the price adjustment / coupon line items a promotion creates
+    // (both product-level and order-level) — is absent from `taxes`. Base calculate.calculateTax
+    // iterates basket.getAllLineItems() and resets any line item missing from this list to an
+    // unavailable tax via updateTax(null), which makes basket.updateTotals() report NOT_AVAILABLE total
+    // tax / grand total (blank tax + total in the summary). So we mirror that same iteration and
+    // backfill a zero tax for every not-yet-taxed line item, guaranteeing base never nulls one. Zero is
+    // correct for a discount: its effect is already in the product line items' net CyberSource tax, so
+    // the adjustment's own tax must be 0 — the same thing calculateAdjustments.js does for order-level
+    // price adjustments.
     var collections = require('*/cartridge/scripts/util/collections');
     var taxedUuids = {};
     for (var t = 0; t < taxes.length; t++) {
         taxedUuids[taxes[t].uuid] = true;
     }
     collections.forEach(basket.getAllLineItems(), function (lineItem) {
-        // eslint-disable-next-line no-undef
-        var isZeroPricedShipping = lineItem instanceof dw.order.ShippingLineItem && lineItem.adjustedPrice.value === 0;
-        if (isZeroPricedShipping && !taxedUuids[lineItem.UUID]) {
+        if (!taxedUuids[lineItem.UUID]) {
             taxes.push({
                 amount: true,
                 uuid: lineItem.UUID,
