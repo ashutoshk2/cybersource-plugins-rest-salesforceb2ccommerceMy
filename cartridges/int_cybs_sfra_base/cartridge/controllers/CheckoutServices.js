@@ -395,6 +395,13 @@ server.post('PlaceOrderDirect', server.middleware.https, function (req, res, nex
                     // PaymentTransaction attribute, so it must carry the readable label -
                     // the optional apm* instrument attributes may be absent in metadata.
                     var apmDetailsStr = ucPaymentHelper.getApmDisplayName(apmDescriptor);
+                    if (apmDetailsStr === 'Alternate Payment') {
+                        if (detectedPaymentMethod === 'PAYPAL') {
+                            apmDetailsStr = 'PayPal';
+                        } else if (detectedPaymentMethod === 'VENMO') {
+                            apmDetailsStr = 'Venmo';
+                        }
+                    }
                     paymentInstrument.paymentTransaction.custom.paymentDetails = apmDetailsStr;
                     ucPaymentHelper.setInstrumentCustomAttribute(paymentInstrument, 'apmPaymentType', apmDetailsStr);
                     ucPaymentHelper.setInstrumentCustomAttribute(paymentInstrument, 'apmMethod', apmDescriptor.method);
