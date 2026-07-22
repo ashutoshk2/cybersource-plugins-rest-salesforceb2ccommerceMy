@@ -233,11 +233,19 @@
                 <mandatory-flag>false</mandatory-flag>
                 <externally-managed-flag>false</externally-managed-flag>
             </attribute-definition>
+            <attribute-definition attribute-id="echeckRoutingNumber">
+                <display-name xml:lang="x-default">eCheck Routing Number</display-name>
+                <description xml:lang="x-default">Bank routing number for a saved eCheck (bank transfer) instrument. Used to render the saved-instrument tile in the wallet and checkout selectors.</description>
+                <type>string</type>
+                <mandatory-flag>false</mandatory-flag>
+                <externally-managed-flag>false</externally-managed-flag>
+            </attribute-definition>
         </custom-attribute-definitions>
         <group-definitions>
             <attribute-group group-id="Custom">
                 <display-name xml:lang="x-default">Custom</display-name>
                 <attribute attribute-id="isDefault"/>
+                <attribute attribute-id="echeckRoutingNumber"/>
             </attribute-group>
         </group-definitions>
     </type-extension>

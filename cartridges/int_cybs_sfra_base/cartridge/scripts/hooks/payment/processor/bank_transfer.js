@@ -7,15 +7,15 @@ var Logger = require('dw/system/Logger');
 
 /**
  * Create the BANK_TRANSFER (eCheck) payment instrument from the completeMandate
- * flow. Bank routing/account details are taken from the getPaymentDetails API
- * response that PlaceOrderDirect already fetched once and passed in via
- * paymentInformation.paymentDetails (avoids a duplicate API call).
+ * flow. Bank routing/account details are resolved once by PlaceOrderDirect
+ * (ucPaymentHelper.getEcheckBankDetails) and passed in via paymentInformation.bankDetails.
  *
- * Authorization is performed client-side by the UC SDK; this hook only builds
- * the instrument.
+ * These details are display-only: authorization is performed client-side by the UC SDK,
+ * so this hook only builds the instrument and MUST NOT fail the order when bank enrichment
+ * is missing (e.g. the tokenized flow where the transient token has been consumed).
  *
  * @param {dw.order.Basket} basket - Current basket
- * @param {Object} paymentInformation - { jwtPayload, transientToken, paymentMethod, paymentDetails, fromUC }
+ * @param {Object} paymentInformation - { jwtPayload, transientToken, paymentMethod, bankDetails, fromUC }
  * @returns {Object} { fieldErrors, serverErrors, error }
  */
 function Handle(basket, paymentInformation) {
@@ -24,22 +24,14 @@ function Handle(basket, paymentInformation) {
     var logger = Logger.getLogger('VisaAcceptance', 'PaymentProcessor');
     var serverErrors = [];
 
-    var paymentDetails = paymentInformation && paymentInformation.paymentDetails;
-    if (!paymentDetails) {
-        // Fallback: fetch once if caller didn't supply it (e.g. legacy callers).
-        try {
-            var payments = require('../../../http/payments');
-            paymentDetails = payments.getPaymentDetails(paymentInformation.transientToken);
-        } catch (e) {
-            logger.error('bank_transfer.Handle: getPaymentDetails failed: {0}', e.message || e);
-            serverErrors.push(Resource.msg('error.payment.token.missing', 'error', null));
-            return {
-                fieldErrors: {},
-                serverErrors: serverErrors,
-                error: true
-            };
-        }
-    }
+    // Prefer the bank details the caller already resolved; fall back to a local
+    // transient-token decode for legacy callers. Never fetch or throw here — a missing
+    // routing/account is display-only and must not block the order.
+    var bankDetails = (paymentInformation && paymentInformation.bankDetails)
+        || ucPaymentHelper.extractBankDetailsFromTransient(
+            paymentInformation && paymentInformation.transientToken,
+            basket.billingAddress
+        );
 
     try {
         Transaction.wrap(function () {
@@ -55,15 +47,14 @@ function Handle(basket, paymentInformation) {
                 basket.totalGrossPrice
             );
 
-            var bank = ucPaymentHelper.extractBankDetails(paymentDetails, basket.billingAddress);
-            if (bank.routingNumber) {
-                paymentInstrument.setBankRoutingNumber(bank.routingNumber);
+            if (bankDetails.routingNumber) {
+                paymentInstrument.setBankRoutingNumber(bankDetails.routingNumber);
             }
-            if (bank.accountNumber) {
-                paymentInstrument.setBankAccountNumber(bank.accountNumber);
+            if (bankDetails.maskedAccount) {
+                paymentInstrument.setBankAccountNumber(bankDetails.maskedAccount);
             }
-            if (bank.accountHolder) {
-                paymentInstrument.setBankAccountHolder(bank.accountHolder);
+            if (bankDetails.accountHolder) {
+                paymentInstrument.setBankAccountHolder(bankDetails.accountHolder);
             }
 
         });

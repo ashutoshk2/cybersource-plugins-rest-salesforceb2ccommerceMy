@@ -680,6 +680,100 @@ function extractBankDetailsFromTransient(transientToken, billingAddress) {
 }
 
 /**
+ * Resolve eCheck bank display details (routing number, masked account, last-4,
+ * account holder) from the most reliable source available. Degrades gracefully
+ * and NEVER throws, so it can't block order placement or the wallet save.
+ *
+ * Source precedence:
+ *   1. Local decode of the UC transient token (billing name + any populated bank fields).
+ *   2. TransientTokenData API (getPaymentDetails). Works for the NON-tokenized eCheck
+ *      flow, where the transient token is still retrievable.
+ *   3. TMS v1 payment-instrument retrieve, keyed by tokenInformation.paymentInstrument.id
+ *      from the auth JWT. This is the fallback for the TOKENIZED (save-card) flow, where
+ *      tokenization consumes the transient token and getTransactionForTransientToken
+ *      returns 410 Gone. Bank fields live under _embedded.instrumentIdentifier.bankAccount;
+ *      billTo carries the account holder name.
+ *
+ * @param {string} transientToken - UC transient token JWT from the SDK
+ * @param {Object} jwtPayload - decoded completeMandate auth response (carries paymentInstrument.id)
+ * @param {Object} billingAddress - order/basket billing address (fallback account holder)
+ * @returns {{routingNumber:string, maskedAccount:string, last4:string, accountHolder:string}}
+ */
+function getEcheckBankDetails(transientToken, jwtPayload, billingAddress) {
+    // 1. Local transient-token decode (also seeds accountHolder from the billing address;
+    //    the bank fields here are usually schema placeholders).
+    var details = extractBankDetailsFromTransient(transientToken, billingAddress);
+
+    // 2. TransientTokenData API — the primary source and the ONLY call made for the
+    //    non-tokenized eCheck flow. Track whether it actually failed (throws 410 in the
+    //    tokenized flow) so we fall back to TMS only then, never on a successful lookup.
+    var transientFailed = false;
+    if (transientToken) {
+        try {
+            var payments = require('~/cartridge/scripts/http/payments');
+            var pd = payments.getPaymentDetails(transientToken);
+            var pdBank = pd && pd.paymentInformation && pd.paymentInformation.bank;
+            if (pdBank) {
+                if (!details.routingNumber) {
+                    details.routingNumber = coerceTokenString(pdBank.routingNumber);
+                }
+                if (!details.last4 && pdBank.account) {
+                    var pdNum = coerceTokenString(pdBank.account.maskedValue)
+                        || coerceTokenString(pdBank.account.number);
+                    if (pdNum) {
+                        details.maskedAccount = pdNum;
+                        if (pdNum.length >= 4) { details.last4 = pdNum.slice(-4); }
+                    }
+                }
+            }
+        } catch (e) {
+            // Expected 410 for the tokenized flow — fall back to the TMS retrieve below.
+            transientFailed = true;
+            logger.warn('getEcheckBankDetails: transient getPaymentDetails failed: {0}', e.message || e);
+        }
+    }
+
+    // 3. TMS v1 payment-instrument retrieve — used ONLY when the transient API failed and
+    //    the auth JWT gave us a paymentInstrument id to key on (the tokenized save-card flow).
+    var piId = jwtPayload && jwtPayload.details && jwtPayload.details.tokenInformation
+        && jwtPayload.details.tokenInformation.paymentInstrument
+        && jwtPayload.details.tokenInformation.paymentInstrument.id;
+    if (transientFailed && piId) {
+        try {
+            var tokenManagement = require('~/cartridge/scripts/http/tokenManagement');
+            var verdict = tokenManagement.httpRetrievePaymentInstrument(piId);
+            if (verdict && verdict.status === 'updated' && verdict.data) {
+                var iiBank = verdict.data._embedded
+                    && verdict.data._embedded.instrumentIdentifier
+                    && verdict.data._embedded.instrumentIdentifier.bankAccount;
+                if (iiBank) {
+                    if (!details.routingNumber) {
+                        details.routingNumber = coerceTokenString(iiBank.routingNumber);
+                    }
+                    var tmsNum = coerceTokenString(iiBank.number);
+                    if (!details.maskedAccount && tmsNum) {
+                        details.maskedAccount = tmsNum;
+                        var tail = tmsNum.slice(-4);
+                        // TMS fully masks the account ("XXXX") for tokenized instruments;
+                        // only treat the tail as a real last-4 when it contains a digit.
+                        if (/\d/.test(tail)) { details.last4 = tail; }
+                    }
+                }
+                if (!details.accountHolder && verdict.data.billTo) {
+                    var bt = verdict.data.billTo;
+                    var name = ((bt.firstName || '') + ' ' + (bt.lastName || '')).trim();
+                    if (name) { details.accountHolder = name; }
+                }
+            }
+        } catch (e) {
+            logger.warn('getEcheckBankDetails: TMS retrieve failed: {0}', e.message || e);
+        }
+    }
+
+    return details;
+}
+
+/**
  * Build the storefront payment-summary string for an eCheck order.
  * Shows the full routing number and the last-4 of the account, masked.
  */
@@ -1500,8 +1594,17 @@ function upsertCreditCard(wallet, serializedToken, cardDetails, instrumentIdenti
         if (wasDefault) {
             newPI.custom.isDefault = true;
         }
+        // echeckRoutingNumber is a custom attribute on CustomerPaymentInstrument. Write it
+        // directly (works once the metadata is imported) and catch the "Unknown dynamic
+        // property" throw when it isn't, so a missing attribute can never abort the whole
+        // wallet save. Avoid the `in` guard here: it can report false for a defined-but-unset
+        // attribute on a freshly created instrument, which would silently skip the write.
         if (routingNumber) {
-            newPI.custom.echeckRoutingNumber = routingNumber;
+            try {
+                newPI.custom.echeckRoutingNumber = routingNumber;
+            } catch (e) {
+                logger.warn('upsertCreditCard: echeckRoutingNumber not writable (is the metadata imported?): {0}', e.message || e);
+            }
         }
         if (existingPI) {
             wallet.removePaymentInstrument(existingPI);
@@ -1780,6 +1883,7 @@ module.exports = {
     getProcessorIdForMethod: getProcessorIdForMethod,
     extractBankDetails: extractBankDetails,
     extractBankDetailsFromTransient: extractBankDetailsFromTransient,
+    getEcheckBankDetails: getEcheckBankDetails,
     buildEcheckPaymentDetailsString: buildEcheckPaymentDetailsString,
 
     // Card details extraction
