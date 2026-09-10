@@ -256,7 +256,7 @@ _exports.prototype.getHttpSignature = function (resource, method, merchantKeyId,
 }
 
 
-_exports.prototype.getJWTToken = function (resource, method, merchantId, digest, requestHost) {
+_exports.prototype.getJWTToken = function (resource, method, merchantId, digest, requestHost, responseMleKid) {
     var Constants = require('../apiClient/constants');
     var UUIDUtils = require('dw/util/UUIDUtils');
 
@@ -293,6 +293,13 @@ _exports.prototype.getJWTToken = function (resource, method, merchantId, digest,
     jwtPayload['request-host'] = requestHost;
     jwtPayload['v-c-jwt-version'] = '2';
     jwtPayload['v-c-merchant-id'] = merchantId;
+    // Response MLE: when a Response MLE key id is configured, this claim instructs the gateway
+    // to encrypt the response ({"encryptedResponse": "<JWE>"}) with the merchant Response MLE
+    // public key. The kid is the serial number of that certificate; the response is decrypted
+    // with the private key at the egress alias (see jweDecrypt.decryptResponse).
+    if (responseMleKid) {
+        jwtPayload['v-c-response-mle-kid'] = responseMleKid;
+    }
 
     // Base64URL encode header and payload (Step 4)
     var encodedHeader = this.base64UrlEncode(JSON.stringify(header));
@@ -343,14 +350,14 @@ _exports.prototype.applyHttpSignatureHeaders = function (headerParams, opts) {
  * not double-prefixed with "SHA-256=" against its separate digestAlgorithm claim.
  *
  * @param {Object} headerParams - header map to mutate
- * @param {Object} opts - {resource, method, requestHost, merchantId, isBodyMethod, rawDigest}
+ * @param {Object} opts - {resource, method, requestHost, merchantId, isBodyMethod, rawDigest, responseMleKid}
  */
 _exports.prototype.applyJwtHeaders = function (headerParams, opts) {
     var jwtToken;
     if (opts.isBodyMethod) {
-        jwtToken = this.getJWTToken(opts.resource, opts.method, opts.merchantId, opts.rawDigest, opts.requestHost);
+        jwtToken = this.getJWTToken(opts.resource, opts.method, opts.merchantId, opts.rawDigest, opts.requestHost, opts.responseMleKid);
     } else {
-        jwtToken = this.getJWTToken(opts.resource, opts.method, opts.merchantId, null, opts.requestHost);
+        jwtToken = this.getJWTToken(opts.resource, opts.method, opts.merchantId, null, opts.requestHost, opts.responseMleKid);
     }
     headerParams['Authorization'] = 'Bearer ' + jwtToken;
 };
@@ -380,16 +387,35 @@ _exports.prototype.callApi = function (path, httpMethod, pathParams, queryParams
     var method = httpMethod.toLowerCase();
     var merchantId = this.merchantConfig.getMerchantID();
 
-    // Auth mechanism is selected by endpoint, not by a BM preference:
-    // the UC V1 Sessions endpoint does not yet support shared-secret JWT, so it keeps
-    // HTTP signature; every other endpoint uses shared-secret JWT.
-    var useHttpSignature = (path === '/uc/v1/sessions');
+    // Response MLE runs on MLE-capable endpoints when the egress P12 alias is configured. The
+    // kid is derived from that P12 itself (subject DN serialNumber of the merchant Response MLE
+    // cert) rather than a preference, so there is nothing to keep in sync by hand. Derivation
+    // failure (P12 not imported, no serialNumber) only disables response MLE — it must never
+    // fail the payment, so we log and send no v-c-response-mle-kid claim.
+    var responseMleKid = null;
+    if (isMLESupportedByCybsForApi == true
+        && (!empty(configObject.requestMleP12ImpexPath) || !empty(configObject.responseMlePrivateKeyAlias))) {
+        try {
+            if (!empty(configObject.requestMleP12ImpexPath)) {
+                // Single-file mode: same .p12 that supplies the request-MLE certificate also
+                // carries the merchant leaf cert whose serialNumber is the response kid.
+                responseMleKid = require('*/cartridge/scripts/mle/p12Reader').getResponseMleKid() || null;
+            } else {
+                responseMleKid = require('*/cartridge/scripts/helpers/certHelper')
+                    .getKidFromAlias(configObject.responseMlePrivateKeyAlias, merchantId);
+            }
+        } catch (kidErr) {
+            require('dw/system/Logger').getLogger('VisaAcceptance', 'mle').warn(
+                'Response MLE disabled for {0}: could not derive v-c-response-mle-kid from alias "{1}" ({2}).',
+                path, configObject.responseMlePrivateKeyAlias, (kidErr && kidErr.message) || kidErr);
+            responseMleKid = null;
+        }
+    }
 
     var url = this.buildUrl(path, pathParams, queryParams);
     var resource = url.substr(this.basePath.length);
     var contentType = contentTypes.join(';');
     var acceptType = accepts.join(';');
-    var date = new Date(Date.now()).toUTCString();
 
     var payload = "";
     var rawDigest = null;
@@ -422,14 +448,15 @@ _exports.prototype.callApi = function (path, httpMethod, pathParams, queryParams
         payload = JSON.stringify(bodyParam);
 
         // MLE runs for every MLE-capable endpoint (no BM enable flag). It is gated only on the
-        // encryption cert config being present; if the alias or serial number is missing we log
-        // and abort rather than send an unencrypted request.
+        // encryption cert ALIAS being present — the kid is derived from that certificate's own
+        // subject DN (see jweEncrypt/certHelper), so there is no serial-number preference to
+        // configure. Without the alias we log and abort rather than send an unencrypted request.
         if (isMLESupportedByCybsForApi == true) {
-            if (!empty(configObject.mleCertificateAlias) && !empty(configObject.mleCertificateSerialNumber)) {
+            if (!empty(configObject.requestMleCertificateAlias)) {
                 var encryptPayload = require('*/cartridge/scripts/mle/jweEncrypt.js');
                 payload = encryptPayload.getJWE(payload);
             } else {
-                var mleErrorMessage = 'MLE required for ' + path + ' but VisaAcceptance_CertificateAlias and/or VisaAcceptance_CertificateSerialNo site preference is missing. Aborting request.';
+                var mleErrorMessage = 'MLE required for ' + path + ' but the VisaAcceptance_RequestMLECertificateAlias site preference is missing. Aborting request.';
                 require('dw/system/Logger').getLogger('VisaAcceptance', 'mle').error(mleErrorMessage);
                 throw new Error(mleErrorMessage);
             }
@@ -440,30 +467,17 @@ _exports.prototype.callApi = function (path, httpMethod, pathParams, queryParams
         rawDigest = this.generateDigest(payload);
     }
 
-    // Apply auth headers for the endpoint's mechanism (JWT for all but /uc/v1/sessions).
-    if (!useHttpSignature) {
-        this.applyJwtHeaders(headerParams, {
-            resource: resource,
-            method: method,
-            requestHost: requestHost,
-            merchantId: merchantId,
-            isBodyMethod: isBodyMethod,
-            rawDigest: rawDigest
-        });
-    } else {
-        this.applyHttpSignatureHeaders(headerParams, {
-            resource: resource,
-            method: method,
-            requestHost: requestHost,
-            merchantId: merchantId,
-            merchantKeyId: this.merchantConfig.getMerchantKeyID(),
-            merchantSecretKey: this.merchantConfig.getMerchantsecretKey(),
-            payload: payload,
-            isBodyMethod: isBodyMethod,
-            rawDigest: rawDigest,
-            date: date
-        });
-    }
+    // Every endpoint authenticates with shared-secret JWT. (applyHttpSignatureHeaders/getHttpSignature are retained as the
+    // HTTP-signature implementation but are no longer used by any endpoint.)
+    this.applyJwtHeaders(headerParams, {
+        resource: resource,
+        method: method,
+        requestHost: requestHost,
+        merchantId: merchantId,
+        isBodyMethod: isBodyMethod,
+        rawDigest: rawDigest,
+        responseMleKid: responseMleKid
+    });
 
     // Common headers for both mechanisms.
     headerParams['v-c-merchant-id'] = merchantId;
@@ -482,6 +496,14 @@ _exports.prototype.callApi = function (path, httpMethod, pathParams, queryParams
 
     if (response.ok) {
         var responseObj = response.object;
+        // MLE response decryption: when we asked the gateway to encrypt the response
+        // (v-c-response-mle-kid was sent), unwrap {"encryptedResponse": "<JWE>"} back to the
+        // plaintext payload BEFORE the JSON-vs-JWT branch below. decryptResponse is a no-op
+        // passthrough when the body is not MLE-wrapped, so this is safe for any response shape.
+        if (responseMleKid) {
+            var decryptResponse = require('*/cartridge/scripts/mle/jweDecrypt.js').decryptResponse;
+            responseObj = decryptResponse(responseObj);
+        }
         // These endpoints return JWT strings, not JSON - skip JSON.parse
         if (path === '/microform/v2/sessions' || path === '/up/v1/capture-contexts' || path === '/uc/v1/sessions') {
             callback(responseObj, false, response);

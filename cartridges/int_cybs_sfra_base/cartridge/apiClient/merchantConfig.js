@@ -14,9 +14,8 @@ var ApiException = require('./ApiException');
 
 function MerchantConfig(result) {
   /*Common Parameters*/
-  // Auth mechanism is no longer merchant-selectable: shared-secret JWT is used for all REST
-  // calls, with HTTP signature reserved for /uc/v1/sessions (decided per-endpoint in
-  // ApiClient.callApi). The payment transaction's authMethod is recorded from the
+  // Auth mechanism is no longer merchant-selectable: shared-secret JWT is used for every REST
+  // call, including /uc/v1/sessions. The payment transaction's authMethod is recorded from the
   // configuration module's authenticationType, not from MerchantConfig.
   this.url;
   this.requestHost;
@@ -298,9 +297,8 @@ MerchantConfig.prototype.defaultPropValues = function defaultPropValues() {
     this.merchantID = this.merchantID.toString();
   }
 
-  // Both auth mechanisms use the REST shared-secret key pair: shared-secret JWT signs the
-  // token with it (KeyId = kid, Secret Key = HMAC key) and HTTP signature (/uc/v1/sessions)
-  // uses the same pair. So the KeyId and Secret Key are always required.
+  // Shared-secret JWT signs its token with the REST shared-secret key pair (KeyId = kid,
+  // Secret Key = HMAC key), so the KeyId and Secret Key are always required.
   if (this.merchantKeyId === null || this.merchantKeyId === "" || this.merchantKeyId === undefined) {
     ApiException.ApiException(Constants.MERCHANT_KEY_ID_REQ, logger);
   }

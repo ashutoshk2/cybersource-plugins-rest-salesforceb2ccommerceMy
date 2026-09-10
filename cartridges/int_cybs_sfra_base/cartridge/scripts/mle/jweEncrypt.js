@@ -16,7 +16,29 @@ function getJWE(payload) {
     var currentTimestamp = new Date().getTime();
     currentTimestamp = Math.floor(currentTimestamp / 1000);
 
-    var kid = configObject.mleCertificateSerialNumber;
+    // The JWE kid is the subject-DN serialNumber of the CyberSource_SJC_US encryption cert, and
+    // the CEK below is wrapped with that same certificate's public key — deriving both from one
+    // source means they can never drift apart (a mismatched kid returns "unauthorized_user").
+    //
+    // Two sources, in order of preference:
+    //  1. the .p12 bundle in IMPEX (requestMleP12ImpexPath) — one file also covers the response-MLE kid
+    //  2. the CyberSource_SJC_US certificate imported in the BM keystore (requestMleCertificateAlias)
+    var kid;
+    var publicKeyRef = null;
+    if (!empty(configObject.requestMleP12ImpexPath)) {
+        var requestMle = require('*/cartridge/scripts/mle/p12Reader').getRequestMleCertificate();
+        kid = requestMle.kid;
+        publicKeyRef = requestMle.certRef;
+    } else {
+        var certHelper = require('*/cartridge/scripts/helpers/certHelper');
+        kid = certHelper.getKidFromCertificateAlias(configObject.requestMleCertificateAlias, 'CyberSource_SJC_US');
+        if (!kid) {
+            // Abort rather than send a request with an empty kid, which the gateway would reject.
+            throw new Error('MLE: could not derive the JWE kid (subject DN serialNumber) from the certificate at alias "'
+                + configObject.requestMleCertificateAlias + '". Verify the CyberSource_SJC_US certificate is imported under'
+                + ' Administration > Operations > Private Keys and Certificates with this exact alias.');
+        }
+    }
 
     var joseHeader = {
         "alg": "RSA-OAEP",
@@ -45,11 +67,13 @@ function getJWE(payload) {
     var cipherText = new Bytes(encryptedpayload.ciphertext);
     var authTag = new Bytes(encryptedpayload.customTag);
 
-    //public key (certificate extracted from p12 file using openssl) uploaded in Business Manager keystore (Admnistration --> Private Keys and Certificate)
-    var CertificateRef = require('dw/crypto/CertificateRef');
-    var alias = configObject.mleCertificateAlias;
-
-    var publicKeyRef = new CertificateRef(alias);
+    // Public key of the CyberSource_SJC_US certificate. Already resolved above from the IMPEX
+    // .p12 bundle; otherwise reference it by keystore alias (Administration > Operations >
+    // Private Keys and Certificates). Either way it is the SAME certificate the kid came from.
+    if (!publicKeyRef) {
+        var CertificateRef = require('dw/crypto/CertificateRef');
+        publicKeyRef = new CertificateRef(configObject.requestMleCertificateAlias);
+    }
 
     //encrypt the AES key using public key
     var encryptedAESKey = weakCipher.encryptBytes(key, publicKeyRef, 'RSA/ECB/OAEPWithSHA-1AndMGF1Padding', null, 0);

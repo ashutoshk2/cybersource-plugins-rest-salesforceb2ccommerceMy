@@ -1230,7 +1230,8 @@ function buildLineItems(basket) {
             // UC v1 (ISV Phase 1): canonical line-item shape. typeOfSupply '00' = goods.
             var product = lineItem.product;
             var productDescription = (product && product.shortDescription && product.shortDescription.markup) || lineItem.productName || '';
-            productDescription = productDescription.substring(0, 32);
+            // lineItems[].productDescription is capped at 30 chars in the UC v1 spec.
+            productDescription = productDescription.substring(0, 30);
             itemObject = {
                 productSku: lineItem.productID || '',
                 productName: lineItem.productName || '',

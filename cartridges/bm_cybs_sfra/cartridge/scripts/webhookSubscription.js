@@ -339,7 +339,7 @@ function getViewData() {
     var method = site.getCustomPreferenceValue('VisaAcceptance_Secure_Integration_Method');
     var methodValue = (method && method.value) ? method.value : (method || '');
     var dmEnabled = site.getCustomPreferenceValue('VisaAcceptance_DecisionManager') || false;
-    var egressMleAlias = site.getCustomPreferenceValue('VisaAcceptance_EgressCertificateAlias');
+    var egressMleAlias = site.getCustomPreferenceValue('VisaAcceptance_ResponseMLEPrivateKeyAlias');
 
     var testAction = new URLAction('WebhookNotification-dmNotification', site.ID);
     var fullUrl = URLUtils.https(testAction).toString();
@@ -438,7 +438,7 @@ function syncWithPreferences() {
 function updateAdvanced(egressMleAlias) {
     var site = Site.getCurrent();
 
-    var effectiveAlias = egressMleAlias || site.getCustomPreferenceValue('VisaAcceptance_EgressCertificateAlias');
+    var effectiveAlias = egressMleAlias || site.getCustomPreferenceValue('VisaAcceptance_ResponseMLEPrivateKeyAlias');
     var derivedKey = webhookHelper.deriveEgressCertificateB64(effectiveAlias);
     var keyToUse = derivedKey || '';
 
@@ -450,7 +450,7 @@ function updateAdvanced(egressMleAlias) {
     }
 
     Transaction.wrap(function () {
-        try { site.setCustomPreferenceValue('VisaAcceptance_EgressCertificateAlias', effectiveAlias); } catch(e) { /* pref write is best-effort */ }
+        try { site.setCustomPreferenceValue('VisaAcceptance_ResponseMLEPrivateKeyAlias', effectiveAlias); } catch(e) { /* pref write is best-effort */ }
     });
 
     var results = {};

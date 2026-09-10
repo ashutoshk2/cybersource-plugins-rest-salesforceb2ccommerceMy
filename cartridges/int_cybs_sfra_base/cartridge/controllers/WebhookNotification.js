@@ -19,9 +19,9 @@ function decryptMLEPayload(jweString) {
     var KeyRef = require('dw/crypto/KeyRef');
 
     // Resolve the egress P12 alias from the cartridge configuration (site preference
-    // VisaAcceptance_EgressCertificateAlias, surfaced as configObject.egressMleCertificateAlias).
+    // VisaAcceptance_ResponseMLEPrivateKeyAlias, surfaced as configObject.responseMlePrivateKeyAlias).
     // The default lives in the site-preference default-value, so no default is hardcoded here.
-    var alias = configObject.egressMleCertificateAlias;
+    var alias = configObject.responseMlePrivateKeyAlias;
 
 
     // Pin the JWE header before handing the payload to dw/crypto/JWE — defense-in-depth

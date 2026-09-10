@@ -613,40 +613,41 @@ SecureIntegrationConfiguration:{
     id: 'VisaAcceptance_MLE',
     display_name: 'Message-Level Encryption Configration',
     Preferences: {
-        /** @type {CustomPreference} */
-        MLECertificateSerialNumber: {
-            id: 'VisaAcceptance_CertificateSerialNo',
-            display_name: 'Certificate Serial Number',
-            description: 'Serial Number of "CyberSource_SJC_US" certificate extracted from p12 file.',
-            type: Types.string,
-            default: undefined,
-            flags: {
-                mandatory: false
-            }
-        },
          /** @type {CustomPreference} */
-         MLECertificateAlias: {
-            id: 'VisaAcceptance_CertificateAlias',
-            display_name: 'Alias of the Certificate',
-            description: '',
+         RequestMLECertificateAlias: {
+            id: 'VisaAcceptance_RequestMLECertificateAlias',
+            display_name: 'Request MLE Certificate Alias (Option 1 - Recommended)',
+            description: 'Alias of the "CyberSource_SJC_US" Certificate imported in "Private Keys and Certificates" for Request MLE.',
             type: Types.string,
             default: undefined,
             flags: {
                 mandatory: false
             }
         },
-        EgressMLECertificateAlias: {
-            id: 'VisaAcceptance_EgressCertificateAlias',
-            display_name: 'Alias of the Certificate (Egress/Webhooks)',
-            description: 'Alias of the Merchant P12 key imported in "Private Keys and Certificates" for response/webhook decryption.',
+        /** @type {CustomPreference} */
+        RequestMLEP12ImpexPath: {
+            id: 'VisaAcceptance_RequestMLEP12ImpexPath',
+            display_name: 'Request MLE - P12 file path under IMPEX (Option 2)',
+            description: 'Path under IMPEX to the Visa Acceptance .p12 bundle, e.g. src/mle/visaacceptance.p12. When set, both MLE key ids and the request-MLE encryption certificate are read from this one file and the separate CyberSource_SJC_US certificate import is not needed. Leave blank to use the "Alias of the Certificate" keystore certificate instead. The .p12 must still be imported in Private Keys and Certificates for response decryption.',
             type: Types.string,
-            // Default is defined once in the site-preference metadata (default-value);
-            // getValue() reads the preference, so no default is hardcoded here.
+            default: undefined,
+            flags: {
+                mandatory: false
+            }
+        },
+        ResponseMLEPrivateKeyAlias: {
+            id: 'VisaAcceptance_ResponseMLEPrivateKeyAlias',
+            display_name: 'Private Key Alias for Response MLE and Webhooks',
+            description: 'Alias of the Merchant P12 key imported in "Private Keys and Certificates" for response MLE and webhook decryption.',
+            type: Types.string,
+            // No default: the alias is whatever the merchant chose when importing their .p12, so
+            // it must be set explicitly. Left blank, response MLE is skipped and webhook
+            // decryption reports the unresolvable alias.
             default: undefined,
             flags: {
                 mandatory: false
             }
         }
     }
-},   
+},
 };

@@ -59,7 +59,12 @@
             displayedAccount = isEcheckRow ? '' : displayedAccount;
         }
     </isscript>
-    <div class="row saved-payment-instrument ${(paymentInstrument.isDefault || loopState.first) ? 'selected-payment' : ''}" data-uuid="${paymentInstrument.UUID}" data-pi-id="${tmsPaymentInstrumentId}">
+    <iscomment>
+        data-card-type lets the early Payer Auth trigger decide whether this row is eligible for
+        card-entry-time setup without another server round trip. eCheck rows live in this same
+        list, so they are labelled as such and the trigger skips them.
+    </iscomment>
+    <div class="row saved-payment-instrument ${(paymentInstrument.isDefault || loopState.first) ? 'selected-payment' : ''}" data-uuid="${paymentInstrument.UUID}" data-pi-id="${tmsPaymentInstrumentId}" data-card-type="${isEcheckRow ? 'eCheck' : paymentInstrument.creditCardType}">
         <div class="saved-payment-information col-6 col-md-3">
             <isif condition="${!isEcheckRow}">
                 <img class="card-image"

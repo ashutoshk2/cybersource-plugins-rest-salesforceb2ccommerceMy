@@ -36,10 +36,9 @@ function getConfig(config) {
     
     return {
         // Api Client config
-        // Auth mechanism is no longer merchant-selectable. ApiClient.callApi picks it per
-        // endpoint: shared-secret JWT for all REST calls, HTTP signature only for
-        // /uc/v1/sessions. This value is informational only (recorded as the payment
-        // transaction's authMethod, which is always JWT for the authorization call).
+        // Auth mechanism is no longer merchant-selectable: ApiClient.callApi uses shared-secret
+        // JWT for every REST call, including /uc/v1/sessions. This value is informational only
+        // (recorded as the payment transaction's authMethod).
         authenticationType: 'jwt',
         runEnvironment: 'cybersource.environment.SANDBOX',
         enableLog: EnableLog,
@@ -122,9 +121,11 @@ function getConfig(config) {
         isSCAEnabled: config.isSCAEnabled || customPreferences.PayerAuthentication.Preferences.IsSCAEnabled.getValue(),
 
         //MLE
-        mleCertificateSerialNumber: config.mleCertificateSerialNumber || customPreferences.MLE.Preferences.MLECertificateSerialNumber.getValue(),
-        mleCertificateAlias: config.mleCertificateAlias || customPreferences.MLE.Preferences.MLECertificateAlias.getValue(),
-        egressMleCertificateAlias: config.egressMleCertificateAlias ||customPreferences.MLE.Preferences.EgressMLECertificateAlias.getValue(),
+        requestMleCertificateAlias: config.requestMleCertificateAlias || customPreferences.MLE.Preferences.RequestMLECertificateAlias.getValue(),
+        responseMlePrivateKeyAlias: config.responseMlePrivateKeyAlias ||customPreferences.MLE.Preferences.ResponseMLEPrivateKeyAlias.getValue(),
+        // Single-file MLE: when set, the .p12 in IMPEX supplies the request-MLE certificate and
+        // both MLE key ids (see scripts/mle/p12Reader.js).
+        requestMleP12ImpexPath: config.requestMleP12ImpexPath || customPreferences.MLE.Preferences.RequestMLEP12ImpexPath.getValue(),
 
         //SecureIntegrationConfiguration
         secureIntegrationMethod: secureIntegrationMethod,

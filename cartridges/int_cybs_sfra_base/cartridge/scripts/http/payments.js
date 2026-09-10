@@ -688,12 +688,6 @@ function generateUcCaptureContext(isMiniCart, selectedPaymentInstrumentId) {
         // If selectedPaymentInstrumentId is provided, use ONLY that card (no other payment methods)
         // If null/undefined, show all payment methods (for entering new card)
         if (!isMiniCart && isRegisteredCustomer && customerProfile && selectedPaymentInstrumentId) {
-            // Add TMS token types for saving cards (omit 'customer' when one already exists).
-            // tokenCreate:true is required for UC to honor TMS_TOKEN.customer association below.
-            completeMandate.tms = {
-                tokenCreate: true,
-                tokenTypes: ucPaymentHelper.buildTmsTokenTypes(existingCustomerId)
-            };
 
             captureMandate.billingType = 'NONE';
 
@@ -721,7 +715,6 @@ function generateUcCaptureContext(isMiniCart, selectedPaymentInstrumentId) {
             // NOTE: UC currently appears to ignore this association (suspected gateway bug) and
             // still mints a new customer; the request we send is correct per the capture-context spec.
             completeMandate.tms = {
-                tokenCreate: true,
                 tokenTypes: ucPaymentHelper.buildTmsTokenTypes(existingCustomerId)
             };
             if (existingCustomerId) {
@@ -885,8 +878,6 @@ function generateUcCaptureContextSaveCard(billTo) {
             type: "PREFER_AUTH",
             consumerAuthentication: 'NONE',
             tms: {
-                // tokenCreate:true is required for UC to honor TMS_TOKEN.customer association below.
-                tokenCreate: true,
                 tokenTypes: ucPaymentHelper.buildTmsTokenTypes(existingCustomerId)
             }
         };
@@ -895,7 +886,7 @@ function generateUcCaptureContextSaveCard(billTo) {
         // Associate the newly tokenized card with the EXISTING TMS customer so all of an
         // account's cards live under one customer. Per the authoritative UC v1 capture-context
         // schema (ucv1api.json): paymentConfigurations.TMS_TOKEN.customer.id = existing customer
-        // token, paired with completeMandate.tms.tokenCreate:true (set above) - UC then creates
+        // token - UC then creates
         // the new paymentInstrument/instrumentIdentifier under that customer. When the account has
         // no customer yet (first card), this is skipped and completeMandate.tms mints the customer.
         if (existingCustomerId) {

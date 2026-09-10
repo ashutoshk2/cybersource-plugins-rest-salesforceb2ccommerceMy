@@ -25,24 +25,9 @@ var configObject = require('~/cartridge/configuration/index.js');
  * @returns {boolean} - Returns true if Payer Authentication conditions are met
  */
 function shouldApplyPayerAuthentication(paymentInstrument) {
-    if (empty(paymentInstrument)) {
-        return false;
-    }
-
-    var paymentMethod = paymentInstrument.paymentMethod;
-    var isVisaCTP = !empty(paymentMethod) && paymentMethod.equals('CLICK_TO_PAY');
-    var isApplePayUC = !empty(paymentMethod) && paymentMethod.equals('DW_APPLE_PAY');
-    var isGooglePay = !empty(paymentMethod) && paymentMethod.equals('DW_GOOGLE_PAY');
-    var isEcheck = !empty(paymentMethod) && paymentMethod.equals('BANK_TRANSFER');
-
-    var threeDSMode = payerAuthentication.get3DSMode();
-    var cardType = payerAuthentication.getCardType(paymentInstrument);
-    var performPayerAuth = true;
-    if ('NO' === threeDSMode.value || ('DATA_ONLY_NO' === threeDSMode.value && !('VISA' === cardType || 'MASTERCARD' === cardType || 'MAESTRO' === cardType))) {
-        performPayerAuth = false;
-    }
-
-    return performPayerAuth && configObject.cartridgeEnabled && !isVisaCTP && !isEcheck && !isApplePayUC && !isGooglePay;
+    // The whole decision lives in payerAuthentication.js so that this hook, the early
+    // (card-entry time) setup route, and checkoutHelpers.createOrder cannot drift apart.
+    return payerAuthentication.shouldApplyPayerAuthForInstrument(paymentInstrument);
 }
 
 /**
