@@ -628,7 +628,7 @@ SecureIntegrationConfiguration:{
         RequestMLEP12ImpexPath: {
             id: 'VisaAcceptance_RequestMLEP12ImpexPath',
             display_name: 'Request MLE - P12 file path under IMPEX (Option 2)',
-            description: 'Path under IMPEX to the Visa Acceptance .p12 bundle, e.g. src/mle/visaacceptance.p12. When set, both MLE key ids and the request-MLE encryption certificate are read from this one file and the separate CyberSource_SJC_US certificate import is not needed. Leave blank to use the "Alias of the Certificate" keystore certificate instead. The .p12 must still be imported in Private Keys and Certificates for response decryption.',
+            description: 'Path under IMPEX to the Visa Acceptance .p12 bundle, e.g. src/mle/visaacceptance.p12. Used ONLY when Request MLE Certificate Alias (Option 1) is blank - Option 1 takes priority when both are set.',
             type: Types.string,
             default: undefined,
             flags: {

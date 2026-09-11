@@ -45,7 +45,7 @@
             </attribute-definition>
             <attribute-definition attribute-id="VisaAcceptance_EnableTestEndpoints">
                 <display-name xml:lang="x-default">Enable Visa Acceptance Test Endpoints</display-name>
-                <description xml:lang="x-default">Enable capture and auth reversal test endpoints (ServiceFrameworkTest controller). Must be explicitly enabled per sandbox instance. Disabled by default.</description>
+                <description xml:lang="x-default">Enable capture, refund and auth reversal test endpoints (ServiceFrameworkTest controller). Must be explicitly enabled per sandbox instance. Disabled by default.</description>
                 <type>boolean</type>
                 <externally-managed-flag>false</externally-managed-flag>
                 <default-value>false</default-value>

@@ -124,7 +124,8 @@ function getConfig(config) {
         requestMleCertificateAlias: config.requestMleCertificateAlias || customPreferences.MLE.Preferences.RequestMLECertificateAlias.getValue(),
         responseMlePrivateKeyAlias: config.responseMlePrivateKeyAlias ||customPreferences.MLE.Preferences.ResponseMLEPrivateKeyAlias.getValue(),
         // Single-file MLE: when set, the .p12 in IMPEX supplies the request-MLE certificate and
-        // both MLE key ids (see scripts/mle/p12Reader.js).
+        // its key id (see scripts/mle/p12Reader.js). Response MLE is not affected — it is gated
+        // on responseMlePrivateKeyAlias alone.
         requestMleP12ImpexPath: config.requestMleP12ImpexPath || customPreferences.MLE.Preferences.RequestMLEP12ImpexPath.getValue(),
 
         //SecureIntegrationConfiguration

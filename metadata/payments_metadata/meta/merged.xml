@@ -46,7 +46,7 @@
             </attribute-definition>
             <attribute-definition attribute-id="VisaAcceptance_EnableTestEndpoints">
                 <display-name xml:lang="x-default">Enable Visa Acceptance Test Endpoints</display-name>
-                <description xml:lang="x-default">Enable capture and auth reversal test endpoints (ServiceFrameworkTest controller). Must be explicitly enabled per sandbox instance. Disabled by default.</description>
+                <description xml:lang="x-default">Enable capture, refund and auth reversal test endpoints (ServiceFrameworkTest controller). Must be explicitly enabled per sandbox instance. Disabled by default.</description>
                 <type>boolean</type>
                 <externally-managed-flag>false</externally-managed-flag>
                 <default-value>false</default-value>
@@ -318,7 +318,7 @@
             </attribute-definition>
             <attribute-definition attribute-id="VisaAcceptance_RequestMLEP12ImpexPath">
                 <display-name xml:lang="x-default">Request MLE - P12 file path under IMPEX (Option 2)</display-name>
-                <description xml:lang="x-default">Path under IMPEX to the Visa Acceptance .p12 bundle, e.g. src/mle/visaacceptance.p12. When set, both MLE key ids and the request-MLE encryption certificate are read from this one file and the separate CyberSource_SJC_US certificate import is not needed. Leave blank to use the "Alias of the Certificate" keystore certificate instead. The .p12 must still be imported in Private Keys and Certificates for response decryption.</description>
+                <description xml:lang="x-default">Path under IMPEX to the Visa Acceptance .p12 bundle, e.g. src/mle/visaacceptance.p12. Used ONLY when Request MLE Certificate Alias (Option 1) is blank - Option 1 takes priority when both are set.</description>
                 <type>string</type>
                 <externally-managed-flag>false</externally-managed-flag>
             </attribute-definition>

@@ -21,23 +21,35 @@ function getJWE(payload) {
     // source means they can never drift apart (a mismatched kid returns "unauthorized_user").
     //
     // Two sources, in order of preference:
-    //  1. the .p12 bundle in IMPEX (requestMleP12ImpexPath) — one file also covers the response-MLE kid
-    //  2. the CyberSource_SJC_US certificate imported in the BM keystore (requestMleCertificateAlias)
+    //  1. the CyberSource_SJC_US certificate in the BM keystore (requestMleCertificateAlias)
+    //  2. the .p12 bundle in IMPEX (requestMleP12ImpexPath), which also carries that certificate
+    //
+    // The keystore wins whenever it is configured, even if the IMPEX bundle is configured too:
+    // Business Manager's keystore is the platform's intended store for certificate material,
+    // whereas IMPEX is a WebDAV-reachable folder. The IMPEX bundle is only consulted when no
+    // keystore alias is set. Note this is a deliberate precedence, NOT a fallback — a configured
+    // but unusable alias fails loudly rather than quietly switching mechanism, so a typo cannot
+    // look like a working Option 1.
     var kid;
     var publicKeyRef = null;
-    if (!empty(configObject.requestMleP12ImpexPath)) {
-        var requestMle = require('*/cartridge/scripts/mle/p12Reader').getRequestMleCertificate();
-        kid = requestMle.kid;
-        publicKeyRef = requestMle.certRef;
-    } else {
+    if (!empty(configObject.requestMleCertificateAlias)) {
         var certHelper = require('*/cartridge/scripts/helpers/certHelper');
         kid = certHelper.getKidFromCertificateAlias(configObject.requestMleCertificateAlias, 'CyberSource_SJC_US');
         if (!kid) {
             // Abort rather than send a request with an empty kid, which the gateway would reject.
             throw new Error('MLE: could not derive the JWE kid (subject DN serialNumber) from the certificate at alias "'
                 + configObject.requestMleCertificateAlias + '". Verify the CyberSource_SJC_US certificate is imported under'
-                + ' Administration > Operations > Private Keys and Certificates with this exact alias.');
+                + ' Administration > Operations > Private Keys and Certificates with this exact alias, or clear'
+                + ' VisaAcceptance_RequestMLECertificateAlias to read the certificate from the IMPEX .p12 bundle instead.');
         }
+    } else if (!empty(configObject.requestMleP12ImpexPath)) {
+        var requestMle = require('*/cartridge/scripts/mle/p12Reader').getRequestMleCertificate();
+        kid = requestMle.kid;
+        publicKeyRef = requestMle.certRef;
+    } else {
+        throw new Error('MLE: no request-MLE certificate is configured. Set either'
+            + ' VisaAcceptance_RequestMLECertificateAlias (the CyberSource_SJC_US certificate imported under'
+            + ' Administration > Operations > Private Keys and Certificates) or VisaAcceptance_RequestMLEP12ImpexPath.');
     }
 
     var joseHeader = {

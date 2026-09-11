@@ -1,18 +1,21 @@
 'use strict';
 
 /**
- * Reads the Visa Acceptance .p12 bundle from IMPEX and resolves the MLE material from it, so a
- * single file covers BOTH directions of message-level encryption:
+ * Reads the Visa Acceptance .p12 bundle from IMPEX to supply the REQUEST-MLE material:
+ * the CN=CyberSource_SJC_US certificate (whose public key wraps the CEK) and its subject-DN
+ * serialNumber, which is the JWE `kid`. Used only when no request-MLE keystore alias is
+ * configured — the keystore takes priority (see jweEncrypt).
  *
- *   request MLE  — the CN=CyberSource_SJC_US certificate (public key used to wrap the CEK) and
- *                  its subject-DN serialNumber, which is the JWE `kid`.
- *   response MLE — the merchant leaf certificate's subject-DN serialNumber, which is the
- *                  `v-c-response-mle-kid` JWT claim.
+ * IMPORTANT — this bundle holds PUBLIC certificates as far as this module is concerned, so it
+ * deliberately does NOT drive response MLE. Response MLE is gated on the response private key
+ * alias alone and its kid comes from that keystore entry (see ApiClient.callApi): a kid taken
+ * from here would make the gateway encrypt a reply we hold no private key for. SFCC cannot build
+ * a private key from raw bytes anyway (dw.crypto.KeyRef accepts a keystore alias only), so the
+ * .p12 must ALSO be imported into Business Manager for response decryption. This module removes
+ * the separate CyberSource_SJC_US certificate export/import, not the keystore import.
  *
- * IMPORTANT — what this CANNOT do: response MLE *decryption* needs the PRIVATE key, and SFCC has
- * no API to build one from raw bytes (dw.crypto.KeyRef accepts a keystore alias only). So the
- * same .p12 must ALSO be imported into Business Manager under the egress alias. This module
- * removes the separate CyberSource_SJC_US certificate export/import, not the keystore import.
+ * getResponseMleKid() remains available for callers that want the merchant leaf serialNumber out
+ * of the bundle, but nothing on the request path uses it.
  *
  * In a CyberSource-issued bundle the certificate bags sit in a PLAINTEXT "PKCS7 Data" section
  * (only the private key is a Shrouded Keybag), so no PBE key is needed to read the certificates.

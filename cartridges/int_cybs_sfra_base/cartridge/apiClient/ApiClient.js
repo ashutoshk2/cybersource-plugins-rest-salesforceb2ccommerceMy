@@ -393,17 +393,18 @@ _exports.prototype.callApi = function (path, httpMethod, pathParams, queryParams
     // failure (P12 not imported, no serialNumber) only disables response MLE — it must never
     // fail the payment, so we log and send no v-c-response-mle-kid claim.
     var responseMleKid = null;
-    if (isMLESupportedByCybsForApi == true
-        && (!empty(configObject.requestMleP12ImpexPath) || !empty(configObject.responseMlePrivateKeyAlias))) {
+    if (isMLESupportedByCybsForApi == true && !empty(configObject.responseMlePrivateKeyAlias)) {
         try {
-            if (!empty(configObject.requestMleP12ImpexPath)) {
-                // Single-file mode: same .p12 that supplies the request-MLE certificate also
-                // carries the merchant leaf cert whose serialNumber is the response kid.
-                responseMleKid = require('*/cartridge/scripts/mle/p12Reader').getResponseMleKid() || null;
-            } else {
-                responseMleKid = require('*/cartridge/scripts/helpers/certHelper')
-                    .getKidFromAlias(configObject.responseMlePrivateKeyAlias, merchantId);
-            }
+            // Gated on the RESPONSE private key alias ALONE, and the kid is derived from that very
+            // keystore entry. That entry holds the private key the reply is decrypted with, so
+            // deriving from it means we only ever ask the gateway to encrypt a response we can
+            // actually decrypt, and an unresolvable alias fails here rather than at decrypt time.
+            //
+            // Deliberately NOT tied to the request-MLE IMPEX bundle: that file supplies public
+            // certificates only. A kid taken from it would make the gateway encrypt a reply we
+            // hold no private key for, leaving the response unreadable.
+            responseMleKid = require('*/cartridge/scripts/helpers/certHelper')
+                .getKidFromAlias(configObject.responseMlePrivateKeyAlias, merchantId) || null;
         } catch (kidErr) {
             require('dw/system/Logger').getLogger('VisaAcceptance', 'mle').warn(
                 'Response MLE disabled for {0}: could not derive v-c-response-mle-kid from alias "{1}" ({2}).',
@@ -447,16 +448,17 @@ _exports.prototype.callApi = function (path, httpMethod, pathParams, queryParams
         }
         payload = JSON.stringify(bodyParam);
 
-        // MLE runs for every MLE-capable endpoint (no BM enable flag). It is gated only on the
-        // encryption cert ALIAS being present — the kid is derived from that certificate's own
-        // subject DN (see jweEncrypt/certHelper), so there is no serial-number preference to
-        // configure. Without the alias we log and abort rather than send an unencrypted request.
+        // MLE runs for every MLE-capable endpoint (no BM enable flag). It is gated on EITHER
+        // request-MLE certificate source being configured — the keystore alias (preferred) or the
+        // IMPEX .p12 bundle; jweEncrypt picks between them and derives the kid from whichever
+        // certificate it uses. With neither configured we log and abort rather than send an
+        // unencrypted request.
         if (isMLESupportedByCybsForApi == true) {
-            if (!empty(configObject.requestMleCertificateAlias)) {
+            if (!empty(configObject.requestMleCertificateAlias) || !empty(configObject.requestMleP12ImpexPath)) {
                 var encryptPayload = require('*/cartridge/scripts/mle/jweEncrypt.js');
                 payload = encryptPayload.getJWE(payload);
             } else {
-                var mleErrorMessage = 'MLE required for ' + path + ' but the VisaAcceptance_RequestMLECertificateAlias site preference is missing. Aborting request.';
+                var mleErrorMessage = 'MLE required for ' + path + ' but neither VisaAcceptance_RequestMLECertificateAlias nor VisaAcceptance_RequestMLEP12ImpexPath is set. Aborting request.';
                 require('dw/system/Logger').getLogger('VisaAcceptance', 'mle').error(mleErrorMessage);
                 throw new Error(mleErrorMessage);
             }
