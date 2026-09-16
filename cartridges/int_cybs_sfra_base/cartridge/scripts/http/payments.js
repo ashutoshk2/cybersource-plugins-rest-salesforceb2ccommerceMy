@@ -662,7 +662,7 @@ function generateUcCaptureContext(isMiniCart, selectedPaymentInstrumentId) {
         } else {
             // Checkout instance: SFRA already collected billing/contact/shipping on the
             // platform page, so UC only needs partial billing and no contact prompts.
-            captureMandate.billingType = 'PARTIAL';
+            captureMandate.billingType = 'NONE';
             captureMandate.requestEmail = false;
             captureMandate.requestPhone = false;
             captureMandate.requestShipping = false;
