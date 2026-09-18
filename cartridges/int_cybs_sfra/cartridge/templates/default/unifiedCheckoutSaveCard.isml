@@ -20,10 +20,11 @@
             </div>
             <iscomment>Error display for server-side failures</iscomment>
             <isif condition="${pdict.UcCaptureContext == null}">
+                <isset name="ucErrorClass" value="${pdict.serverError ? 'alert alert-danger' : 'alert alert-danger d-none'}" scope="page" />
                 <noscript>
                     <div class="alert alert-danger">${Resource.msg('uc.tokenerror','payments',null)}</div>
                 </noscript>
-                <div id="uc-server-error" class="alert alert-danger d-none">
+                <div id="uc-server-error" class="${ucErrorClass}">
                     ${Resource.msg('uc.tokenerror','payments',null)}
                 </div>
             </isif>
