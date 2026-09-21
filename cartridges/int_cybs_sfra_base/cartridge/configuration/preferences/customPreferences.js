@@ -613,6 +613,17 @@ SecureIntegrationConfiguration:{
     id: 'VisaAcceptance_MLE',
     display_name: 'Message-Level Encryption Configration',
     Preferences: {
+        /** @type {CustomPreference} */
+        MLEEnabled: {
+            id: 'VisaAcceptance_MLEEnabled',
+            display_name: 'Enable MLE',
+            description: 'Master switch for Message-Level Encryption. When enabled, the cartridge encrypts outbound requests (Request MLE) and asks Visa Acceptance to encrypt API responses (Response MLE), decrypting them with the private key alias below. Each direction also needs its own certificate configured. Disabled by default - enable it once the certificates are in place.',
+            type: Types.boolean,
+            default: false,
+            flags: {
+                mandatory: false
+            }
+        },
          /** @type {CustomPreference} */
          RequestMLECertificateAlias: {
             id: 'VisaAcceptance_RequestMLECertificateAlias',
@@ -638,11 +649,11 @@ SecureIntegrationConfiguration:{
         ResponseMLEPrivateKeyAlias: {
             id: 'VisaAcceptance_ResponseMLEPrivateKeyAlias',
             display_name: 'Private Key Alias for Response MLE and Webhooks',
-            description: 'Alias of the Merchant P12 key imported in "Private Keys and Certificates" for response MLE and webhook decryption.',
+            description: 'Alias of the Merchant P12 key imported in "Private Keys and Certificates" for response MLE and webhook decryption. This alias works for webhooks decryption even if Response MLE is disabled.',
             type: Types.string,
             // No default: the alias is whatever the merchant chose when importing their .p12, so
-            // it must be set explicitly. Left blank, response MLE is skipped and webhook
-            // decryption reports the unresolvable alias.
+            // it must be set explicitly. Left blank, Response MLE is skipped (even with Enable MLE
+            // on) and webhook decryption reports the unresolvable alias.
             default: undefined,
             flags: {
                 mandatory: false

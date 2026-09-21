@@ -262,12 +262,24 @@ function handleDmNotification(req, res, next) {
         // release the authorization hold. The gateway call is made outside the DB transaction and
         // is best-effort — if the auth was already reversed/expired, log it and still ack the
         // webhook so Visa Acceptance does not keep retrying.
+        //
+        // It MUST go through authReversalHelper.reverseAuthorizationOnce: notification delivery is
+        // at-least-once (retryPolicy numberOfRetries=3, plus the deliberate 503 above), and every
+        // redelivery of risk.casemanagement.decision.reject still finds the failed order with its
+        // authorization id intact — which reversed the same hold a second time.
         if (reversal) {
-            try {
-                require('~/cartridge/scripts/http/authReversal').httpAuthReversal(reversal.requestId, orderId, reversal.total, reversal.currency);
-                Logger.info('dmNotification: auth reversal requested for rejected order ( ' + orderId + ' ), requestId ' + reversal.requestId);
-            } catch (revErr) {
-                Logger.error('dmNotification: auth reversal failed for rejected order ( ' + orderId + ' ): ' + (revErr && revErr.message ? revErr.message : revErr));
+            var authReversalHelper = require('*/cartridge/scripts/helpers/authReversalHelper');
+            if (authReversalHelper.payloadAlreadyReversed(details)) {
+                Logger.info('dmNotification: notification for order ( ' + orderId + ' ) already carries a reversal; leaving the authorization to the gateway.');
+            } else {
+                authReversalHelper.reverseAuthorizationOnce({
+                    order: order,
+                    authTransactionId: reversal.requestId,
+                    referenceCode: orderId,
+                    amount: reversal.total,
+                    currency: reversal.currency,
+                    context: 'dmNotification'
+                });
             }
         }
 

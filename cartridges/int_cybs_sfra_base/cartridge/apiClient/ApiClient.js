@@ -387,13 +387,16 @@ _exports.prototype.callApi = function (path, httpMethod, pathParams, queryParams
     var method = httpMethod.toLowerCase();
     var merchantId = this.merchantConfig.getMerchantID();
 
-    // Response MLE runs on MLE-capable endpoints when the egress P12 alias is configured. The
-    // kid is derived from that P12 itself (subject DN serialNumber of the merchant Response MLE
-    // cert) rather than a preference, so there is nothing to keep in sync by hand. Derivation
-    // failure (P12 not imported, no serialNumber) only disables response MLE — it must never
-    // fail the payment, so we log and send no v-c-response-mle-kid claim.
+    // Response MLE runs on an MLE-capable endpoint only when MLE is switched on
+    // (VisaAcceptance_MLEEnabled — the master switch covering both directions) AND the response
+    // private key alias is set. Leaving the kid null both suppresses the v-c-response-mle-kid
+    // claim and skips response decryption, so a disabled flag means the gateway is never asked to
+    // encrypt in the first place. Derivation failure only disables response MLE — it must never
+    // fail the payment.
     var responseMleKid = null;
-    if (isMLESupportedByCybsForApi == true && !empty(configObject.responseMlePrivateKeyAlias)) {
+    if (isMLESupportedByCybsForApi == true
+        && configObject.mleEnabled
+        && !empty(configObject.responseMlePrivateKeyAlias)) {
         try {
             // Gated on the RESPONSE private key alias ALONE, and the kid is derived from that very
             // keystore entry. That entry holds the private key the reply is decrypted with, so
@@ -448,12 +451,13 @@ _exports.prototype.callApi = function (path, httpMethod, pathParams, queryParams
         }
         payload = JSON.stringify(bodyParam);
 
-        // MLE runs for every MLE-capable endpoint (no BM enable flag). It is gated on EITHER
-        // request-MLE certificate source being configured — the keystore alias (preferred) or the
-        // IMPEX .p12 bundle; jweEncrypt picks between them and derives the kid from whichever
-        // certificate it uses. With neither configured we log and abort rather than send an
-        // unencrypted request.
-        if (isMLESupportedByCybsForApi == true) {
+        // Request MLE runs on an MLE-capable endpoint when MLE is switched on
+        // (VisaAcceptance_MLEEnabled) and a request-MLE certificate source is configured — the
+        // keystore alias (preferred) or the IMPEX .p12 bundle; jweEncrypt picks between them and
+        // derives the kid from whichever certificate it uses. With MLE on but neither source
+        // configured we log and abort rather than send an unencrypted request; with MLE off the
+        // payload is sent as-is, which is why the flag defaults to on.
+        if (isMLESupportedByCybsForApi == true && configObject.mleEnabled) {
             if (!empty(configObject.requestMleCertificateAlias) || !empty(configObject.requestMleP12ImpexPath)) {
                 var encryptPayload = require('*/cartridge/scripts/mle/jweEncrypt.js');
                 payload = encryptPayload.getJWE(payload);

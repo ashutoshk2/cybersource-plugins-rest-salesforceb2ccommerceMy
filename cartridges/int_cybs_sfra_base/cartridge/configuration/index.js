@@ -123,6 +123,16 @@ function getConfig(config) {
         //MLE
         requestMleCertificateAlias: config.requestMleCertificateAlias || customPreferences.MLE.Preferences.RequestMLECertificateAlias.getValue(),
         responseMlePrivateKeyAlias: config.responseMlePrivateKeyAlias ||customPreferences.MLE.Preferences.ResponseMLEPrivateKeyAlias.getValue(),
+        // Master MLE switch, gating BOTH request and response encryption. Off unless explicitly
+        // enabled, so an unset preference (an instance whose metadata predates this field) is
+        // treated the same as unticked.
+        //
+        // Coerced via String(): getValue() returns the raw site-preference value, which on this
+        // engine can be a Java-backed Boolean. Those are ALWAYS truthy in JavaScript, so a plain
+        // `||`/`&&` on the raw value would read an unticked checkbox as enabled.
+        mleEnabled: typeof config.mleEnabled === 'boolean'
+            ? config.mleEnabled
+            : String(customPreferences.MLE.Preferences.MLEEnabled.getValue()) === 'true',
         // Single-file MLE: when set, the .p12 in IMPEX supplies the request-MLE certificate and
         // its key id (see scripts/mle/p12Reader.js). Response MLE is not affected — it is gated
         // on responseMlePrivateKeyAlias alone.

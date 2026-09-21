@@ -53,8 +53,18 @@ function httpAuthReversal(requestId, referenceInformationCode, total, currency) 
             result = data;
             try {
                 var OrderMgr = require('dw/order/OrderMgr');
-                var orderNo = result.clientReferenceInformation.code;
-                var order = OrderMgr.getOrder(orderNo);
+                // The reversal response does not always echo clientReferenceInformation; fall back
+                // to the reference we sent.
+                var orderNo = (result.clientReferenceInformation && result.clientReferenceInformation.code)
+                    || referenceInformationCode;
+                var order = orderNo ? OrderMgr.getOrder(orderNo) : null;
+                if (!order) {
+                    // Expected for a Decision Manager decline at authorization time (UC
+                    // PlaceOrderDirect): the hold is released before any order is created, so
+                    // there is nothing to annotate. The reversal itself already succeeded.
+                    Logger.info('[authReversal.js] Reversal ( {0} ) for reference ( {1} ) has no SFCC order to annotate.', result.id, orderNo);
+                    return;
+                }
 
                 var CardHelper = require('~/cartridge/scripts/helpers/CardHelper');
                 var paymentInstrument = CardHelper.getNonGCPaymemtInstument(order);

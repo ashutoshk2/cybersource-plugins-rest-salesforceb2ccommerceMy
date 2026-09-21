@@ -163,6 +163,46 @@ server.post('PlaceOrderDirect', server.middleware.https, function (req, res, nex
             }
         }
 
+        // Decision Manager REJECT at authorization time: the issuer APPROVED the authorization and
+        // Decision Manager then declined it, so a real hold is sitting on the shopper's card. This
+        // is the only auth path that declines before an order exists, so nothing downstream (the
+        // DM webhook, DMOrderStatusUpdate, BM) will ever reverse it — it has to happen here.
+        // Mirrors the reversal every other auth path already performs on this status
+        // (scripts/http/payments.js, hooks/payment/processor/applePay.js, PayerAuthentication.js).
+        if (authStatus === 'AUTHORIZED_RISK_DECLINED') {
+            var riskAmountDetails = jwtPayload.details
+                && jwtPayload.details.orderInformation
+                && jwtPayload.details.orderInformation.amountDetails;
+            // Prefer what the gateway says it authorized. The basket total is only a fallback and
+            // is read defensively: in the express (minicart/cart) flow totals may not have been
+            // calculated yet, and Money.getValue() on an unavailable total throws.
+            var reversalAmount = riskAmountDetails
+                && (riskAmountDetails.authorizedAmount || riskAmountDetails.totalAmount);
+            if (!reversalAmount) {
+                var basketTotal = currentBasket.getTotalGrossPrice();
+                reversalAmount = (basketTotal && basketTotal.available) ? basketTotal.getValue() : null;
+            }
+            var reversalCurrency = (riskAmountDetails && riskAmountDetails.currency)
+                || currentBasket.getCurrencyCode();
+            // Same merchant-reference resolution as the order-creation path below: the JWT code is
+            // authoritative, except for PayPal which echoes 'default' — then use the order number
+            // reserved at capture-context time (left in session for the retry).
+            var riskReferenceCode = jwtPayload.details
+                && jwtPayload.details.clientReferenceInformation
+                && jwtPayload.details.clientReferenceInformation.code;
+            if (!riskReferenceCode || riskReferenceCode === 'default') {
+                riskReferenceCode = session.privacy.ucOrderNo;
+            }
+            require('~/cartridge/scripts/helpers/authReversalHelper').reverseAuthorizationOnce({
+                order: null, // the order is only created further down; this request never gets there
+                authTransactionId: jwtPayload.id,
+                referenceCode: riskReferenceCode,
+                amount: reversalAmount,
+                currency: reversalCurrency,
+                context: 'PlaceOrderDirect'
+            });
+        }
+
         // Return appropriate error message
         var errorMessage;
         if (isSCARequired || scaExhausted) {

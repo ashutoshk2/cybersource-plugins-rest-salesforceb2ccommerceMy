@@ -615,7 +615,7 @@ function generateUcCaptureContext(isMiniCart, selectedPaymentInstrumentId) {
         }
 
         // Allowed Card Networks is intentionally NOT sent - it is managed in EBC
-        // and must not be included in ISV Phase 1 (see requestingCC.md).
+        // and must not be included in ISV Phase 1.
 
         // Allowed Payment Types - split capture-context instances:
         //  - cart / minicart (isMiniCart): express-pay digital wallets ONLY
@@ -649,7 +649,7 @@ function generateUcCaptureContext(isMiniCart, selectedPaymentInstrumentId) {
         requestObj.country = currentLocale.country;
         requestObj.locale = currentLocale.ID;
 
-        // Capture Mandate (see requestingCC.md 4.2)
+        // Capture Mandate
         var captureMandate = new cybersourceRestApi.Upv1capturecontextsCaptureMandate();
         if (isMiniCart) {
             // Wallet instance: wallets collect billing/contact/shipping natively, so
@@ -662,7 +662,7 @@ function generateUcCaptureContext(isMiniCart, selectedPaymentInstrumentId) {
         } else {
             // Checkout instance: SFRA already collected billing/contact/shipping on the
             // platform page, so UC only needs partial billing and no contact prompts.
-            captureMandate.billingType = 'PARTIAL';
+            captureMandate.billingType = 'NONE';
             captureMandate.requestEmail = false;
             captureMandate.requestPhone = false;
             captureMandate.requestShipping = false;
@@ -681,7 +681,7 @@ function generateUcCaptureContext(isMiniCart, selectedPaymentInstrumentId) {
 
         // Complete Mandate - UC v1: TMS token configuration only.
         // completeMandate.type (transaction type) is EBC-managed and must NOT be
-        // sent in ISV Phase 1 - only completeMandate.tms is permitted (see requestingCC.md).
+        // sent in ISV Phase 1 - only completeMandate.tms is permitted.
         var completeMandate = {};
 
         // Add TMS_TOKEN config for saved cards (registered customers only)
@@ -885,7 +885,7 @@ function generateUcCaptureContextSaveCard(billTo) {
 
         // Associate the newly tokenized card with the EXISTING TMS customer so all of an
         // account's cards live under one customer. Per the authoritative UC v1 capture-context
-        // schema (ucv1api.json): paymentConfigurations.TMS_TOKEN.customer.id = existing customer
+        // schema: paymentConfigurations.TMS_TOKEN.customer.id = existing customer
         // token - UC then creates
         // the new paymentInstrument/instrumentIdentifier under that customer. When the account has
         // no customer yet (first card), this is skipped and completeMandate.tms mints the customer.

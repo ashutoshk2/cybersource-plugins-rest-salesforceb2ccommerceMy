@@ -2,6 +2,13 @@
 <metadata xmlns="http://www.demandware.com/xml/impex/metadata/2006-10-31">
     <type-extension type-id="SitePreferences">
         <custom-attribute-definitions>
+            <attribute-definition attribute-id="VisaAcceptance_MLEEnabled">
+                <display-name xml:lang="x-default">Enable MLE</display-name>
+                <description xml:lang="x-default">Master switch for Message-Level Encryption. When enabled, the cartridge encrypts outbound requests (Request MLE) and asks Visa Acceptance to encrypt API responses (Response MLE), decrypting them with the private key alias below. Each direction also needs its own certificate configured. Disabled by default - enable it once the certificates are in place.</description>
+                <type>boolean</type>
+                <externally-managed-flag>false</externally-managed-flag>
+                <default-value>false</default-value>
+            </attribute-definition>
             <attribute-definition attribute-id="VisaAcceptance_RequestMLECertificateAlias">
                 <display-name xml:lang="x-default">Request MLE Certificate Alias (Option 1 - Recommended)</display-name>
                 <description xml:lang="x-default">Alias of the "CyberSource_SJC_US" Certificate imported in "Private Keys and Certificates"for Request MLE.</description>
@@ -16,7 +23,7 @@
             </attribute-definition>
             <attribute-definition attribute-id="VisaAcceptance_ResponseMLEPrivateKeyAlias">
                 <display-name xml:lang="x-default">Private Key Alias for Response MLE and Webhooks</display-name>
-                <description xml:lang="x-default">Alias of the Merchant P12 key imported in "Private Keys and Certificates" for response MLE and webhook decryption.</description>
+                <description xml:lang="x-default">Alias of the Merchant P12 key imported in "Private Keys and Certificates" for response MLE and webhook decryption. This alias works for webhooks decryption even if Response MLE is disabled.</description>
                 <type>string</type>
                 <externally-managed-flag>false</externally-managed-flag>
             </attribute-definition>
@@ -24,6 +31,7 @@
         <group-definitions>
             <attribute-group group-id="VisaAcceptance_MLE">
                 <display-name xml:lang="x-default">Message-Level Encryption Configuration</display-name>
+                <attribute attribute-id="VisaAcceptance_MLEEnabled"/>
                 <attribute attribute-id="VisaAcceptance_RequestMLECertificateAlias"/>
                 <attribute attribute-id="VisaAcceptance_RequestMLEP12ImpexPath"/>
                 <attribute attribute-id="VisaAcceptance_ResponseMLEPrivateKeyAlias"/>
