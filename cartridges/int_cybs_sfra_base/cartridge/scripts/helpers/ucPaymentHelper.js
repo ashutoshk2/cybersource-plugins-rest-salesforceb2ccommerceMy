@@ -1766,7 +1766,6 @@ function buildConsumerAuthenticationInformation(configObject) {
         logger.info('buildConsumerAuthenticationInformation: SCA required flag detected, setting challengeCode=04');
         // Clear the flag after using it (one-time use per retry)
         session.privacy.scaRequired = false;
-        session.privacy.scaChallenged = true;
         return consumerAuthInfo;
     }
     // Otherwise, omit the field entirely

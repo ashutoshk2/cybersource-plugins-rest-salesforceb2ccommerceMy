@@ -164,7 +164,6 @@ server.post('PlaceOrderDirect', server.middleware.https, function (req, res, nex
         // Check if SCA (Strong Customer Authentication) is required
         // Expanded SCA detection for new Visa Acceptance response patterns
         var isSCARequired = false;
-        var scaExhausted = false;
         var processorInfo = jwtPayload.details && jwtPayload.details.processorInformation;
         var reasonCode = processorInfo && processorInfo.responseCode;
         var reason = jwtPayload.reason;
@@ -179,19 +178,19 @@ server.post('PlaceOrderDirect', server.middleware.https, function (req, res, nex
             (message && typeof message === 'string' && message.toLowerCase().indexOf('strong customer authentication required') !== -1)
         );
         if (scaDetected) {
-            if (session.privacy.scaChallenged) {
-                scaExhausted = true;
+            if (session.privacy.scaChallengeSent) {
                 session.privacy.scaRequired = false;
-                session.privacy.scaChallenged = false;
+                session.privacy.scaChallengeSent = false;
             } else {
                 isSCARequired = true;
                 session.privacy.scaRequired = true;
+                session.privacy.scaChallengeSent = true;
             }
         }
 
         // Return appropriate error message
         var errorMessage;
-        if (isSCARequired || scaExhausted) {
+        if (isSCARequired) {
             errorMessage = ucPaymentHelper.getSCAErrorMessage();
         } else {
             errorMessage = ucPaymentHelper.getAuthorizationErrorMessage(authStatus) || Resource.msg('error.technical', 'checkout', null);
@@ -199,9 +198,9 @@ server.post('PlaceOrderDirect', server.middleware.https, function (req, res, nex
 
         // A fresh SCA challenge is not a final failure - the shopper re-authenticates and
         // this endpoint runs again against the same basket, so no order should exist yet.
-        // Everything else here (plain decline, or SCA retries exhausted) is terminal:
-        // create the order so it is visible/reportable in Business Manager, then fail it -
-        // mirroring how the standard (non-UC) flow always has an order to fail.
+        // A plain decline (not SCA-related) is terminal: create the order so it is
+        // visible/reportable in Business Manager, then fail it - mirroring how the
+        // standard (non-UC) flow always has an order to fail.
         if (!isSCARequired) {
             var failedOrder = COHelpers.createOrder(currentBasket, resolveClientReferenceCode(jwtPayload));
             if (failedOrder) {
@@ -220,7 +219,7 @@ server.post('PlaceOrderDirect', server.middleware.https, function (req, res, nex
     }
 
     session.privacy.scaRequired = false;
-    session.privacy.scaChallenged = false;
+    session.privacy.scaChallengeSent = false;
 
     // Validate order
     var validationOrderStatus = hooksHelper('app.validate.order', 'validateOrder', currentBasket, require('*/cartridge/scripts/hooks/validateOrder').validateOrder);
