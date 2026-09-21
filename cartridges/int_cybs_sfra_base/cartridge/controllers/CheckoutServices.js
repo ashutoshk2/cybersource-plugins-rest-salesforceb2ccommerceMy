@@ -39,6 +39,32 @@ server.post('PlaceOrderDirect', server.middleware.https, function (req, res, nex
 
     var logger = Logger.getLogger('VisaAcceptance', 'PlaceOrderDirect');
 
+    /**
+     * Resolves the SFCC order number to create against, from the Visa Acceptance
+     * clientReferenceInformation.code on the completeMandate JWT (authoritative - it is
+     * the merchant reference the transaction was created against and the key webhooks
+     * reconcile on), falling back to the order number reserved at capture-context time.
+     *
+     * Known issue: for PayPal the completeMandate result does not echo the merchant
+     * reference we sent and returns 'default', hence the fallback.
+     *
+     * @param {Object} payload - decoded completeMandate JWT payload
+     * @returns {string|undefined} the order number to create the order with
+     */
+    function resolveClientReferenceCode(payload) {
+        var code = payload.details &&
+            payload.details.clientReferenceInformation &&
+            payload.details.clientReferenceInformation.code;
+        if (!code || code === 'default') {
+            var reservedOrderNo = session.privacy.ucOrderNo;
+            if (reservedOrderNo) {
+                code = reservedOrderNo;
+                session.privacy.ucOrderNo = null;
+            }
+        }
+        return code;
+    }
+
     // Get the completeMandate JWT from request
     var completeMandateJwt = request.httpParameterMap.completeMandateJwt.stringValue;
     var transientToken = request.httpParameterMap.transientToken.stringValue;
@@ -138,7 +164,6 @@ server.post('PlaceOrderDirect', server.middleware.https, function (req, res, nex
         // Check if SCA (Strong Customer Authentication) is required
         // Expanded SCA detection for new Visa Acceptance response patterns
         var isSCARequired = false;
-        var scaExhausted = false;
         var processorInfo = jwtPayload.details && jwtPayload.details.processorInformation;
         var reasonCode = processorInfo && processorInfo.responseCode;
         var reason = jwtPayload.reason;
@@ -153,13 +178,13 @@ server.post('PlaceOrderDirect', server.middleware.https, function (req, res, nex
             (message && typeof message === 'string' && message.toLowerCase().indexOf('strong customer authentication required') !== -1)
         );
         if (scaDetected) {
-            if (session.privacy.scaChallenged) {
-                scaExhausted = true;
+            if (session.privacy.scaChallengeSent) {
                 session.privacy.scaRequired = false;
-                session.privacy.scaChallenged = false;
+                session.privacy.scaChallengeSent = false;
             } else {
                 isSCARequired = true;
                 session.privacy.scaRequired = true;
+                session.privacy.scaChallengeSent = true;
             }
         }
 
@@ -205,10 +230,24 @@ server.post('PlaceOrderDirect', server.middleware.https, function (req, res, nex
 
         // Return appropriate error message
         var errorMessage;
-        if (isSCARequired || scaExhausted) {
+        if (isSCARequired) {
             errorMessage = ucPaymentHelper.getSCAErrorMessage();
         } else {
             errorMessage = ucPaymentHelper.getAuthorizationErrorMessage(authStatus) || Resource.msg('error.technical', 'checkout', null);
+        }
+
+        // A fresh SCA challenge is not a final failure - the shopper re-authenticates and
+        // this endpoint runs again against the same basket, so no order should exist yet.
+        // A plain decline (not SCA-related) is terminal: create the order so it is
+        // visible/reportable in Business Manager, then fail it - mirroring how the
+        // standard (non-UC) flow always has an order to fail.
+        if (!isSCARequired) {
+            var failedOrder = COHelpers.createOrder(currentBasket, resolveClientReferenceCode(jwtPayload));
+            if (failedOrder) {
+                Transaction.wrap(function () { OrderMgr.failOrder(failedOrder, true); });
+            } else {
+                logger.error('PlaceOrderDirect: Could not create order to record declined authorization. Status: {0}', authStatus);
+            }
         }
 
         secureResponseHelper.secureJsonResponse(res, {
@@ -220,7 +259,7 @@ server.post('PlaceOrderDirect', server.middleware.https, function (req, res, nex
     }
 
     session.privacy.scaRequired = false;
-    session.privacy.scaChallenged = false;
+    session.privacy.scaChallengeSent = false;
 
     // Validate order
     var validationOrderStatus = hooksHelper('app.validate.order', 'validateOrder', currentBasket, require('*/cartridge/scripts/hooks/validateOrder').validateOrder);
@@ -372,23 +411,8 @@ server.post('PlaceOrderDirect', server.middleware.https, function (req, res, nex
     // Create order from basket using the Visa Acceptance clientReferenceInformation.code
     // as the SFCC order number. That code is the merchant reference the transaction was
     // created against and the key the webhooks reconcile on (OrderMgr.getOrder(code)),
-    // so the order number MUST equal it. It is taken from the JWT (authoritative) rather
-    // than session.privacy.ucOrderNo, which a redirect flow may have dropped.
-    var clientReferenceCode = jwtPayload.details &&
-        jwtPayload.details.clientReferenceInformation &&
-        jwtPayload.details.clientReferenceInformation.code;
-
-    // Known issue: for PayPal the completeMandate result does not echo the
-    // merchant reference (clientReferenceInformation.code) we sent and returns 'default'.
-    // Fall back to the order number reserved at capture-context time, then clear it.
-    if (!clientReferenceCode || clientReferenceCode === 'default') {
-        var reservedOrderNo = session.privacy.ucOrderNo;
-        if (reservedOrderNo) {
-            clientReferenceCode = reservedOrderNo;
-            session.privacy.ucOrderNo = null;
-        }
-    }
-    var order = COHelpers.createOrder(currentBasket, clientReferenceCode);
+    // so the order number MUST equal it.
+    var order = COHelpers.createOrder(currentBasket, resolveClientReferenceCode(jwtPayload));
     if (!order) {
         secureResponseHelper.secureJsonResponse(res, {
             error: true,

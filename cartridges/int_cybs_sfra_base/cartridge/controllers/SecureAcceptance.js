@@ -198,11 +198,20 @@ if (configObject.cartridgeEnabled) {
         // Check if generateUcCaptureContextSaveCard returned an error object
         if (!UcCaptureContext || typeof UcCaptureContext !== 'string' || UcCaptureContext.error) {
             var Logger = require('dw/system/Logger');
-            var errorMsg = UcCaptureContext && UcCaptureContext.errorMessage 
-                ? UcCaptureContext.errorMessage 
-                : 'Failed to generate capture context for save card';
-            Logger.error('[SecureAcceptance.js] CreateUCTokenSaveCard ERROR: {0}', errorMsg);
-            secureResponseHelper.secureJsonResponse(res, { error: true, errorMessage: errorMsg });
+            var rawErrorMsg = (UcCaptureContext && UcCaptureContext.errorMessage) || 'Failed to generate capture context for save card';
+            // Log the raw gateway/decrypt error server-side only - it can contain internal
+            // details (e.g. a keystore alias name from a Response MLE decrypt failure).
+            Logger.error('[SecureAcceptance.js] CreateUCTokenSaveCard ERROR: {0}', rawErrorMsg);
+            // This action is consumed via a server-side <isinclude> on initial page load AND
+            // via client AJAX with dataType:'html' on retry (see uc-save-card-reload-url in
+            // paymentForm.isml / unifiedCheckout.js) - both insert the response verbatim as
+            // markup, so it must always be a rendered template, never JSON. The template's
+            // own uc-server-error block (Resource.msg('uc.tokenerror','payments',null)) shows
+            // the merchant-customizable generic message on a null capture context.
+            secureResponseHelper.secureRender(res, 'unifiedCheckoutSaveCard', {
+                UcCaptureContext: null,
+                serverError: true
+            });
             next();
             return;
         }

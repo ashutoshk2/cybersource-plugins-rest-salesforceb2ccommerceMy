@@ -406,8 +406,13 @@ _exports.prototype.callApi = function (path, httpMethod, pathParams, queryParams
             // Deliberately NOT tied to the request-MLE IMPEX bundle: that file supplies public
             // certificates only. A kid taken from it would make the gateway encrypt a reply we
             // hold no private key for, leaving the response unreadable.
+            //
+            // For a meta (portfolio/account) key, the Response MLE P12's CN is the portfolio
+            // owner MID, not the child transacting MID — mirrors the iss/v-c-merchant-id handling
+            // in getJWTToken/getHttpSignature above.
+            var expectedMerchantId = (configObject.metaKeyEnabled && configObject.metaKeyMerchantId) ? configObject.metaKeyMerchantId : merchantId;
             responseMleKid = require('*/cartridge/scripts/helpers/certHelper')
-                .getKidFromAlias(configObject.responseMlePrivateKeyAlias, merchantId) || null;
+                .getKidFromAlias(configObject.responseMlePrivateKeyAlias, expectedMerchantId) || null;
         } catch (kidErr) {
             require('dw/system/Logger').getLogger('VisaAcceptance', 'mle').warn(
                 'Response MLE disabled for {0}: could not derive v-c-response-mle-kid from alias "{1}" ({2}).',

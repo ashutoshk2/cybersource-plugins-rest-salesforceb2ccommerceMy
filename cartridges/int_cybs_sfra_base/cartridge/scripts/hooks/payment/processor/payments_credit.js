@@ -330,7 +330,7 @@ function Authorize(orderNumber, paymentInstrument, paymentProcessor) {
             session.privacy.orderStatus = result.status;
             paymentInstrument.paymentTransaction.setTransactionID(result.id);
             paymentInstrument.paymentTransaction.setPaymentProcessor(paymentProcessor);
-            paymentInstrument.paymentTransaction.custom.paymentDetails = paymentInstrument.creditCardNumber + ', ' + paymentInstrument.creditCardType;
+            paymentInstrument.paymentTransaction.custom.paymentDetails = paymentInstrument.maskedCreditCardNumber + ', ' + paymentInstrument.creditCardType;
 
         });
     } catch (e) {
@@ -353,7 +353,7 @@ function Authorize(orderNumber, paymentInstrument, paymentProcessor) {
                             session.privacy.orderStatus = cybersourceResponseData.status;
                             paymentInstrument.paymentTransaction.setTransactionID(cybersourceResponseData.id);
                             paymentInstrument.paymentTransaction.setPaymentProcessor(paymentProcessor);
-                            paymentInstrument.paymentTransaction.custom.paymentDetails = paymentInstrument.creditCardNumber + ', ' + paymentInstrument.creditCardType;
+                            paymentInstrument.paymentTransaction.custom.paymentDetails = paymentInstrument.maskedCreditCardNumber + ', ' + paymentInstrument.creditCardType;
 
                         });
                     }
