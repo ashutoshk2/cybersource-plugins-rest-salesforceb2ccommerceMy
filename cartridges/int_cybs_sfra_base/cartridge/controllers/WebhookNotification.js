@@ -50,7 +50,14 @@ function decryptMLEPayload(jweString) {
         jwe.decrypt(new KeyRef(alias));
         return jwe.getPayload();
     } catch (e) {
-        Logger.error('decryptMLEPayload failed for alias "' + alias + '": ' + e.message + '. Verify the .p12 private key is uploaded under Administration > Operations > Private Keys and Certificates with this exact alias.');
+        // A padding error is a key MISMATCH, not a missing key: the alias resolved and RSA unwrap
+        // ran, so pointing the merchant at the alias sends them the wrong way. It means the gateway
+        // encrypted with a different public certificate than the keypair now at this alias - usually
+        // the .p12 was re-imported after its certificate had been registered with KMS.
+        var remedy = (e.message && e.message.indexOf('Padding error') !== -1)
+            ? ' The keypair at this alias does not match the public certificate registered with Visa Acceptance; re-register it via Merchant Tools > Visa Acceptance Payment Services > Webhook Manager > Advanced Configuration > Update Advanced Settings.'
+            : ' Verify the .p12 private key is uploaded under Administration > Operations > Private Keys and Certificates with this exact alias.';
+        Logger.error('decryptMLEPayload failed for alias "' + alias + '": ' + e.message + '.' + remedy);
         throw e;
     }
 }
@@ -109,21 +116,22 @@ function validateSignature(req, customObjectKey) {
  * Helper to decrypt payload if MLE is enabled
  */
 function getDecryptedPayload(body) {
-    var payload;
-    try {
-        payload = JSON.parse(body);
-        var encryptedData = payload.encData || payload.encryptedRequest;
-        if (encryptedData) {
-            var decryptedString = decryptMLEPayload(encryptedData);
-            payload = JSON.parse(decryptedString);
-        }
-    } catch (e) {
-        if (body && body.split('.').length === 5) {
-            try {
-                var decryptedString = decryptMLEPayload(body);
-                payload = JSON.parse(decryptedString);
-            } catch (innerE) { throw innerE; }
-        } else { throw e; }
+    var trimmed = body ? String(body).trim() : '';
+
+    // A bare compact JWE body (5 dot-separated segments, no JSON envelope). The leading-'{' test
+    // matters: '{"encData":"a.b.c.d.e"}' also splits into 5 parts on '.', and feeding that whole
+    // envelope to JWE.parse produced the misleading 'Invalid JWE header: Invalid JSON: Unexpected
+    // token <binary>' that used to mask the real decryption failure below.
+    if (trimmed.charAt(0) !== '{' && trimmed.split('.').length === 5) {
+        return JSON.parse(decryptMLEPayload(trimmed));
+    }
+
+    var payload = JSON.parse(trimmed);
+    var encryptedData = payload.encData || payload.encryptedRequest;
+    if (encryptedData) {
+        // Deliberately not retried as plaintext on failure: an encrypted notification we cannot
+        // decrypt must surface its own error, not a second, unrelated one.
+        return JSON.parse(decryptMLEPayload(encryptedData));
     }
     return payload;
 }

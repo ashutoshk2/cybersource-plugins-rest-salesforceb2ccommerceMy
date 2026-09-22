@@ -242,9 +242,56 @@ server.post('PlaceOrderDirect', server.middleware.https, function (req, res, nex
         // visible/reportable in Business Manager, then fail it - mirroring how the
         // standard (non-UC) flow always has an order to fail.
         if (!isSCARequired) {
+            // Attach the payment instrument to the basket BEFORE creating the order. UC never
+            // goes through SubmitPayment, so the basket carries no payment instrument until the
+            // Handle hook runs (further down, on the success path) - and an order with zero
+            // payment instruments renders as "Payment information can't be displayed for the
+            // payment method used with this order" on BM's Orders > Payment tab. Dispatching the
+            // same Handle hook here means a failed order shows the same payment details a placed
+            // one does. An unmapped method is not fatal: the order still has to be recorded.
+            var declinedMethod = ucPaymentHelper.detectPaymentMethod(jwtPayload, transientToken);
+            var declinedProcessorId = ucPaymentHelper.getProcessorIdForMethod(declinedMethod);
+            if (declinedProcessorId) {
+                hooksHelper(
+                    'app.payment.processor.' + declinedProcessorId,
+                    'Handle',
+                    currentBasket,
+                    {
+                        jwtPayload: jwtPayload,
+                        transientToken: transientToken,
+                        paymentMethod: declinedMethod,
+                        isDigitalWallet: declinedMethod === 'DW_GOOGLE_PAY' || declinedMethod === 'DW_APPLE_PAY' || declinedMethod === 'DW_PAZE',
+                        paymentDetails: paymentDetails,
+                        fromUC: true
+                    },
+                    require('app_storefront_base/cartridge/scripts/hooks/payment/processor/basic_credit').Handle
+                );
+            } else {
+                logger.warn('PlaceOrderDirect: no processor mapped for declined method {0}; failed order will carry no payment details', declinedMethod);
+            }
+
             var failedOrder = COHelpers.createOrder(currentBasket, resolveClientReferenceCode(jwtPayload));
             if (failedOrder) {
-                Transaction.wrap(function () { OrderMgr.failOrder(failedOrder, true); });
+                Transaction.wrap(function () {
+                    var declinedInstruments = failedOrder.getPaymentInstruments();
+                    if (declinedInstruments.length > 0) {
+                        var declinedTransaction = declinedInstruments[0].paymentTransaction;
+                        // Transaction ID: what a merchant needs to find this decline in the Visa
+                        // Acceptance portal from the BM Payment tab.
+                        if (jwtPayload.id) {
+                            declinedTransaction.setTransactionID(jwtPayload.id);
+                        }
+                        // Processor is mandatory for display, not just for capture/refund: BM
+                        // renders "The payment processor is unknown. The payment data can't be
+                        // displayed." for a PaymentTransaction with none.
+                        var declinedMethodRecord = PaymentMgr.getPaymentMethod(declinedMethod);
+                        var declinedProcessor = declinedMethodRecord && declinedMethodRecord.getPaymentProcessor();
+                        if (declinedProcessor) {
+                            declinedTransaction.setPaymentProcessor(declinedProcessor);
+                        }
+                    }
+                    OrderMgr.failOrder(failedOrder, true);
+                });
             } else {
                 logger.error('PlaceOrderDirect: Could not create order to record declined authorization. Status: {0}', authStatus);
             }
