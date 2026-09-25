@@ -1626,6 +1626,20 @@ var unifiedCheckout = {
                 $cancelButton.detach(); // Remove from DOM but keep in memory
             }
 
+            // Step 2.6: Preserve the "Back to Saved Cards" button before removing the UC
+            // container, if it's currently present. loadUCWithSelectedCard AND
+            // loadUCForNewCard both add this button whenever the shopper reached the
+            // widget through the saved-card selector - including "Add new card" with
+            // selectedPaymentInstrumentId cleared to null - so its presence, not
+            // selectedPaymentInstrumentId, is the right signal for whether to bring it back.
+            var $backToSavedCardsButton = $('#back-to-saved-cards-btn');
+            if ($backToSavedCardsButton.length > 0) {
+                console.log('Preserving "Back to Saved Cards" button before UC container removal');
+                $backToSavedCardsButton.detach();
+            } else {
+                $backToSavedCardsButton = null;
+            }
+
             // Step 3: Remove the entire UC widget container (includes all inner elements)
             console.log('Removing all existing UC elements');
 
@@ -1650,10 +1664,20 @@ var unifiedCheckout = {
             $ucContainer.addClass('loading').css('opacity', '0.5');
 
             // Determine the correct URL based on context:
-            // - If billing form exists, we're on checkout page (use CreateUCToken)
+            // - If a saved card is currently selected (e.g. an SCA retry on a saved-card
+            //   payment), regenerate WITH that card's TMS token so the widget comes back
+            //   showing the saved card again instead of falling back to the blank
+            //   new-card form.
+            // - Else if billing form exists, we're on checkout page (use CreateUCToken)
             // - Otherwise, we're in minicart (use CreateUCTokenMiniCart)
             var createTokenUrl;
-            if ($('#dwfrm_billing').length > 0) {
+            if (self.selectedPaymentInstrumentId) {
+                createTokenUrl = $('#create-uc-token-with-card-url').val();
+                if (createTokenUrl) {
+                    createTokenUrl += (createTokenUrl.indexOf('?') > -1 ? '&' : '?') +
+                        'piId=' + encodeURIComponent(self.selectedPaymentInstrumentId);
+                }
+            } else if ($('#dwfrm_billing').length > 0) {
                 createTokenUrl = $('#unified-token-url').val();
             } else {
                 createTokenUrl = $('#minicart-token-url').val();
@@ -1712,6 +1736,22 @@ var unifiedCheckout = {
                             $newUcContainer.append($cancelButton);
                         } else if (cancelButtonParent) {
                             cancelButtonParent.append($cancelButton);
+                        }
+                    }
+
+                    // Step 6.6: Restore the "Back to Saved Cards" button if it was present
+                    // before regeneration (preserved in Step 2.6). That button is inserted
+                    // client-side by loadUCWithSelectedCard/loadUCForNewCard - it is not part
+                    // of unifiedCheckout.isml - so the fresh HTML just appended above does not
+                    // carry it, and it was destroyed along with the removed UC container.
+                    if ($backToSavedCardsButton && $backToSavedCardsButton.length > 0) {
+                        console.log('Restoring "Back to Saved Cards" button after UC regeneration');
+                        var $backBtnContainer = $('#uc-widget-wrapper');
+                        if (!$backBtnContainer.length) {
+                            $backBtnContainer = $('.unified-checkout-container').first();
+                        }
+                        if ($backBtnContainer.length) {
+                            $backBtnContainer.append($backToSavedCardsButton);
                         }
                     }
 
